@@ -1,0 +1,46 @@
+---
+# Verteilter Block-Storage, direkt aus dem Upstream-Chart (kein lokaler Wrapper-Chart - ein
+# Operator/Addon ist Cluster-Infrastruktur, keine eigene Anwendungs-Konfiguration, siehe
+# charts/README.md). Werte entsprechen 1:1 den Defaults, die zuvor ueber
+# infra/ansible/roles/longhorn (Branch ansible-bootstrap, dort per kubernetes.core.helm
+# gesetzt) verwendet wurden.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: 1.11.3
+    helm:
+      valuesObject:
+        persistence:
+          defaultClass: true
+          # <= Node-Anzahl, sonst bleiben Replicas dauerhaft ungeplant ("Degraded"); 1 haelt den
+          # Plattenverbrauch auf den kleinen Lab-VMs niedrig. Die Ansible-Rolle hat das vor der
+          # Installation per assert gegen die tatsaechliche Cluster-Groesse geprueft - das kann
+          # eine deklarative ArgoCD-Application nicht nachbilden, also von Hand im Blick behalten,
+          # wenn Worker-Anzahl/worker_regions in infra/terraform sich aendert.
+          defaultClassReplicaCount: 1
+        defaultSettings:
+          defaultReplicaCount: 1
+          # Replicas auf mehrere Nodes verteilen, damit nicht ein Node mehrere "letzte Replicas"
+          # haelt (jede wuerde ein Drain waehrend eines Rolling-Upgrades blockieren).
+          replicaAutoBalance: least-effort
+          # Letzte Replica vor einem Drain live migrieren, damit k3s-Upgrades nie an einem
+          # Single-Replica-Volume haengen bleiben.
+          nodeDrainPolicy: block-for-eviction-if-contains-last-replica
+          # Thin-Provisioning - noetig fuer speicherhungrige Workloads auf den kleinen Lab-VMs.
+          storageOverProvisioningPercentage: 300
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
