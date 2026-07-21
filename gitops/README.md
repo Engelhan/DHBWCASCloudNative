@@ -11,17 +11,66 @@ gitops/
 ├── bootstrap/
 │   └── argocd-install.yaml     # Helm-Values für die ArgoCD-Installation selbst
 ├── projects/
-│   └── ticketflow-project.yaml # ArgoCD AppProject: erlaubte Repos/Namespaces/Ressourcen
+│   └── ticketflow-project.yaml # ArgoCD AppProject: erlaubte Repos/Namespaces/Ressourcen (TODO)
 └── apps/
-    ├── app-of-apps.yaml        # Root-Application, zeigt auf diesen Ordner
-    ├── cnpg-operator.yaml      # CloudNativePG-Operator (Helm-Chart, upstream)
-    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator (Helm-Chart, upstream)
-    ├── keda.yaml               # KEDA (Helm-Chart, upstream)
-    ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager (Helm-Chart, upstream)
-    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow
+    ├── app-of-apps.yaml        # Root-Application, zeigt (nicht-rekursiv) auf diesen Ordner
+    ├── longhorn.yaml           # verteilter Block-Storage (Helm-Chart, upstream)
+    ├── cert-manager.yaml       # cert-manager-Operator (Helm-Chart, upstream)
+    ├── cert-manager-issuer.yaml # ClusterIssuer, unser eigener Chart ../charts/cert-manager-config
+    ├── external-dns.yaml       # external-dns (Helm-Chart, upstream)
+    ├── cnpg-operator.yaml      # CloudNativePG-Operator (Helm-Chart, upstream) — TODO
+    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator (Helm-Chart, upstream) — TODO
+    ├── keda.yaml               # KEDA (Helm-Chart, upstream) — TODO
+    ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager (Helm-Chart, upstream) — TODO
+    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow — TODO
 ```
 
-Jede `Application` ist auf `syncPolicy.automated.selfHeal: true` und `prune: true` konfiguriert:
+Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
+(Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
+
+`longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
+[pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
+per Ansible-Rolle installiert (siehe `infra/ansible/README.md` ## Übernommene Funktionen aus
+k3s-dhbw-cloud-role, Branch `ansible-bootstrap`, Commit `938a66f`), jetzt stattdessen hier über
+ArgoCD/Helm, um die in `CLAUDE.md` ## Infra layering dokumentierte Grenze einzuhalten ("Ansible
+macht nichts über k3s/Labels/ArgoCD hinaus"). Die Ansible-Addon-Rollen auf `ansible-bootstrap`
+werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
+
+Für `longhorn` und `cert-manager` (Operator) zeigt die `Application` direkt auf den
+Upstream-Helm-Repo, Werte inline über `helm.valuesObject` — kein lokaler Chart nötig (siehe
+`charts/README.md`: ein Operator ist Cluster-Infrastruktur, keine Anwendungs-Konfiguration).
+`cert-manager-issuer.yaml` ist die eine Ausnahme: der `ClusterIssuer` ist unsere **eigene**
+Custom Resource (kein Operator), braucht aber Templating (dns01/http01-Switch, optionales
+Wildcard-Zertifikat) — dafür liegt in `../charts/cert-manager-config/` ein winziger lokaler
+Chart, analog zur CNPG-`Cluster`-CR in `charts/ticketflow`.
+
+## DNS/ACME-Aktivierung (cert-manager-issuer, external-dns)
+
+Es gibt noch keine eigene DHBW-DNS-Zone (self-service.dhbw.cloud). `cert-manager-issuer.yaml`
+und `external-dns.yaml` enthalten deshalb `CHANGE_ME_*`-Platzhalter statt echter Zone/TSIG-Daten
+und haben **bewusst kein `syncPolicy.automated`** — ArgoCD legt die `Application`-Objekte an,
+synct ihre Ressourcen aber nicht automatisch. Aktivierung (sobald eine echte Zone/TSIG-Key
+vorliegt):
+
+```bash
+# 1. Platzhalter ersetzen: charts/cert-manager-config/values.yaml (email, rfc2136.zone,
+#    rfc2136.tsigKeyName) und gitops/apps/external-dns.yaml (domainFilters, --rfc2136-zone,
+#    --rfc2136-tsig-keyname) — dieselbe Zone/derselbe Key an beiden Stellen.
+
+# 2. TSIG-Secrets manuell anlegen (NICHT ins Repo committen):
+kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
+  --from-literal=secret=<echter TSIG-Wert>
+kubectl create namespace external-dns
+kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
+  --from-literal=secret=<echter TSIG-Wert>
+
+# 3. Manuell synchen
+argocd app sync cert-manager-issuer
+argocd app sync external-dns
+```
+
+Jede `Application` außer `cert-manager-issuer`/`external-dns` (siehe oben, bewusst manuell wegen
+Platzhalter-Werten) ist auf `syncPolicy.automated.selfHeal: true` und `prune: true` konfiguriert:
 manuelle `kubectl edit`-Änderungen (z.B. eine per Hand hochgesetzte Replica-Zahl) werden von
 ArgoCD automatisch wieder auf den in Git definierten Zustand zurückgedreht – das ist der im
 Screencast zu zeigende Drift-Nachweis für W2.
@@ -34,12 +83,15 @@ kontinuierlich Ist- gegen Soll-Zustand aus Git und regelt Abweichungen selbstst�
 ist der Kern dessen, was W2 fordert ("Drift wird zurückgedreht"), nicht nur eine andere Art zu
 deployen.
 
-## Verwendung (geplant)
+## Verwendung
 
 ```bash
-kubectl apply -f gitops/apps/app-of-apps.yaml
+kubectl apply -f gitops/apps/app-of-apps.yaml   # normalerweise automatisch via argocd_bootstrap
 argocd app list
-argocd app get ticketflow
+argocd app get longhorn
+argocd app get cert-manager
 ```
 
-`TODO`: Application-Manifeste schreiben, sobald Chart-Versionen/Repo-URL final feststehen.
+`TODO`: `cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`, `kube-prometheus-stack.yaml`,
+`ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen, sobald die
+jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.

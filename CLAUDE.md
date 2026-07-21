@@ -61,14 +61,30 @@ Four layers, each owning a distinct concern — don't blur them:
 2. **`infra/ansible/`** — configures the VMs, installs k3s, labels nodes, bootstraps ArgoCD.
    Nothing beyond that.
 3. **`gitops/`** (ArgoCD Applications) — everything Kubernetes-level from here on: operators
-   (CNPG, Strimzi, KEDA, kube-prometheus-stack) and the app chart itself, as GitOps-synced
-   `Application` resources. Currently only `.gitkeep` placeholders — **not implemented yet**.
+   (CNPG, Strimzi, KEDA, kube-prometheus-stack), cluster addons (Longhorn, cert-manager,
+   external-dns), and the app chart itself, as GitOps-synced `Application` resources.
+   `app-of-apps.yaml` + Longhorn/cert-manager/cert-manager-issuer/external-dns are written; CNPG,
+   Strimzi, KEDA, kube-prometheus-stack, and `ticketflow.yaml` are still **not implemented**. See
+   `gitops/README.md` for the DNS/ACME activation flow.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
    `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). Currently only a
    README — **no templates written yet**.
 
 Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
 add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
+
+**This boundary was briefly crossed and then reverted.** Branch `ansible-bootstrap` (commit
+`938a66f`) ports cluster addons (Longhorn, cert-manager, external-dns, auto-upgrade,
+connectivity-check preflight) from
+[pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role) as Ansible
+roles that call `kubernetes.core.helm` directly — a deliberate exception at the time. That
+approach was superseded on `main` by deploying the same addons (Longhorn, cert-manager,
+external-dns) through `gitops/apps/` instead (see `gitops/README.md`), restoring the boundary
+above. **Don't merge `ansible-bootstrap` into `main`** — it would install the same Helm releases
+a second time via a different tool and fight ArgoCD's `selfHeal`. `system-upgrade-controller`
+(k3s auto-upgrade) has no equivalent in `gitops/` yet — deliberately skipped for now since
+`k3s_auto_upgrade_enabled` defaulted to `false` anyway; port it as an ArgoCD `Application` later
+if needed rather than reviving the Ansible role.
 
 ### Terraform specifics (implemented, tested by the user)
 
@@ -202,7 +218,14 @@ of leaving this section stale.
   scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
-- **Not started:** `gitops/apps/*.yaml` (App-of-Apps + per-operator Applications),
+- **Done:** `gitops/apps/app-of-apps.yaml`, `longhorn.yaml`, `cert-manager.yaml`,
+  `cert-manager-issuer.yaml` + its chart `charts/cert-manager-config/`, and `external-dns.yaml` —
+  cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm instead of the
+  Ansible roles on branch `ansible-bootstrap` (see Infra layering above).
+  `cert-manager-issuer`/`external-dns` carry `CHANGE_ME_*` placeholders (no real DHBW DNS zone
+  yet) and are intentionally not `syncPolicy.automated` until activated.
+- **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
+  `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +
   `observability/alerts/` content.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
