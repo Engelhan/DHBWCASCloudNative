@@ -46,13 +46,17 @@
     dest: "{{ playbook_dir }}/../kubeconfig"
     flat: true
 
-# Die kubeconfig von k3s zeigt standardmaessig auf 127.0.0.1 (fuer lokale Nutzung auf der
-# Control-Plane selbst). Fuer Zugriff von aussen auf die tatsaechliche IPv6-Adresse umbiegen -
-# Klammer-Syntax, da sonst der Doppelpunkt vor dem Port mit den Adress-Doppelpunkten kollidiert.
+# Die kubeconfig von k3s zeigt standardmaessig auf ein Loopback (fuer lokale Nutzung auf der
+# Control-Plane selbst) - auf diesem IPv6-only-Host schreibt k3s dafuer "[::1]", nicht das aus
+# IPv4-Setups gewohnte "127.0.0.1" (beide Formen werden hier abgedeckt, da sich das je nach
+# k3s-/OS-Verhalten unterscheiden kann und ein nicht matchender Regex den replace-Task sonst
+# stillschweigend zum No-Op macht). Fuer Zugriff von aussen auf die tatsaechliche IPv6-Adresse
+# umbiegen - Klammer-Syntax, da sonst der Doppelpunkt vor dem Port mit den Adress-Doppelpunkten
+# kollidiert.
 - name: Server-URL in der lokal abgeholten kubeconfig auf die echte Adresse setzen
   delegate_to: localhost
   become: false
   replace:
     path: "{{ playbook_dir }}/../kubeconfig"
-    regexp: 'https://127\.0\.0\.1:6443'
+    regexp: 'https://(127\.0\.0\.1|\[::1\]):6443'
     replace: "https://[{{ ansible_host }}]:6443"
