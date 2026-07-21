@@ -1,0 +1,29 @@
+---
+# cert-manager-Operator selbst - immer aktiv (CRDs sind auch ohne einen scharfen ClusterIssuer
+# nuetzlich). Der eigentliche ClusterIssuer (mit Platzhaltern fuer ACME-E-Mail/DNS-Zone) liegt
+# als eigene, bewusst NICHT automatisiert synchende Application in cert-manager-issuer.yaml -
+# siehe dort und charts/cert-manager-config/values.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.19.6
+    helm:
+      valuesObject:
+        crds:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
