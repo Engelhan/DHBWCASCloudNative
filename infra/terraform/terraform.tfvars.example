@@ -7,7 +7,7 @@ os_region                        = "CHANGE_ME"
 os_application_credential_id     = "CHANGE_ME"
 os_application_credential_secret = "CHANGE_ME" # nur einmal beim Anlegen im Portal sichtbar
 
-# Netzwerk
+# Netzwerk Test 
 network_name = "DHBWV6" # vorhandenes, extern routbares Projektnetz - kein eigenes Netz/Floating-IP/Security-Group nötig
 
 # SSH-Keypair (öffentlicher Schlüssel wird importiert, privater bleibt lokal)

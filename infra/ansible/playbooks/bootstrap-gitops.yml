@@ -1,8 +1,14 @@
 ---
 # Nur der ArgoCD-Teil, separat aufrufbar - z.B. um nach dem ersten "site.yml"-Lauf ein
-# inzwischen geschriebenes gitops/apps/app-of-apps.yaml nachzuziehen, ohne k3s neu anzufassen.
+# inzwischen geschriebenes gitops/apps/app-of-apps.yaml nachzuziehen, ohne k3s neu anzufassen. Test Test
+# testTest
+
+
+
+
 - name: ArgoCD (erneut) bootstrappen / App-of-Apps aktualisieren
   hosts: control_plane
   become: true
   roles:
     - argocd_bootstrap
+
