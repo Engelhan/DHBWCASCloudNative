@@ -18,9 +18,18 @@
   when: not k3s_bin.stat.exists
 
 - name: Warten, bis der Node auf der Control-Plane als Ready gemeldet wird
-  command: >
-    k3s kubectl get node {{ inventory_hostname }}
-    -o jsonpath={.status.conditions[?(@.type=="Ready")].status}
+  # command als String wuerde von Ansible per shlex geparst, was die Anfuehrungszeichen um
+  # "Ready" verschluckt (aus =="Ready") wird ==Ready) und den jsonpath-Ausdruck bricht -
+  # deshalb argv (keine shlex-Verarbeitung, jedes Element geht 1:1 in den Prozess).
+  command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - -o
+      - jsonpath={.status.conditions[?(@.type=="Ready")].status}
   delegate_to: "{{ groups['control_plane'][0] }}"
   register: node_ready
   until: node_ready.stdout == "True"

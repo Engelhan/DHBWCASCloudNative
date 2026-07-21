@@ -104,7 +104,7 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
   `hashicorp/local ~> 2.9`. `terraform.tfvars` is gitignored; `terraform.tfvars.example` is the
   template to copy.
 
-### Ansible specifics (statically verified in WSL, not yet run against real VMs)
+### Ansible specifics (verified in WSL against real DHBWCloud VMs)
 
 - Roles run in a fixed order (see `playbooks/site.yml`): `common` → `k3s_server` → `k3s_agent` →
   `node_labels` → `argocd_bootstrap`. Each depends on state from the previous one (e.g. agents
@@ -123,6 +123,15 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
 - `common` sets each node's OS hostname to its Terraform instance name so the k3s node name is
   deterministic — `node_labels` and the agent-join readiness check both rely on
   `inventory_hostname` matching the actual Kubernetes node name.
+- `command:` given as a plain string is shlex-parsed by Ansible before exec, which silently
+  strips unescaped `"` — the agent-join readiness check's
+  `jsonpath={.status.conditions[?(@.type=="Ready")].status}` lost its quotes around `Ready` this
+  way (`kubectl` then errored with "unrecognized identifier Ready"), even though the join itself
+  had already succeeded. Fixed by switching that task to `command: {argv: [...]}` (a real list,
+  each element passed to the process as-is, no shlex). Any future `command`/`shell` string
+  containing embedded `"` needs the same treatment.
+- Real-VM run also confirmed: k3s server/agent join, IPv6 node registration (`kubectl get nodes
+  -o wide` shows the real DHBWV6 addresses), and node Ready state all work as designed.
 - `argocd_bootstrap` installs a version-pinned ArgoCD **core** manifest (not HA — single
   control-plane lab cluster) and applies `gitops/apps/app-of-apps.yaml` **only if that file
   already exists** (checked via `stat`, skips otherwise instead of failing) — expected to still
@@ -181,9 +190,9 @@ of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
-- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, statically verified —
-  syntax-check/ansible-lint/yamllint/Jinja render checks pass, two bugs found+fixed this way, see
-  Ansible specifics above — still untested against real VMs, pending `terraform apply`), repo
+- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, verified both
+  statically and against real DHBWCloud VMs — k3s server/agent join and IPv6 node registration
+  confirmed working; three real bugs found+fixed along the way, see Ansible specifics above), repo
   scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
