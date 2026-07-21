@@ -123,8 +123,9 @@ if needed rather than reviving the Ansible role.
 ### Ansible specifics (verified in WSL against real DHBWCloud VMs)
 
 - Roles run in a fixed order (see `playbooks/site.yml`): `common` → `k3s_server` → `k3s_agent` →
-  `node_labels` → `argocd_bootstrap`. Each depends on state from the previous one (e.g. agents
-  need the server's node-token; labels need registered nodes).
+  `node_labels` → `argocd_bootstrap` → `gitops_secrets`. Each depends on state from the previous
+  one (e.g. agents need the server's node-token; labels need registered nodes; `gitops_secrets`
+  needs the kubeconfig `k3s_server` fetched locally).
 - k3s is installed with **IPv6-specific flags** because the cluster network is IPv6-only:
   `--node-ip`/`--tls-san` on the node's own IPv6, `--cluster-cidr`/`--service-cidr` in the ULA
   range `fd00::/8` (not globally routable on purpose), `--flannel-ipv6-masq` for pod egress NAT.
@@ -150,8 +151,21 @@ if needed rather than reviving the Ansible role.
   -o wide` shows the real DHBWV6 addresses), and node Ready state all work as designed.
 - `argocd_bootstrap` installs a version-pinned ArgoCD **core** manifest (not HA — single
   control-plane lab cluster) and applies `gitops/apps/app-of-apps.yaml` **only if that file
-  already exists** (checked via `stat`, skips otherwise instead of failing) — expected to still
-  be a no-op until the GitOps layer is written.
+  already exists** (checked via `stat`, skips otherwise instead of failing) — the file now exists
+  (see gitops layer above), so this actually runs; the `stat` guard stays as a safety net for
+  older checkouts/tags without it.
+- `gitops_secrets` (new role) creates the RFC2136-TSIG `Secret`s that
+  `gitops/apps/cert-manager-issuer.yaml`/`external-dns.yaml` reference via `secretKeyRef` — this
+  is a narrow, deliberate exception to "Ansible does nothing beyond k3s/labels/ArgoCD", **not** a
+  repeat of the reverted `ansible-bootstrap` approach: it creates zero Helm releases/operators
+  (those stay 100% ArgoCD-owned), only two `Secret` objects containing credential material that,
+  by design, must never be committed to git and so can't be provisioned by a git-driven tool.
+  Reads the value from `infra/ansible/secrets.yml` (gitignored, `secrets.yml.example` is the
+  template — same pattern as `terraform.tfvars`/`terraform.tfvars.example`), runs entirely
+  `delegate_to: localhost` against the locally-fetched kubeconfig (never touches the remote VM's
+  shell/process list), and self-skips (doesn't fail) if `secrets.yml` is absent or still has the
+  `CHANGE_ME` placeholder. See `infra/ansible/README.md` ## GitOps-Secrets and `gitops/README.md`
+  ## DNS/ACME.
 - The ArgoCD install task uses `kubectl apply --server-side --force-conflicts`, not plain
   `apply`: plain (client-side) apply stores the whole previous config in a
   `last-applied-configuration` annotation, and ArgoCD's `applicationsets.argoproj.io` CRD is big
@@ -223,8 +237,10 @@ of leaving this section stale.
   cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm instead of the
   Ansible roles on branch `ansible-bootstrap` (see Infra layering above). All four use the real
   DHBW DNS zone (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The
-  RFC2136 TSIG secret itself is deliberately **not** in the repo — see `gitops/README.md` ##
-  DNS/ACME for the `kubectl create secret` step required before the first real sync.
+  RFC2136 TSIG secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
+  creates the two K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
+  (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
+  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets).
 - **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
   `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +

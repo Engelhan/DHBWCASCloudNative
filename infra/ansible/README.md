@@ -34,20 +34,22 @@ Das Cluster-Netz ist reines IPv6 (siehe [`../terraform/`](../terraform/)). Darau
 ```
 ansible/
 ├── ansible.cfg
+├── secrets.yml.example       # Vorlage fuer secrets.yml (git-ignoriert, siehe unten)
 ├── inventory/
 │   ├── group_vars/
 │   │   └── all.yml          # gepinnte Versionen, IPv6-CIDRs
 │   ├── hosts.ini             # von Terraform generiert, git-ignoriert (siehe hosts.ini.example)
 │   └── hosts.ini.example
 ├── playbooks/
-│   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap
-│   └── bootstrap-gitops.yml # nur der ArgoCD-Teil, separat erneut aufrufbar
+│   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap -> gitops_secrets
+│   └── bootstrap-gitops.yml # nur ArgoCD/App-of-Apps + gitops_secrets, separat erneut aufrufbar
 └── roles/
     ├── common/               # Paketindex, Basispakete, deterministischer Hostname
     ├── k3s_server/           # k3s-Server (IPv6-Flags), Node-Token, kubeconfig lokal abholen
     ├── k3s_agent/            # k3s-Agent, Join per Token/URL der Control-Plane
     ├── node_labels/          # topology.ticketflow/region je Worker (aus dem Terraform-Inventory)
-    └── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, App-of-Apps
+    ├── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, App-of-Apps
+    └── gitops_secrets/       # RFC2136-TSIG-K8s-Secrets fuer cert-manager/external-dns (aus secrets.yml)
 ```
 
 ## Warum Ansible und nicht alles in Terraform (`user_data`/cloud-init)
@@ -104,20 +106,38 @@ kubectl -n argocd get pods         # ArgoCD läuft
 Das ArgoCD-Admin-Passwort wird am Ende des Playbook-Laufs in der Konsolenausgabe angezeigt
 (`argocd_bootstrap` → Task "Initiales Admin-Passwort anzeigen").
 
+## GitOps-Secrets (`gitops_secrets`)
+
+`gitops/apps/cert-manager-issuer.yaml` und `gitops/apps/external-dns.yaml` referenzieren
+K8s-Secrets (RFC2136-TSIG-Wert), die laut `CLAUDE.md` ## Infra layering **nicht** im Git-Repo
+stehen dürfen — ArgoCD (git-getrieben) kann sie deshalb nicht selbst anlegen. Die Rolle
+`gitops_secrets` schließt genau diese Lücke, läuft aber komplett lokal gegen die abgeholte
+`kubeconfig` (kein SSH, das Secret landet nie in einer Prozessliste auf den VMs) und installiert
+selbst keine Helm-Charts/Operatoren — das bleibt vollständig GitOps-eigen.
+
+```bash
+cp infra/ansible/secrets.yml.example infra/ansible/secrets.yml
+# rfc2136_tsig_secret_value in secrets.yml eintragen (Datei ist git-ignoriert)
+ansible-playbook playbooks/site.yml                    # oder gezielt:
+ansible-playbook playbooks/bootstrap-gitops.yml         # nur ArgoCD + gitops_secrets erneut
+```
+
+Fehlt `secrets.yml` (frisches Setup, DNS-Zone noch nicht aktiviert) oder enthält sie noch den
+Platzhalter `CHANGE_ME`, überspringt sich die Rolle selbst statt fehlzuschlagen — siehe
+`gitops/README.md` ## DNS/ACME für den Gesamtkontext.
+
 ## Offene Punkte
 
-- `gitops/apps/app-of-apps.yaml` existiert noch nicht (siehe [`../../gitops/`](../../gitops/)) –
-  `argocd_bootstrap` prüft das per `stat` und überspringt das Anwenden, statt fehlzuschlagen.
-  Sobald die Datei geschrieben ist, holt `ansible-playbook playbooks/bootstrap-gitops.yml` sie
-  nach.
 - Kein eigenes Ingress/LoadBalancer-Handling: k3s installiert standardmäßig Traefik und
   ServiceLB mit. Ob das für die spätere Anwendung passt oder abgeschaltet wird, entscheidet sich
   beim Schreiben des Helm-Charts ([`../../charts/ticketflow/`](../../charts/ticketflow/)).
 - `become` setzt passwortlosen `sudo` für den in `hosts.ini` hinterlegten SSH-User voraus – auf
   den üblichen Cloud-Images (z.B. Ubuntu-Cloud-Images mit vorbereitetem `ubuntu`-User) ist das
   der Standard.
-- `ansible-lint` (Profil `basic`) meldet aktuell noch 42 rein stilistische Funde (FQCN-Modulnamen
-  wie `command` statt `ansible.builtin.command`, `no-role-prefix` bei `register`-Variablen,
+- `ansible-lint` (Profil `basic`) meldet weiterhin rein stilistische Funde (FQCN-Modulnamen wie
+  `command` statt `ansible.builtin.command`, `no-role-prefix` bei `register`-Variablen,
   Task-Namen mit Kleinbuchstaben wie "k3s-Server installieren", fehlendes `changed_when` bei den
   gated Install-Shells) – keine davon ändert das Verhalten, bewusst nicht mitgefixt, um den Diff
-  klein zu halten. Bei Bedarf `ansible-lint` erneut laufen lassen, um die aktuelle Liste zu sehen.
+  klein zu halten. Neue Rollen (z.B. `gitops_secrets`) werden dagegen `risky-shell-pipe`-sauber
+  gehalten (`set -o pipefail`, siehe CLAUDE.md-Hinweis zum `curl | sh`-Bug). Bei Bedarf
+  `ansible-lint` erneut laufen lassen, um die aktuelle Liste zu sehen.
