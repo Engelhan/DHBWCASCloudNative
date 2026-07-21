@@ -136,6 +136,12 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
   control-plane lab cluster) and applies `gitops/apps/app-of-apps.yaml` **only if that file
   already exists** (checked via `stat`, skips otherwise instead of failing) — expected to still
   be a no-op until the GitOps layer is written.
+- The ArgoCD install task uses `kubectl apply --server-side --force-conflicts`, not plain
+  `apply`: plain (client-side) apply stores the whole previous config in a
+  `last-applied-configuration` annotation, and ArgoCD's `applicationsets.argoproj.io` CRD is big
+  enough to blow past the Kubernetes API's hard 262144-byte annotation-size limit ("Too long"),
+  failing the apply after most other objects already got created. Server-side apply doesn't write
+  that annotation at all. Found on a real run against DHBWCloud VMs.
 - Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.4` (latest
   stable, not the 3.5 release candidates at time of writing).
 - **Ansible cannot run as the controller on native Windows** (`ansible-core` fails with
