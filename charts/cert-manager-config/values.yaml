@@ -1,0 +1,42 @@
+# Alle "CHANGE_ME_"-Werte sind Platzhalter (keine eigene DHBW-DNS-Zone/ACME-Kontakt bisher
+# vorhanden, siehe infra/ansible/README.md ## Uebernommene Funktionen aus k3s-dhbw-cloud-role
+# und die urspruengliche Ansible-Rolle cert_manager auf Branch ansible-bootstrap). Solange sie
+# Platzhalter sind, bleibt gitops/apps/cert-manager-issuer.yaml bewusst OHNE
+# syncPolicy.automated - der ClusterIssuer wird also nur ausgerollt, wenn hier echte Werte
+# eingetragen und `argocd app sync cert-manager-issuer` manuell ausgefuehrt wird.
+#
+# Aktivierung:
+#   1. Werte unten ersetzen (email, rfc2136.zone, rfc2136.tsigKeyName; ggf. rfc2136.tsigAlgorithm)
+#   2. TSIG-Secret VORHER manuell anlegen (nicht ins Repo committen!):
+#        kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
+#          --from-literal=secret=<echter TSIG-Wert>
+#   3. argocd app sync cert-manager-issuer
+
+email: "CHANGE_ME_ACME_EMAIL"
+# DHBW-internes ACME-Verzeichnis (nur aus dem DHBW-Netz/VPN erreichbar).
+acmeServer: "https://certificates.dhbw.cloud"
+clusterIssuerName: certificate-cluster-issuer
+privateKeySecretName: cert-manager-private-key-secret
+
+# dns01 ist die einzige Challenge, die Wildcard-Zertifikate ausstellen kann; http01 braucht
+# keine DNS-Zone/TSIG-Key, kann aber kein "*.zone"-Zertifikat ausstellen.
+challenge: dns01 # dns01 | http01
+
+rfc2136:
+  # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname.
+  host: "141.72.5.244"
+  port: 53
+  zone: "CHANGE_ME_RFC2136_ZONE" # z.B. "team.dhbw.cloud"
+  tsigKeyName: "CHANGE_ME_RFC2136_TSIG_KEYNAME"
+  tsigAlgorithm: hmac-sha512
+  # Verweist nur auf ein manuell/per External-Secret angelegtes Secret - der Wert selbst steht
+  # bewusst NICHT im Repo (siehe Aktivierungs-Hinweis oben).
+  tsigSecretName: cert-manager-rfc2136-tsig
+
+# Traefik serviert dieses Zertifikat fuer jeden HTTPS-Host ohne spezifischeres Zertifikat.
+# Nur sinnvoll, sobald rfc2136.zone gesetzt ist (Wildcard braucht dns01).
+wildcardCertificate:
+  enabled: false
+  secretName: wildcard-tls
+  # k3s buendelt Traefik in kube-system - dort muss das Wildcard-Secret liegen.
+  traefikNamespace: kube-system

@@ -1,0 +1,29 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.clusterIssuerName }}
+spec:
+  acme:
+    email: {{ .Values.email | quote }}
+    server: {{ .Values.acmeServer | quote }}
+    privateKeySecretRef:
+      name: {{ .Values.privateKeySecretName }}
+    solvers:
+{{- if eq .Values.challenge "dns01" }}
+      - dns01:
+          rfc2136:
+            {{- if contains ":" .Values.rfc2136.host }}
+            nameserver: "[{{ .Values.rfc2136.host }}]:{{ .Values.rfc2136.port }}"
+            {{- else }}
+            nameserver: "{{ .Values.rfc2136.host }}:{{ .Values.rfc2136.port }}"
+            {{- end }}
+            tsigKeyName: {{ .Values.rfc2136.tsigKeyName | quote }}
+            tsigAlgorithm: {{ .Values.rfc2136.tsigAlgorithm | replace "-" "" | upper }}
+            tsigSecretSecretRef:
+              name: {{ .Values.rfc2136.tsigSecretName }}
+              key: secret
+{{- else }}
+      - http01:
+          ingress:
+            class: traefik
+{{- end }}

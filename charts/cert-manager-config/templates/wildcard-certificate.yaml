@@ -1,0 +1,29 @@
+{{- if .Values.wildcardCertificate.enabled }}
+{{- if ne .Values.challenge "dns01" }}
+{{- fail "wildcardCertificate.enabled erfordert challenge: dns01 (Wildcards koennen nicht per http01 validiert werden)" }}
+{{- end }}
+# Ein Wildcard-Zertifikat fuer *.<rfc2136.zone> statt Zertifikate pro Host.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.wildcardCertificate.secretName }}
+  namespace: {{ .Values.wildcardCertificate.traefikNamespace }}
+spec:
+  secretName: {{ .Values.wildcardCertificate.secretName }}
+  dnsNames:
+    - "*.{{ .Values.rfc2136.zone }}"
+  issuerRef:
+    name: {{ .Values.clusterIssuerName }}
+    kind: ClusterIssuer
+---
+# Traefik serviert dieses Zertifikat fuer jeden HTTPS-Host ohne spezifischeres Zertifikat - muss
+# "default" heissen und im Traefik-Namespace liegen.
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: {{ .Values.wildcardCertificate.traefikNamespace }}
+spec:
+  defaultCertificate:
+    secretName: {{ .Values.wildcardCertificate.secretName }}
+{{- end }}
