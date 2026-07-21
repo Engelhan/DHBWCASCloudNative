@@ -1,0 +1,73 @@
+---
+# Verteilter Block-Storage. Node-Voraussetzungen (open-iscsi, nfs-common, iscsid,
+# iscsi_tcp) sind bereits in roles/common erledigt; hier nur die Cluster-Komponenten.
+- name: Longhorn-Deployment
+  when: longhorn_enabled | bool
+  block:
+    # Replica-Anzahl gegen die TATSAECHLICHE Clustergroesse validieren - an dieser
+    # Stelle (nach k3s_server + k3s_agent) sind alle Worker dieses Laufs bereits
+    # beigetreten. Lieber hier frueh abbrechen als Longhorn mit nicht schedulebaren
+    # Replicas zu installieren (Volumes blieben dauerhaft "Degraded").
+    - name: Anzahl Cluster-Nodes ermitteln
+      kubernetes.core.k8s_info:
+        kind: Node
+        kubeconfig: "{{ kubeconfig_root }}"
+      register: longhorn_cluster_nodes
+
+    - name: longhorn_replica_count gegen die Clustergroesse validieren
+      assert:
+        that:
+          - longhorn_replica_count | int >= 1
+          - longhorn_replica_count | int <= (longhorn_cluster_nodes.resources | length)
+        fail_msg: >-
+          longhorn_replica_count={{ longhorn_replica_count }} ist ungueltig fuer ein
+          Cluster mit {{ longhorn_cluster_nodes.resources | length }} Node(s). Muss
+          zwischen 1 und der Node-Anzahl liegen - sonst bleiben Replicas dauerhaft
+          ungeplant ("Degraded"). longhorn_replica_count senken oder Nodes ergaenzen.
+        success_msg: >-
+          longhorn_replica_count={{ longhorn_replica_count }} passt zu
+          {{ longhorn_cluster_nodes.resources | length }} Node(s).
+
+    - name: Longhorn-Namespace sicherstellen
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ longhorn_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+
+    - name: Longhorn installieren/aktualisieren
+      kubernetes.core.helm:
+        name: longhorn
+        chart_ref: longhorn/longhorn
+        chart_version: "{{ longhorn_version or omit }}"
+        release_namespace: "{{ longhorn_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        values:
+          persistence:
+            defaultClass: "{{ longhorn_default_storage_class | bool }}"
+            defaultClassReplicaCount: "{{ longhorn_replica_count | int }}"
+          defaultSettings:
+            defaultReplicaCount: "{{ longhorn_replica_count | int }}"
+            # Replicas auf mehrere Nodes verteilen, damit nicht ein Node mehrere
+            # "letzte Replicas" haelt (jede wuerde ein Drain waehrend eines
+            # Rolling-Upgrades blockieren).
+            replicaAutoBalance: "{{ longhorn_replica_auto_balance }}"
+            # Letzte Replica vor einem Drain live migrieren, damit automatische
+            # k3s-Upgrades (roles/system_upgrade) nie an einem Single-Replica-Volume
+            # haengen bleiben (Chart-Default block-if-contains-last-replica blockiert
+            # sonst dauerhaft).
+            nodeDrainPolicy: "{{ longhorn_node_drain_policy }}"
+            # Erlaubt, mehr zu reservieren als die rohe Diskgroesse (Thin-Provisioning) -
+            # noetig fuer speicherhungrige Workloads auf den kleinen Lab-VMs.
+            storageOverProvisioningPercentage: "{{ longhorn_storage_over_provisioning_percentage | int }}"
+        wait: true
+        # Longhorn zieht mehrere Images und rollt CRDs + DaemonSets aus - mehr Zeit
+        # als das Modul-Standard-Timeout. Bewusst NICHT atomic: ein fehlgeschlagener
+        # Longhorn-Install/-Rollback kann an CRD-Finalizers haengen bleiben und
+        # manuelles Aufraeumen brauchen; state: present (helm upgrade -i) konvergiert
+        # beim naechsten Lauf von selbst nach.
+        wait_timeout: "10m0s"

@@ -1,0 +1,85 @@
+---
+# Eine Pruefrunde fuer ein einzelnes Ziel (probe_dest): es hoert auf dem Overlay-
+# Port, waehrend jeder ANDERE Node ihm ein mit dem eigenen Namen markiertes
+# Datagramm schickt. Das Ziel meldet, von wem es etwas empfangen hat - wir
+# pruefen, dass das ALLE Peers waren (= Ingress zu probe_dest ist von jedem
+# Peer offen). Die Schleife in main.yml ueber alle Nodes deckt beide Richtungen
+# ab, da jeder Node genau einmal Ziel ist.
+
+# Ueberspringen, wenn probe_dest schon k3s laufen hat: Flannel haelt dann den
+# Overlay-Port belegt (Listener kann ihn nicht binden, EADDRINUSE) - und ein
+# laufendes Cluster beweist ohnehin schon, dass der Port funktioniert. Macht den
+# Check zu einem echten Pre-Install-Gate, das bei erneuten Laeufen zum No-Op
+# wird, waehrend ein neu hinzugefuegter Node weiterhin als Ziel geprueft wird
+# (bestehende Peers erreichen ihn).
+- name: "Pruefen, ob k3s auf {{ probe_dest }} den Overlay-Port schon haelt"
+  stat:
+    path: /usr/local/bin/k3s
+  delegate_to: "{{ probe_dest }}"
+  register: probe_dest_k3s
+
+- name: "Ueberspringen: k3s bereits installiert (Overlay-Port belegt) auf {{ probe_dest }}"
+  debug:
+    msg: >-
+      {{ probe_dest }} laeuft bereits mit k3s - Flannel haelt UDP
+      {{ connectivity_check_port }} belegt, das laufende Overlay beweist die
+      Erreichbarkeit bereits. Probe fuer diesen Node wird uebersprungen.
+  when: probe_dest_k3s.stat.exists
+
+- name: "Overlay-Erreichbarkeit zu {{ probe_dest }} pruefen"
+  when: not probe_dest_k3s.stat.exists
+  block:
+    - name: "Overlay-Listener auf {{ probe_dest }} starten"
+      command: "python3 /tmp/udp_probe.py listen {{ connectivity_check_port }} {{ preflight_probe_duration }}"
+      async: "{{ (preflight_probe_duration | int) + 15 }}"
+      poll: 0
+      delegate_to: "{{ probe_dest }}"
+      register: probe_listener
+      changed_when: false
+
+    - name: "Kurz warten, bis der Listener gebunden hat ({{ probe_dest }})"
+      pause:
+        seconds: 1
+
+    # Jeden Peer-Sende-Vorgang parallel feuern (async + poll:0), damit alle
+    # Datagramme innerhalb des Listener-Zeitfensters ankommen - sequenziell
+    # wuerde das Fenster bei >=4 Nodes ueberschreiten und spaete Peers faelschlich
+    # als "BLOCKED" melden.
+    - name: "Overlay-Probes von jedem Peer an {{ probe_dest }} senden"
+      command: "python3 /tmp/udp_probe.py send {{ connectivity_check_port }} {{ item }} {{ hostvars[probe_dest].ansible_host }}"
+      delegate_to: "{{ item }}"
+      loop: "{{ ansible_play_hosts | difference([probe_dest]) }}"
+      async: "{{ (preflight_probe_duration | int) + 10 }}"
+      poll: 0
+      changed_when: false
+
+    - name: "Listener-Ergebnis von {{ probe_dest }} einsammeln"
+      async_status:
+        jid: "{{ probe_listener.ansible_job_id }}"
+      delegate_to: "{{ probe_dest }}"
+      register: probe_result
+      until: probe_result.finished
+      retries: "{{ (preflight_probe_duration | int) + 10 }}"
+      delay: 1
+      changed_when: false
+
+    - name: "Empfang der Overlay-Probes von jedem Peer auf {{ probe_dest }} verifizieren"
+      assert:
+        that:
+          - probe_unreached | length == 0
+        fail_msg: >-
+          Overlay-Port UDP {{ connectivity_check_port }} ist BLOCKIERT zu
+          {{ probe_dest }} ({{ hostvars[probe_dest].ansible_host }}) von:
+          {{ probe_unreached | join(', ') }}. Flannel wuerde das Cluster bilden,
+          aber Pod-Traffic zwischen diesen Nodes ins Leere laufen lassen. UDP
+          {{ connectivity_check_port }} Ingress auf {{ probe_dest }} von diesen
+          Nodes in der OpenStack-Security-Group oeffnen (in beide Richtungen im
+          Cluster). preflight_connectivity_check=false setzen, um den Check zu
+          ueberspringen.
+        success_msg: >-
+          {{ probe_dest }} erreichbar auf UDP {{ connectivity_check_port }} von
+          allen {{ probe_expected | length }} Peer(s).
+      vars:
+        probe_expected: "{{ ansible_play_hosts | difference([probe_dest]) }}"
+        probe_received: "{{ probe_result.stdout_lines | default([]) | map('trim') | select | list }}"
+        probe_unreached: "{{ probe_expected | difference(probe_received) }}"

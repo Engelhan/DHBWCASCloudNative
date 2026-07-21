@@ -1,0 +1,120 @@
+---
+# cert-manager + ClusterIssuer - nur wenn cert_manager_email gesetzt ist (siehe
+# inventory/group_vars/all.yml). Ohne echte E-Mail bleibt dieser Block komplett
+# inaktiv, statt mit einer unbrauchbaren ACME-Registrierung fehlzuschlagen.
+- name: cert-manager-Deployment
+  when: cert_manager_email is defined and cert_manager_email != ""
+  block:
+    - name: cert-manager-Namespace sicherstellen
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ cert_manager_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+
+    - name: cert-manager installieren/aktualisieren
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: jetstack/cert-manager
+        release_namespace: "{{ cert_manager_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        values:
+          installCRDs: true
+        wait: true
+        atomic: true
+
+    - name: EAB-Secret anlegen
+      when: cert_manager_eab_keyid != "" and cert_manager_eab_secret != ""
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ cert_manager_eab_secret_name }}"
+            namespace: "{{ cert_manager_namespace }}"
+          type: Opaque
+          data:
+            secret: "{{ cert_manager_eab_secret | b64encode }}"
+
+    # data (nicht stringData) haelt den Task idempotent - k8s speichert den Wert
+    # 1:1, cert-manager base64-dekodiert ihn wieder auf denselben Wert, den auch
+    # external-dns nutzt. Nur fuer dns01 noetig - http01 braucht keine Credentials.
+    - name: RFC2136-TSIG-Secret fuer den cert-manager-dns01-Solver anlegen
+      when:
+        - cert_manager_preferred_challenge == 'dns01'
+        - rfc2136_tsig_secret_value | default('') | length > 0
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ cert_manager_rfc2136_tsig_secret_name }}"
+            namespace: "{{ cert_manager_namespace }}"
+          type: Opaque
+          data:
+            secret: "{{ rfc2136_tsig_secret_value | b64encode }}"
+
+    - name: ClusterIssuer-Template rendern
+      template:
+        src: cluster_issuer.yaml.j2
+        dest: /tmp/cluster_issuer.yaml
+        mode: "0600"
+
+    - name: cert-manager-ClusterIssuer fuer Let's Encrypt anwenden
+      kubernetes.core.k8s:
+        src: /tmp/cluster_issuer.yaml
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+
+    # Wildcard-Zertifikat: sobald dns01 aktiv ist (Zone + TSIG-Key gesetzt - dieselbe
+    # Bedingung, unter der der ClusterIssuer den dns01-Solver nutzt), stellt die
+    # Rolle EIN Wildcard-Zertifikat fuer *.<rfc2136_zone> aus statt Zertifikate pro
+    # Host. cert-manager legt Zertifikat+Key als TLS-Secret im Traefik-Namespace ab.
+    # Ein Wildcard kann nicht per http01 validiert werden.
+    - name: Wildcard-Zertifikat per DNS-01-Solver anfordern
+      when: &wildcard_active
+        - cert_manager_preferred_challenge == 'dns01'
+        - rfc2136_zone | default('') | length > 0
+        - rfc2136_tsig_secret_value | default('') | length > 0
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: "{{ cert_manager_wildcard_secret_name }}"
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            secretName: "{{ cert_manager_wildcard_secret_name }}"
+            dnsNames:
+              - "*.{{ rfc2136_zone }}"
+            issuerRef:
+              name: "{{ cert_manager_cluster_issuer_name }}"
+              kind: ClusterIssuer
+
+    # Traefik serviert dieses Zertifikat fuer jeden HTTPS-Host, dessen SNI kein
+    # spezifischeres Zertifikat hat - Ingresses muessen dann kein TLS-Secret mehr
+    # referenzieren. Muss "default" heissen und im Traefik-Namespace liegen.
+    - name: Wildcard-Zertifikat als Traefik-Default-TLS-Store registrieren
+      when: *wildcard_active
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: TLSStore
+          metadata:
+            name: default
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            defaultCertificate:
+              secretName: "{{ cert_manager_wildcard_secret_name }}"

@@ -1,0 +1,129 @@
+---
+# Automatische k3s-Upgrades ueber Rancher's system-upgrade-controller. Nur wenn
+# k3s_auto_upgrade_enabled=true (Default: false, siehe inventory/group_vars/all.yml
+# fuer die Begruendung - widerspricht sonst dem "keine latest-Tags, bewusst
+# pinnen"-Prinzip des Projekts). Siehe https://docs.k3s.io/upgrades/automated.
+- name: Automatische k3s-Upgrades
+  when: k3s_auto_upgrade_enabled | bool
+  vars:
+    system_upgrade_manifest_base: >-
+      https://github.com/rancher/system-upgrade-controller/releases/download/{{ system_upgrade_controller_version }}
+    # channel vs. version: eine gesetzte, gepinnte Version gewinnt, sonst folgt der
+    # Channel. Wird oben ins jeweilige Plan-Spec gemergt (spec.channel/spec.version -
+    # NICHT unter spec.upgrade, das haelt nur das Container-Image).
+    k3s_upgrade_source: >-
+      {{
+        {'version': k3s_auto_upgrade_version} if (k3s_auto_upgrade_version | length > 0)
+        else {'channel': 'https://update.k3s.io/v1-release/channels/' + k3s_auto_upgrade_channel}
+      }}
+    # Wartungsfenster in beide Plan-Specs gemergt; leeres Dict wenn deaktiviert,
+    # damit combine() das Spec unveraendert laesst (Upgrades jederzeit moeglich).
+    upgrade_window: >-
+      {{
+        {'window': {
+          'days': k3s_auto_upgrade_window_days,
+          'startTime': k3s_auto_upgrade_window_start,
+          'endTime': k3s_auto_upgrade_window_end,
+          'timeZone': k3s_auto_upgrade_window_timezone
+        }} if (k3s_auto_upgrade_window_enabled | bool) else {}
+      }}
+  block:
+    # Controller-Install: get_url (folgt GitHubs Redirect zum Storage), dann lokal
+    # anwenden - kubernetes.core.k8s hat keine URL-Quelle. Das Controller-Manifest
+    # legt den system-upgrade-Namespace + ServiceAccount selbst an.
+    - name: system-upgrade-controller-CRD-Manifest herunterladen
+      get_url:
+        url: "{{ system_upgrade_manifest_base }}/crd.yaml"
+        dest: /root/system-upgrade-controller-crd.yaml
+        mode: "0600"
+
+    - name: system-upgrade-controller-Manifest herunterladen
+      get_url:
+        url: "{{ system_upgrade_manifest_base }}/system-upgrade-controller.yaml"
+        dest: /root/system-upgrade-controller.yaml
+        mode: "0600"
+
+    - name: system-upgrade-controller-CRD anwenden
+      kubernetes.core.k8s:
+        src: /root/system-upgrade-controller-crd.yaml
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+
+    - name: system-upgrade-controller anwenden
+      kubernetes.core.k8s:
+        src: /root/system-upgrade-controller.yaml
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+
+    # Warten, bis die Plan-CRD Established ist, bevor Plan-Objekte angelegt werden -
+    # sonst rennt der Apply gegen die CRD-Registrierung und schlaegt fehl.
+    - name: Warten, bis die Plan-CRD Established ist
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: plans.upgrade.cattle.io
+        kubeconfig: "{{ kubeconfig_root }}"
+      register: system_upgrade_plan_crd
+      until: >-
+        system_upgrade_plan_crd.resources | length > 0 and
+        (system_upgrade_plan_crd.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Established')
+          | selectattr('status', 'equalto', 'True') | list | length > 0)
+      retries: 30
+      delay: 5
+
+    # Server-Plan: zielt auf die Control-Plane, nur cordon (ein Drain wuerde den
+    # Controller selbst evicten / bei einem einzelnen Node deadlocken).
+    - name: Server-Upgrade-Plan anlegen
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: upgrade.cattle.io/v1
+          kind: Plan
+          metadata:
+            name: server-plan
+            namespace: "{{ system_upgrade_namespace }}"
+          spec: "{{ server_plan_spec | combine(k3s_upgrade_source, upgrade_window) }}"
+      vars:
+        server_plan_spec:
+          concurrency: 1
+          cordon: true
+          nodeSelector:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: In
+                values: ["true"]
+          serviceAccountName: system-upgrade
+          upgrade:
+            image: rancher/k3s-upgrade
+
+    # Agent-Plan: zielt auf die Worker; der prepare-Schritt wartet, bis der
+    # Server-Plan fertig ist (server-vor-agent-Reihenfolge). Drained optional
+    # (force) statt nur zu cordonen.
+    - name: Agent-Upgrade-Plan anlegen
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        definition:
+          apiVersion: upgrade.cattle.io/v1
+          kind: Plan
+          metadata:
+            name: agent-plan
+            namespace: "{{ system_upgrade_namespace }}"
+          spec: "{{ agent_plan_spec | combine(agent_plan_drain, k3s_upgrade_source, upgrade_window) }}"
+      vars:
+        agent_plan_spec:
+          concurrency: 1
+          cordon: "{{ not (k3s_auto_upgrade_drain | bool) }}"
+          nodeSelector:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          serviceAccountName: system-upgrade
+          prepare:
+            image: rancher/k3s-upgrade
+            args: ["prepare", "server-plan"]
+          upgrade:
+            image: rancher/k3s-upgrade
+        agent_plan_drain: "{{ {'drain': {'force': true}} if (k3s_auto_upgrade_drain | bool) else {} }}"

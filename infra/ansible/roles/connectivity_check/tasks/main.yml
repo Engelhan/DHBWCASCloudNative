@@ -1,0 +1,38 @@
+---
+# Praeflug-Check: verifiziert vor der k3s-Installation, dass der Flannel-VXLAN-
+# Overlay-Port zwischen ALLEN Nodes in BEIDE Richtungen erreichbar ist.
+#
+# Warum: k3s' Standard-Flannel-Backend ist VXLAN (UDP 8472). OpenStack-Security-
+# Groups lassen haeufig SSH/API (TCP 6443) und ICMP durch, blockieren aber still
+# den VXLAN-UDP-Port. Das Cluster bildet sich dann trotzdem (alle Nodes Ready),
+# aber Pod-zu-Pod-Traffic zwischen Nodes geht ins Leere - CoreDNS flackert,
+# Services haengen, Longhorn-Replicas koennen nicht synchronisieren. Der Check
+# testet den ECHTEN Overlay-Port mit einem kooperativen Listener (ein Ping wuerde
+# durchgehen und falsche Sicherheit vorgaukeln) und schlaegt frueh mit einer
+# konkreten Fehlermeldung fehl statt erst nach der Installation.
+#
+# Laeuft auf k3s_cluster (alle Nodes) VOR den k3s_server/k3s_agent-Plays (siehe
+# playbooks/site.yml), damit der Port noch frei ist. Uebernommen aus
+# k3s-dhbw-cloud-role, adaptiert auf ansible_host (dieses Projekt hat pro Node
+# nur eine IPv6-Adresse, kein dual-stack _node_ip_list wie im Original).
+
+- name: Overlay-UDP-Port und Aktivierung des Checks ermitteln
+  set_fact:
+    connectivity_check_port: >-
+      {{ preflight_overlay_port if (preflight_overlay_port | int) > 0 else 8472 }}
+    connectivity_check_active: "{{ (preflight_connectivity_check | bool) and (ansible_play_hosts | length) > 1 }}"
+
+- name: UDP-Probe-Helfer auf allen Nodes installieren
+  copy:
+    src: udp_probe.py
+    dest: /tmp/udp_probe.py
+    mode: "0755"
+  when: connectivity_check_active
+
+- name: Overlay-Port von jedem Node zu jedem anderen Node pruefen (beide Richtungen)
+  include_tasks: probe.yml
+  loop: "{{ ansible_play_hosts }}"
+  loop_control:
+    loop_var: probe_dest
+  run_once: true
+  when: connectivity_check_active

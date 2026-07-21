@@ -10,3 +10,158 @@ argocd_version: "v3.4.4"
 # außen erreichbar sein, --flannel-ipv6-masq übernimmt die Adressumsetzung für Pod-Egress-Traffic.
 k3s_cluster_cidr: "fd00:42::/56"
 k3s_service_cidr: "fd00:43::/112"
+
+# -----------------------------------------------------------------------------
+# Ab hier: Funktionen aus https://github.com/pfisterer/k3s-dhbw-cloud-role
+# uebernommen (siehe infra/ansible/README.md ## Uebernommene Funktionen aus
+# k3s-dhbw-cloud-role fuer den Kontext). Anders als das Original-Repo (das
+# dual-stack- und beliebige Umgebungen abdeckt) ist dieses Projekt bewusst und
+# fest auf IPv6-only (DHBWV6) festgelegt (siehe Terraform-Spezifika oben) -
+# deshalb wurde die generische ip_family/dual-stack-Erkennung NICHT mit
+# uebernommen, die bestehenden IPv6-Direktwerte oben bleiben die einzige
+# Quelle fuer Cluster-/Service-CIDR und Node-IP.
+
+# -----------------------------------------------------------------------------
+## Preflight: Inter-Node-Overlay-Connectivity-Check (Rolle connectivity_check)
+# -----------------------------------------------------------------------------
+# Prueft vor der k3s-Installation, ob der Flannel-VXLAN-Overlay-Port zwischen
+# ALLEN Nodes in BEIDE Richtungen erreichbar ist. OpenStack-Security-Groups
+# lassen oft SSH/API (TCP) und ICMP durch, blockieren aber still den VXLAN-UDP-
+# Port - das Cluster bildet sich dann trotzdem (alle Nodes Ready), aber Pod-zu-
+# Pod-Traffic zwischen Nodes geht ins Leere. Per Default an, da wir immer
+# mehrknotig sind (1 Control-Plane + Worker).
+preflight_connectivity_check: true
+# 0 = automatisch: 8472 fuer das k3s-Standard-VXLAN-Backend.
+preflight_overlay_port: 0
+preflight_probe_duration: 5
+
+# -----------------------------------------------------------------------------
+## Bootstrap: Client-/Entwickler-Tooling (Rolle k3s_server)
+# -----------------------------------------------------------------------------
+# Helm/kubectl/Skaffold + Shell-Aliase/Completions nur auf der Control-Plane
+# (Worker haben keine kubeconfig). Versionen bewusst gepinnt (kein "latest"),
+# kubectl_version matcht die k3s-Kubernetes-Version (v1.36.2) fuer minimalen
+# Versions-Skew.
+bootstrap_install_client_tools: true
+helm_version: "v3.21.3"
+kubectl_version: "v1.36.2"
+skaffold_version: "v2.23.0"
+# Pfad der kubeconfig AUF der Control-Plane selbst (nicht zu verwechseln mit dem
+# lokal abgeholten infra/ansible/kubeconfig) - Addon-Rollen (helm_addons,
+# cert_manager, external_dns, longhorn, system_upgrade) sprechen darueber mit
+# dem Cluster, da sie auf der Control-Plane selbst laufen.
+kubeconfig_root: /etc/rancher/k3s/k3s.yaml
+
+# -----------------------------------------------------------------------------
+## Addon: Longhorn (verteilter Block-Storage, Rolle longhorn)
+# -----------------------------------------------------------------------------
+# Wir sind immer mehrknotig (1 Control-Plane + Worker), daher an - k3s'
+# Standard-local-path-Storage ist node-lokal und bietet kein Failover.
+longhorn_enabled: true
+longhorn_namespace: longhorn-system
+longhorn_version: "1.11.3"
+# <= Anzahl Nodes, sonst bleiben Replicas ungeplant ("Degraded"); 1 haelt den
+# Plattenverbrauch auf den kleinen Lab-VMs niedrig (jede weitere Replica
+# verdoppelt/verdreifacht den Speicherbedarf des Volumes).
+longhorn_replica_count: 1
+longhorn_replica_auto_balance: least-effort
+longhorn_node_drain_policy: block-for-eviction-if-contains-last-replica
+longhorn_default_storage_class: true
+longhorn_storage_over_provisioning_percentage: 300
+
+# -----------------------------------------------------------------------------
+## Helm-Repositories (Rolle helm_addons)
+# -----------------------------------------------------------------------------
+k3s_role_helm_repos:
+  - name: jetstack  # cert-manager
+    url: "https://charts.jetstack.io"
+  - name: external-dns
+    url: "https://kubernetes-sigs.github.io/external-dns/"
+
+# -----------------------------------------------------------------------------
+## Addon: cert-manager mit ClusterIssuer (Rolle cert_manager)
+# -----------------------------------------------------------------------------
+# cert_manager_email bleibt bewusst leer: die Rolle installiert cert-manager +
+# ClusterIssuer nur, wenn eine echte E-Mail gesetzt ist (siehe roles/cert_manager
+# - "when: cert_manager_email | length > 0"). Ohne eigene DHBW-DNS-Zone/TSIG-Key
+# (siehe unten) waere ein ClusterIssuer ohnehin nur mit http01 nutzbar. Zum
+# Aktivieren: cert_manager_email hier (oder als -e Override) setzen.
+cert_manager_email: ""
+# DHBW-internes ACME-Verzeichnis (nur aus dem DHBW-Netz/VPN erreichbar).
+cert_manager_url: "https://certificates.dhbw.cloud"
+cert_manager_private_key_secret_name: "cert-manager-private-key-secret"
+cert_manager_eab_keyid: ""
+cert_manager_eab_secret: ""
+cert_manager_eab_secret_name: "cert-manager-eab-secret"
+cert_manager_namespace: cert-manager
+# dns01 ist die einzige Challenge, die Wildcard-Zertifikate ausstellen kann;
+# faellt ohne gesetzte rfc2136_*-Variablen unten automatisch auf http01 zurueck
+# (siehe ClusterIssuer-Template).
+cert_manager_preferred_challenge: dns01
+cert_manager_rfc2136_tsig_secret_name: "cert-manager-rfc2136-tsig"
+cert_manager_cluster_issuer_name: certificate-cluster-issuer
+cert_manager_wildcard_secret_name: "wildcard-tls"
+# k3s buendelt Traefik in kube-system - dort muss das Wildcard-Secret liegen.
+traefik_namespace: kube-system
+
+# -----------------------------------------------------------------------------
+## Addon: External DNS (Rolle external_dns)
+# -----------------------------------------------------------------------------
+external_dns_namespace: external-dns
+external_dns_version: "v0.19.0"
+external_dns_log_level: "debug"
+# TXT-Owner-ID projekteindeutig (nicht der generische Upstream-Default), damit
+# sich mehrere Cluster in derselben Zone nicht um dieselben Records streiten.
+external_dns_txt_owner_id: ticketflow-dns
+external_dns_txt_prefix: ticketflow-dns-
+# RFC2136-DNS-Server (auch Nameserver fuer den cert-manager-dns01-Solver) -
+# DHBW-Dynamic-DNS-Server, siehe self-service.dhbw.cloud.
+rfc2136_dns_host: "141.72.5.244"
+rfc2136_dns_port: 53
+# Ziel-Netze, die External DNS NIE veroeffentlicht (private/NAT-Adressen aus
+# Node-/Ingress-Status).
+external_dns_exclude_target_nets:
+  - 10.0.0.0/8  # RFC1918
+  - 172.16.0.0/12  # RFC1918
+  - 192.168.0.0/16  # RFC1918
+  - 100.64.0.0/10  # CGNAT (RFC6598)
+  - 169.254.0.0/16  # IPv4 Link-Local
+  - fc00::/7  # IPv6 ULA
+  - fe80::/10  # IPv6 Link-Local
+# rfc2136_zone, rfc2136_tsig_secret_value/_alg/_keyname absichtlich NICHT
+# gesetzt: ohne eigene DHBW-DNS-Zone (self-service.dhbw.cloud) bleiben
+# external_dns UND der dns01-Solver von cert-manager inaktiv (beide Rollen
+# pruefen "when: rfc2136_zone is defined and rfc2136_zone != ''"). Zum
+# Aktivieren hier ergaenzen:
+# rfc2136_zone: "<dein-name>.dhbw.cloud"
+# rfc2136_tsig_secret_value: "..."
+# rfc2136_tsig_secret_alg: hmac-sha512
+# rfc2136_tsig_secret_keyname: "..."
+
+# -----------------------------------------------------------------------------
+## Addon: Automatische k3s-Upgrades (Rolle system_upgrade)
+# -----------------------------------------------------------------------------
+# Bewusst AUS (Abweichung vom Upstream-Default "true"): das ganze Projekt pinnt
+# Versionen bewusst und bumpt sie manuell (siehe k3s_version/argocd_version
+# oben, "keine latest-Tags"-Prinzip) - ein sich selbststaendig aktualisierendes
+# Cluster wuerde dem direkt widersprechen und die Reproduzierbarkeit fuer die
+# Abgabe gefaehrden. Die Rolle ist voll funktionsfaehig, nur standardmaessig
+# deaktiviert; zum Aktivieren hier auf true setzen.
+k3s_auto_upgrade_enabled: false
+k3s_auto_upgrade_channel: "stable"
+k3s_auto_upgrade_version: ""
+k3s_auto_upgrade_drain: true
+k3s_auto_upgrade_window_enabled: true
+k3s_auto_upgrade_window_days:
+  - sunday
+  - monday
+  - tuesday
+  - wednesday
+  - thursday
+  - friday
+  - saturday
+k3s_auto_upgrade_window_start: "02:00"
+k3s_auto_upgrade_window_end: "04:00"
+k3s_auto_upgrade_window_timezone: "Europe/Berlin"
+system_upgrade_namespace: system-upgrade
+system_upgrade_controller_version: "v0.19.2"

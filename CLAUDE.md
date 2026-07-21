@@ -58,17 +58,25 @@ Four layers, each owning a distinct concern — don't blur them:
 
 1. **`infra/terraform/`** — OpenStack resources only (VMs + keypair). No Kubernetes, no app
    config here.
-2. **`infra/ansible/`** — configures the VMs, installs k3s, labels nodes, bootstraps ArgoCD.
-   Nothing beyond that.
-3. **`gitops/`** (ArgoCD Applications) — everything Kubernetes-level from here on: operators
-   (CNPG, Strimzi, KEDA, kube-prometheus-stack) and the app chart itself, as GitOps-synced
-   `Application` resources. Currently only `.gitkeep` placeholders — **not implemented yet**.
+2. **`infra/ansible/`** — configures the VMs, installs k3s, labels nodes, bootstraps ArgoCD —
+   **plus a deliberately-scoped exception**: cluster-wide infra addons ported from
+   [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role) (VXLAN
+   connectivity preflight, Longhorn, cert-manager, external-dns, automated k3s upgrades — see
+   `infra/ansible/README.md` ## Übernommene Funktionen aus k3s-dhbw-cloud-role). Explicitly
+   requested by the user despite the boundary below; still don't add anything beyond what's
+   documented there without asking.
+3. **`gitops/`** (ArgoCD Applications) — the TicketFlow app-specific Kubernetes layer from here
+   on: operators (CNPG, Strimzi, KEDA, kube-prometheus-stack) and the app chart itself, as
+   GitOps-synced `Application` resources. Currently only `.gitkeep` placeholders — **not
+   implemented yet**.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
    `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). Currently only a
    README — **no templates written yet**.
 
-Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
-add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
+Terraform → Ansible → ArgoCD → Helm chart is otherwise a hard boundary an agent should preserve:
+e.g. don't add TicketFlow app deployments via Ansible, don't add OpenStack resources via a Helm
+hook, and don't extend the infra/ansible exception above beyond what's already there without
+asking first.
 
 ### Terraform specifics (implemented, tested by the user)
 
@@ -144,6 +152,12 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
   that annotation at all. Found on a real run against DHBWCloud VMs.
 - Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.4` (latest
   stable, not the 3.5 release candidates at time of writing).
+- Roles `connectivity_check`, `helm_addons`, `cert_manager`, `external_dns`, `longhorn`,
+  `system_upgrade` (plus additions in `common`/`k3s_server`/`k3s_agent`) port functionality from
+  the external `k3s-dhbw-cloud-role` — see the infra-layering exception above and
+  `infra/ansible/README.md` for what/why/what got deliberately left out (dual-stack IP detection)
+  or defaulted off (`k3s_auto_upgrade_enabled`, `cert_manager_email`/`rfc2136_zone`). Needs the
+  `kubernetes.core` Galaxy collection (`infra/ansible/requirements.yml`).
 - **Ansible cannot run as the controller on native Windows** (`ansible-core` fails with
   `check_blocking_io ... WinError 87` — a known Windows limitation; Windows is only supported as
   a managed WinRM target, never as the control node). Run `ansible-playbook` from WSL or a
@@ -178,6 +192,7 @@ terraform apply        # also generates ../ansible/inventory/hosts.ini
 # Ansible (infra/ansible/) — must run from WSL/Linux, not native Windows
 source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Voraussetzungen
 cd infra/ansible
+ansible-galaxy collection install -r requirements.yml   # kubernetes.core, once per venv
 ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/bootstrap-gitops.yml   # re-run only the ArgoCD/App-of-Apps step
 export KUBECONFIG=infra/ansible/kubeconfig
@@ -196,12 +211,14 @@ of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
-- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, verified both
-  statically and against real DHBWCloud VMs — k3s server/agent join and IPv6 node registration
-  confirmed working; three real bugs found+fixed along the way, see Ansible specifics above), repo
-  scaffold + all folder-level READMEs, root
-  `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
-  below).
+- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` core (`common`, `k3s_server`,
+  `k3s_agent`, `node_labels`, `argocd_bootstrap` — verified both statically and against real
+  DHBWCloud VMs, k3s server/agent join and IPv6 node registration confirmed working; several real
+  bugs found+fixed along the way, see Ansible specifics above), plus the `k3s-dhbw-cloud-role`
+  addon roles (`connectivity_check`, `helm_addons`, `cert_manager`, `external_dns`, `longhorn`,
+  `system_upgrade` — statically verified only, not yet run against real VMs), repo scaffold + all
+  folder-level READMEs, root `README.md` skeleton with all required sections (many still marked
+  `TODO` pending the pieces below).
 - **Not started:** `gitops/apps/*.yaml` (App-of-Apps + per-operator Applications),
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +
   `observability/alerts/` content.

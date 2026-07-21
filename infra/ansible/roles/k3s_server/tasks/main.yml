@@ -6,7 +6,9 @@
 
 # DHBWV6 ist IPv6-only: --node-ip/--tls-san auf die eigene Adresse, --cluster-cidr/--service-cidr
 # als IPv6-Bloecke (siehe inventory/group_vars/all.yml), --flannel-ipv6-masq fuer Pod-Egress-NAT,
-# da die Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind.
+# da die Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind. --disable=local-storage
+# nur wenn Longhorn die alleinige Default-StorageClass sein soll (siehe roles/longhorn) - sonst
+# bleiben lokales local-path UND Longhorn parallel nutzbar.
 - name: k3s-Server installieren
   shell: |
     set -o pipefail
@@ -18,10 +20,16 @@
       --cluster-cidr {{ k3s_cluster_cidr }} \
       --service-cidr {{ k3s_service_cidr }} \
       --flannel-ipv6-masq \
-      --write-kubeconfig-mode 644
+      --write-kubeconfig-mode 644 \
+      {{ '--disable=local-storage' if (longhorn_enabled | bool and longhorn_default_storage_class | bool) else '' }}
   args:
     executable: /bin/bash
   when: not k3s_bin.stat.exists
+
+- name: Warten, bis die kubeconfig-Datei existiert
+  wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    timeout: 180
 
 - name: Warten, bis die k3s-API antwortet
   command: k3s kubectl get --raw=/readyz
@@ -60,3 +68,118 @@
     path: "{{ playbook_dir }}/../kubeconfig"
     regexp: 'https://(127\.0\.0\.1|\[::1\]):6443'
     replace: "https://[{{ ansible_host }}]:6443"
+
+# -----------------------------------------------------------------------------
+# Client-/Entwickler-Tooling (nur Control-Plane - Worker haben keine kubeconfig)
+# -----------------------------------------------------------------------------
+# python3-kubernetes ist zugleich Voraussetzung fuer die kubernetes.core-Module
+# (helm/k8s/k8s_info), die die Addon-Rollen (helm_addons, cert_manager,
+# external_dns, longhorn, system_upgrade) verwenden - siehe playbooks/site.yml.
+- name: Client-/Entwickler-Tooling installieren
+  when: bootstrap_install_client_tools | bool
+  block:
+    - name: python3-kubernetes installieren (fuer Ansible k8s/helm-Module)
+      apt:
+        name: python3-kubernetes
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Helm installieren
+      shell: |
+        set -o pipefail
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+          | DESIRED_VERSION={{ helm_version }} bash
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/helm
+
+    - name: Skaffold installieren
+      shell: |
+        set -o pipefail
+        curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/{{ skaffold_version }}/skaffold-linux-amd64 && \
+        install skaffold /usr/local/bin/ && \
+        rm skaffold
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/skaffold
+
+    - name: kubectl installieren
+      shell: |
+        set -o pipefail
+        curl -LO "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl" && \
+        install -m 755 kubectl /usr/local/bin/kubectl && \
+        rm kubectl
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/kubectl
+
+    - name: "'k'-Alias fuer kubectl systemweit konfigurieren"
+      copy:
+        dest: /etc/profile.d/kubectl_alias.sh
+        content: |
+          alias k='/usr/local/bin/kubectl'
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: KUBECONFIG-Variable systemweit setzen
+      copy:
+        dest: /etc/profile.d/kubeconfig.sh
+        content: |
+          export KUBECONFIG={{ kubeconfig_root }}
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Helm-Bash-Completion systemweit konfigurieren
+      copy:
+        dest: /etc/profile.d/helm_completion.sh
+        content: |
+          if [ -x /usr/local/bin/helm ]; then
+            source <(/usr/local/bin/helm completion bash)
+          fi
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: kubectl-Bash-Completion systemweit konfigurieren
+      copy:
+        dest: /etc/profile.d/kubectl_completion.sh
+        content: |
+          if [ -x /usr/local/bin/kubectl ]; then
+            source <(/usr/local/bin/kubectl completion bash)
+          fi
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: "Code-Completion fuer den 'k'-Alias systemweit konfigurieren"
+      copy:
+        dest: /etc/profile.d/kubectl_k_completion.sh
+        content: |
+          complete -F __start_kubectl k
+        owner: root
+        group: root
+        mode: "0755"
+
+# /etc/profile.d/*.sh wird nur von Login-Shells gelesen. Interaktive Nicht-
+# Login-Shells (z.B. "sudo bash") lesen /etc/bash.bashrc - die profile.d-
+# Snippets dort ebenfalls einbinden, damit k-Alias, KUBECONFIG und Completion
+# auch dort verfuegbar sind.
+- name: profile.d-Snippets auch in interaktiven Nicht-Login-Bash-Shells laden
+  when: bootstrap_install_client_tools | bool
+  blockinfile:
+    path: /etc/bash.bashrc
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED: profile.d fuer Nicht-Login-Shells laden"
+    block: |
+      if [ -d /etc/profile.d ]; then
+        for _pd in /etc/profile.d/*.sh; do
+          [ -r "$_pd" ] && . "$_pd"
+        done
+        unset _pd
+      fi

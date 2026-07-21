@@ -1,0 +1,12 @@
+---
+# Galaxy-Collection fuer die Addon-Rollen (cert_manager, external_dns, longhorn,
+# system_upgrade, helm_addons) - die kubernetes.core-Module (helm, helm_repository,
+# helm_plugin, k8s, k8s_info) sprechen direkt mit dem Cluster statt ueber kubectl-
+# Shell-Kommandos wie der Rest des Setups. Installation:
+#
+#   ansible-galaxy collection install -r requirements.yml
+#
+# Gepinnt statt "latest", gleiches Prinzip wie bei k3s/ArgoCD (siehe README.md).
+collections:
+  - name: kubernetes.core
+    version: "5.2.0"

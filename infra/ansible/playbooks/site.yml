@@ -1,13 +1,25 @@
 ---
-# Gesamtablauf: Basis-Konfiguration -> k3s-Server -> k3s-Agents -> Node-Labels -> ArgoCD.
-# Reihenfolge ist bewusst so gewaehlt, dass jede Rolle auf dem Ergebnis der vorherigen aufbaut
-# (Agents brauchen den Node-Token des Servers, Labels brauchen registrierte Worker-Nodes usw.).
+# Gesamtablauf: Basis-Konfiguration -> Overlay-Connectivity-Check -> k3s-Server -> k3s-Agents ->
+# Node-Labels -> Helm-Addons -> cert-manager/external-dns/Longhorn -> automatische k3s-Upgrades ->
+# ArgoCD. Reihenfolge ist bewusst so gewaehlt, dass jede Rolle auf dem Ergebnis der vorherigen
+# aufbaut (Agents brauchen den Node-Token des Servers, Labels brauchen registrierte Worker-Nodes,
+# Helm-Addons brauchen die von helm_addons hinzugefuegten Repos usw.). Die Addon-Rollen
+# (connectivity_check, helm_addons, cert_manager, external_dns, longhorn, system_upgrade) stammen
+# aus https://github.com/pfisterer/k3s-dhbw-cloud-role - siehe README.md ## Uebernommene
+# Funktionen aus k3s-dhbw-cloud-role fuer den Kontext dieser bewussten Abweichung von der
+# urspruenglichen "Ansible macht nichts ausser k3s/Labels/ArgoCD"-Grenze.
 
 - name: Basis-Konfiguration auf allen Nodes
   hosts: k3s_cluster
   become: true
   roles:
     - common
+
+- name: Overlay-Netzwerk-Connectivity-Preflight (vor der k3s-Installation)
+  hosts: k3s_cluster
+  become: true
+  roles:
+    - connectivity_check
 
 - name: k3s-Server auf der Control-Plane installieren
   hosts: control_plane
@@ -26,6 +38,26 @@
   become: true
   roles:
     - node_labels
+
+- name: Helm-Repositories fuer die Addons vorbereiten
+  hosts: control_plane
+  become: true
+  roles:
+    - helm_addons
+
+- name: cert-manager, external-dns und Longhorn ausrollen
+  hosts: control_plane
+  become: true
+  roles:
+    - cert_manager
+    - external_dns
+    - longhorn
+
+- name: Automatische k3s-Upgrades einrichten
+  hosts: control_plane
+  become: true
+  roles:
+    - system_upgrade
 
 - name: ArgoCD bootstrappen
   hosts: control_plane

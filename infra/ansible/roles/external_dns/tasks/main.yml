@@ -1,0 +1,36 @@
+---
+# external-dns - nur wenn rfc2136_zone gesetzt ist (siehe inventory/group_vars/all.yml).
+# Ohne eigene DHBW-DNS-Zone (self-service.dhbw.cloud) bleibt dieser Block inaktiv.
+- name: external-dns-Deployment
+  when: rfc2136_zone is defined and rfc2136_zone != ""
+  vars:
+    external_dns_values_file: /root/external_dns_values.yaml
+  block:
+    - name: external-dns-Namespace sicherstellen
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ external_dns_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+
+    - name: external-dns-Helm-Values-Datei rendern
+      template:
+        src: external_dns_values.yaml.j2
+        dest: "{{ external_dns_values_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: external-dns installieren/aktualisieren
+      kubernetes.core.helm:
+        name: external-dns
+        chart_ref: external-dns/external-dns
+        release_namespace: "{{ external_dns_namespace }}"
+        kubeconfig: "{{ kubeconfig_root }}"
+        state: present
+        values_files: "{{ external_dns_values_file }}"
+        wait: true
+        atomic: true

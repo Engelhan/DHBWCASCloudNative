@@ -1,4 +1,21 @@
 ---
+# raw laeuft ohne Python auf dem Zielhost - noetig, da JEDES andere Modul hier (apt,
+# hostname, lineinfile, ...) Python3 auf dem Ziel voraussetzt. Auf den DHBW-Cloud-Images
+# ist Python3 zwar praeloadet, aber diese Pruefung macht die Rolle auch auf einem
+# minimalen/anderen Image lauffaehig statt mit einer kryptischen "python not found"-
+# Fehlermeldung im naechsten Task abzubrechen (uebernommen aus k3s-dhbw-cloud-role).
+- name: Pruefen, ob Python3 bereits installiert ist
+  raw: test -e /usr/bin/python3
+  register: python3_check
+  failed_when: python3_check.rc > 1
+  changed_when: false
+
+- name: Minimales Python3 nachinstallieren, falls nicht vorhanden
+  raw: apt update && apt install -y python3
+  register: python3_raw_install
+  changed_when: python3_raw_install.rc == 0
+  when: python3_check.rc != 0
+
 - name: Paketindex aktualisieren
   apt:
     update_cache: true
@@ -25,3 +42,97 @@
     regexp: '^127\.0\.1\.1'
     line: "127.0.1.1 {{ inventory_hostname }}"
     state: present
+
+# -----------------------------------------------------------------------------
+# Longhorn-Node-Voraussetzungen (alle Nodes, nicht nur Control-Plane)
+# -----------------------------------------------------------------------------
+# Longhorn haengt Volumes per iSCSI auf JEDEM Node ein und nutzt NFS fuer RWX-
+# Volumes - open-iscsi + nfs-common muessen daher clusterweit vorhanden sein,
+# auch auf den Workern. Nur wenn longhorn_enabled gesetzt ist (siehe
+# inventory/group_vars/all.yml).
+- name: Longhorn-Node-Voraussetzungen installieren
+  when: longhorn_enabled | bool
+  block:
+    - name: open-iscsi und nfs-common installieren
+      apt:
+        name:
+          - open-iscsi
+          - nfs-common
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Laden des iscsi_tcp-Kernelmoduls dauerhaft konfigurieren
+      copy:
+        dest: /etc/modules-load.d/longhorn.conf
+        content: |
+          iscsi_tcp
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: iscsi_tcp-Kernelmodul laden
+      command: modprobe iscsi_tcp
+      register: iscsi_tcp_modprobe
+      changed_when: false
+      failed_when: iscsi_tcp_modprobe.rc != 0
+
+    - name: iscsid-Service aktivieren und starten
+      systemd:
+        name: iscsid
+        enabled: true
+        state: started
+
+# -----------------------------------------------------------------------------
+# Kernel-Tuning fuer k3s (alle Nodes)
+# -----------------------------------------------------------------------------
+# net.netfilter.nf_conntrack_*-Sysctls existieren erst, nachdem das
+# nf_conntrack-Kernelmodul geladen ist - deshalb zuerst laden, bevor unten
+# "sysctl --system" das sonst mit "cannot stat .../nf_conntrack_max" abbricht.
+- name: Laden des nf_conntrack-Kernelmoduls dauerhaft konfigurieren
+  copy:
+    dest: /etc/modules-load.d/k3s.conf
+    content: |
+      nf_conntrack
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: nf_conntrack-Kernelmodul laden
+  command: modprobe nf_conntrack
+  register: nf_conntrack_modprobe
+  changed_when: false
+  failed_when: nf_conntrack_modprobe.rc != 0
+
+# Als EINE Datei + Reload-bei-Aenderung verwaltet statt ueber das
+# ansible.posix.sysctl-Modul: das meldet bei den net.netfilter.*-Schluesseln
+# jeden Lauf faelschlich "changed", selbst wenn Datei- und Laufzeitwert schon
+# uebereinstimmen (bricht Idempotenz). copy() aendert sich nur bei echtem
+# Inhalts-Diff, der Reload danach laeuft nur bei Aenderung und zaehlt selbst
+# nicht als "changed".
+- name: k3s-Kernel-Tuning-Sysctls ausrollen
+  copy:
+    dest: /etc/sysctl.d/99-k3s.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Von Ansible verwaltet (common-Rolle) - bei Aenderung per sysctl --system aktiv.
+      fs.inotify.max_user_instances = 8192
+      fs.inotify.max_user_watches = 524288
+      net.netfilter.nf_conntrack_max = 524288
+      net.netfilter.nf_conntrack_tcp_timeout_established = 86400
+      kernel.pid_max = 131072
+      fs.file-max = 2097152
+      vm.swappiness = 0
+      net.ipv4.ip_forward = 1
+      net.ipv6.conf.all.forwarding = 1
+      net.ipv6.conf.default.forwarding = 1
+      net.ipv4.ip_local_port_range = 1024 65535
+      vm.max_map_count = 262144
+  register: k3s_sysctl_file
+
+- name: k3s-Sysctls anwenden, falls die Datei sich geaendert hat
+  command: sysctl --system
+  when: k3s_sysctl_file is changed
+  changed_when: false

@@ -17,6 +17,14 @@
     executable: /bin/bash
   when: not k3s_bin.stat.exists
 
+- name: Warten, bis der k3s-agent-Service aktiv ist
+  systemd:
+    name: k3s-agent
+  register: k3s_agent_service
+  until: k3s_agent_service.status.ActiveState == 'active'
+  retries: 24
+  delay: 5
+
 - name: Warten, bis der Node auf der Control-Plane als Ready gemeldet wird
   # command als String wuerde von Ansible per shlex geparst, was die Anfuehrungszeichen um
   # "Ready" verschluckt (aus =="Ready") wird ==Ready) und den jsonpath-Ausdruck bricht -
