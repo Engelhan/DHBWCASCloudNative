@@ -43,8 +43,9 @@
   become: false
   register: app_of_apps_file
 
-# Solange gitops/apps/app-of-apps.yaml noch nicht geschrieben ist (aktuell nur Platzhalter,
-# siehe gitops/README.md), überspringt dieser Schritt sich selbst statt fehlzuschlagen.
+# gitops/apps/app-of-apps.yaml existiert inzwischen (siehe gitops/README.md) - der stat-Check
+# bleibt trotzdem als Sicherheitsnetz, damit ein Playbook-Lauf auf einem aelteren Branch/Tag
+# ohne diese Datei nicht fehlschlaegt, sondern diesen Schritt nur ueberspringt.
 - name: App-of-Apps-Manifest auf die Control-Plane kopieren
   copy:
     src: "{{ playbook_dir }}/../../../gitops/apps/app-of-apps.yaml"

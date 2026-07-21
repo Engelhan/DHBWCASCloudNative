@@ -1,0 +1,75 @@
+---
+# Legt die RFC2136-TSIG-K8s-Secrets an, die gitops/apps/cert-manager-issuer.yaml und
+# gitops/apps/external-dns.yaml per secretKeyRef referenzieren (siehe gitops/README.md ##
+# DNS/ACME). Der Wert selbst darf laut CLAUDE.md ## Infra layering nicht im Git-Repo landen -
+# ArgoCD (git-getrieben) kann ihn deshalb prinzipiell nicht selbst bereitstellen. Das ist KEINE
+# Wiederholung der revertierten Addon-Installation auf Branch ansible-bootstrap: diese Rolle
+# installiert keine Helm-Charts/Operatoren (das bleibt vollstaendig GitOps-eigen), sondern legt
+# nur zwei Secret-Objekte an - das ist das uebliche "Secrets werden ausserhalb von GitOps
+# bootstrapped"-Muster.
+#
+# Laeuft komplett lokal (delegate_to: localhost) gegen die frisch abgeholte kubeconfig - das
+# TSIG-Secret geht dadurch nie per SSH auf die Control-Plane und landet nicht in deren
+# Prozessliste.
+- name: Prüfen, ob secrets.yml lokal vorhanden ist
+  stat:
+    path: "{{ playbook_dir }}/../secrets.yml"
+  delegate_to: localhost
+  become: false
+  register: gitops_secrets_file
+
+- name: secrets.yml einlesen
+  include_vars:
+    file: "{{ playbook_dir }}/../secrets.yml"
+  when: gitops_secrets_file.stat.exists
+
+# Solange secrets.yml fehlt oder noch den Platzhalter aus secrets.yml.example enthaelt
+# (DNS-Zone noch nicht aktiviert), ueberspringt sich dieser Block selbst statt fehlzuschlagen -
+# analog zum App-of-Apps-Stat-Check in argocd_bootstrap.
+- name: RFC2136-TSIG-Secrets anlegen/aktualisieren
+  when:
+    - rfc2136_tsig_secret_value is defined
+    - rfc2136_tsig_secret_value != "CHANGE_ME"
+    - rfc2136_tsig_secret_value | length > 0
+  delegate_to: localhost
+  become: false
+  environment:
+    KUBECONFIG: "{{ playbook_dir }}/../kubeconfig"
+  no_log: true
+  block:
+    - name: Namespace cert-manager sicherstellen
+      command: kubectl create namespace cert-manager
+      register: gitops_secrets_cm_ns
+      failed_when: gitops_secrets_cm_ns.rc != 0 and 'AlreadyExists' not in gitops_secrets_cm_ns.stderr
+      changed_when: gitops_secrets_cm_ns.rc == 0
+
+    - name: Namespace external-dns sicherstellen
+      command: kubectl create namespace external-dns
+      register: gitops_secrets_edns_ns
+      failed_when: gitops_secrets_edns_ns.rc != 0 and 'AlreadyExists' not in gitops_secrets_edns_ns.stderr
+      changed_when: gitops_secrets_edns_ns.rc == 0
+
+    # --dry-run=client -o yaml | apply statt create, damit der Task idempotent ist (ein
+    # geaenderter Wert in secrets.yml wird bei einem erneuten Playbook-Lauf uebernommen, statt
+    # dass "create" beim zweiten Mal mit AlreadyExists fehlschlaegt).
+    - name: cert-manager-rfc2136-tsig-Secret anlegen/aktualisieren
+      shell: |
+        set -o pipefail
+        kubectl create secret generic cert-manager-rfc2136-tsig \
+          -n cert-manager --from-literal=secret={{ rfc2136_tsig_secret_value }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      register: gitops_secrets_cm_apply
+      changed_when: "'unchanged' not in gitops_secrets_cm_apply.stdout"
+
+    - name: external-dns-rfc2136-tsig-Secret anlegen/aktualisieren
+      shell: |
+        set -o pipefail
+        kubectl create secret generic external-dns-rfc2136-tsig \
+          -n external-dns --from-literal=secret={{ rfc2136_tsig_secret_value }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      register: gitops_secrets_edns_apply
+      changed_when: "'unchanged' not in gitops_secrets_edns_apply.stdout"

@@ -12,6 +12,7 @@ infra/terraform/crash.log
 
 # Ansible
 infra/ansible/inventory/hosts.ini
+infra/ansible/secrets.yml
 *.retry
 
 # Python
