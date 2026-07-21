@@ -108,23 +108,46 @@ Das ArgoCD-Admin-Passwort wird am Ende des Playbook-Laufs in der Konsolenausgabe
 
 ## GitOps-Secrets (`gitops_secrets`)
 
-`gitops/apps/cert-manager-issuer.yaml` und `gitops/apps/external-dns.yaml` referenzieren
-K8s-Secrets (RFC2136-TSIG-Wert), die laut `CLAUDE.md` ## Infra layering **nicht** im Git-Repo
-stehen dürfen — ArgoCD (git-getrieben) kann sie deshalb nicht selbst anlegen. Die Rolle
-`gitops_secrets` schließt genau diese Lücke, läuft aber komplett lokal gegen die abgeholte
-`kubeconfig` (kein SSH, das Secret landet nie in einer Prozessliste auf den VMs) und installiert
-selbst keine Helm-Charts/Operatoren — das bleibt vollständig GitOps-eigen.
+Zwei Dinge, die GitOps strukturell nicht selbst bereitstellen kann (ArgoCD ist git-getrieben,
+beide Werte dürfen laut `CLAUDE.md` ## Infra layering **nicht** im Git-Repo stehen): das
+ArgoCD-Repository-Credential fürs private GitHub-Repo selbst, und die RFC2136-TSIG-K8s-Secrets,
+die `gitops/apps/cert-manager-issuer.yaml`/`external-dns.yaml` referenzieren. Die Rolle
+`gitops_secrets` schließt beide Lücken, läuft aber komplett lokal gegen die abgeholte
+`kubeconfig` (kein SSH, die Geheimnisse landen nie in einer Prozessliste auf den VMs) und
+installiert selbst keine Helm-Charts/Operatoren — das bleibt vollständig GitOps-eigen.
+
+**Repo-Credential (SSH-Deploy-Key, einmalig):**
+
+```bash
+cd infra/ansible
+ssh-keygen -t ed25519 -C "argocd-deploy-key@ticketflow" -f argocd_deploy_key -N ""
+cat argocd_deploy_key.pub
+```
+
+Den ausgegebenen Public Key unter GitHub → Repo → Settings → Deploy keys → "Add deploy key" als
+**Read-only**-Key eintragen. `argocd_deploy_key`/`argocd_deploy_key.pub` sind git-ignoriert.
+`gitops/apps/app-of-apps.yaml` und `cert-manager-issuer.yaml` nutzen deshalb bewusst
+`repoURL: git@github.com:...` (SSH) statt `https://...` — alle Applications, die stattdessen
+einen fremden Upstream-Helm-Repo referenzieren (Longhorn, cert-manager, external-dns), bleiben
+unverändert HTTPS, die brauchen kein Credential.
+
+**RFC2136-TSIG (sobald die DNS-Zone aktiv ist):**
 
 ```bash
 cp infra/ansible/secrets.yml.example infra/ansible/secrets.yml
 # rfc2136_tsig_secret_value in secrets.yml eintragen (Datei ist git-ignoriert)
+```
+
+Danach beides anwenden:
+
+```bash
 ansible-playbook playbooks/site.yml                    # oder gezielt:
 ansible-playbook playbooks/bootstrap-gitops.yml         # nur ArgoCD + gitops_secrets erneut
 ```
 
-Fehlt `secrets.yml` (frisches Setup, DNS-Zone noch nicht aktiviert) oder enthält sie noch den
-Platzhalter `CHANGE_ME`, überspringt sich die Rolle selbst statt fehlzuschlagen — siehe
-`gitops/README.md` ## DNS/ACME für den Gesamtkontext.
+Fehlt `argocd_deploy_key` bzw. `secrets.yml` (oder enthält sie noch den Platzhalter
+`CHANGE_ME`), überspringt sich der jeweilige Teil der Rolle selbst statt fehlzuschlagen — siehe
+`gitops/README.md` ## DNS/ACME für den DNS-Teil des Gesamtkontexts.
 
 ## Offene Punkte
 

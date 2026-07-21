@@ -28,6 +28,18 @@ gitops/
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
 
+## Privates Repo — ArgoCD braucht ein Credential
+
+Dieses Repo ist **nicht öffentlich**. Ohne registriertes Credential kann ArgoCDs repo-server
+weder `app-of-apps.yaml` noch `cert-manager-issuer.yaml` klonen (beide `Application`s, deren
+`repoURL` auf dieses Repo zeigt) — sie bleiben dauerhaft in `Unknown`/`ErrorSyncStatus` hängen.
+Deshalb nutzen genau diese beiden `repoURL: git@github.com:...` (SSH), nicht `https://...`, und
+`infra/ansible/roles/gitops_secrets` legt dafür einen ArgoCD-Repository-Credential-Secret
+(`repo-ticketflow`, Namespace `argocd`) aus einem lokalen, git-ignorierten SSH-Deploy-Key an —
+siehe `infra/ansible/README.md` ## GitOps-Secrets für die Erzeugung/Aktivierung. Die Applications
+für Upstream-Helm-Charts (Longhorn, cert-manager, external-dns) brauchen das nicht, deren
+`repoURL` zeigt auf öffentliche Helm-Repos.
+
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
 per Ansible-Rolle installiert (siehe `infra/ansible/README.md` ## Übernommene Funktionen aus

@@ -154,18 +154,24 @@ if needed rather than reviving the Ansible role.
   already exists** (checked via `stat`, skips otherwise instead of failing) — the file now exists
   (see gitops layer above), so this actually runs; the `stat` guard stays as a safety net for
   older checkouts/tags without it.
-- `gitops_secrets` (new role) creates the RFC2136-TSIG `Secret`s that
-  `gitops/apps/cert-manager-issuer.yaml`/`external-dns.yaml` reference via `secretKeyRef` — this
-  is a narrow, deliberate exception to "Ansible does nothing beyond k3s/labels/ArgoCD", **not** a
-  repeat of the reverted `ansible-bootstrap` approach: it creates zero Helm releases/operators
-  (those stay 100% ArgoCD-owned), only two `Secret` objects containing credential material that,
-  by design, must never be committed to git and so can't be provisioned by a git-driven tool.
-  Reads the value from `infra/ansible/secrets.yml` (gitignored, `secrets.yml.example` is the
-  template — same pattern as `terraform.tfvars`/`terraform.tfvars.example`), runs entirely
-  `delegate_to: localhost` against the locally-fetched kubeconfig (never touches the remote VM's
-  shell/process list), and self-skips (doesn't fail) if `secrets.yml` is absent or still has the
-  `CHANGE_ME` placeholder. See `infra/ansible/README.md` ## GitOps-Secrets and `gitops/README.md`
-  ## DNS/ACME.
+- `gitops_secrets` (new role) creates two things GitOps structurally can't provide itself: the
+  ArgoCD repository credential for this repo (**this repo is private** — `app-of-apps.yaml` and
+  `cert-manager-issuer.yaml` use `repoURL: git@github.com:...` SSH, not `https://`, specifically
+  so a deploy key can authenticate; the Helm-chart Applications for Longhorn/cert-manager/
+  external-dns are unaffected, their `repoURL` points at public upstream chart repos) and the
+  RFC2136-TSIG `Secret`s that `cert-manager-issuer.yaml`/`external-dns.yaml` reference via
+  `secretKeyRef`. This is a narrow, deliberate exception to "Ansible does nothing beyond
+  k3s/labels/ArgoCD", **not** a repeat of the reverted `ansible-bootstrap` approach: it creates
+  zero Helm releases/operators (those stay 100% ArgoCD-owned), only `Secret` objects containing
+  credential material that, by design, must never be committed to git and so can't be
+  provisioned by a git-driven tool. Reads from `infra/ansible/secrets.yml`
+  (gitignored, `secrets.yml.example` is the template — same pattern as
+  `terraform.tfvars`/`terraform.tfvars.example`) and `infra/ansible/argocd_deploy_key`
+  (gitignored, generated with `ssh-keygen`, public half added as a GitHub read-only deploy key).
+  Runs entirely `delegate_to: localhost` against the locally-fetched kubeconfig (never touches
+  the remote VM's shell/process list), and self-skips (doesn't fail) each part whose input file
+  is missing/still a placeholder. See `infra/ansible/README.md` ## GitOps-Secrets and
+  `gitops/README.md` ## Privates Repo / ## DNS/ACME.
 - The ArgoCD install task uses `kubectl apply --server-side --force-conflicts`, not plain
   `apply`: plain (client-side) apply stores the whole previous config in a
   `last-applied-configuration` annotation, and ArgoCD's `applicationsets.argoproj.io` CRD is big
