@@ -104,7 +104,7 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
   `hashicorp/local ~> 2.9`. `terraform.tfvars` is gitignored; `terraform.tfvars.example` is the
   template to copy.
 
-### Ansible specifics (written, not yet run against real VMs)
+### Ansible specifics (statically verified in WSL, not yet run against real VMs)
 
 - Roles run in a fixed order (see `playbooks/site.yml`): `common` → `k3s_server` → `k3s_agent` →
   `node_labels` → `argocd_bootstrap`. Each depends on state from the previous one (e.g. agents
@@ -112,8 +112,12 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
 - k3s is installed with **IPv6-specific flags** because the cluster network is IPv6-only:
   `--node-ip`/`--tls-san` on the node's own IPv6, `--cluster-cidr`/`--service-cidr` in the ULA
   range `fd00::/8` (not globally routable on purpose), `--flannel-ipv6-masq` for pod egress NAT.
-  Versions/CIDRs are centralized in `group_vars/all.yml` — change them there, not inline in role
-  tasks.
+  Versions/CIDRs are centralized in `inventory/group_vars/all.yml` — change them there, not inline
+  in role tasks. It lives under `inventory/`, not directly under `infra/ansible/`, because Ansible
+  only auto-loads `group_vars/` when it sits next to the inventory file (or next to the playbook) —
+  a plain top-level `infra/ansible/group_vars/` is silently never loaded and every pinned var
+  resolves to undefined. Verified by reproducing the documented `ansible-playbook playbooks/site.yml`
+  invocation with a debug task.
 - `k3s_server` fetches the kubeconfig locally and rewrites the server URL from `127.0.0.1` to
   `https://[<ipv6>]:6443` (bracket syntax — required for IPv6 host:port, easy to get wrong).
 - `common` sets each node's OS hostname to its Terraform instance name so the k3s node name is
@@ -123,12 +127,28 @@ add k3s app deployments via Ansible, don't add OpenStack resources via a Helm ho
   control-plane lab cluster) and applies `gitops/apps/app-of-apps.yaml` **only if that file
   already exists** (checked via `stat`, skips otherwise instead of failing) — expected to still
   be a no-op until the GitOps layer is written.
-- Pinned versions in `group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.4` (latest stable,
-  not the 3.5 release candidates at time of writing).
+- Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.4` (latest
+  stable, not the 3.5 release candidates at time of writing).
 - **Ansible cannot run as the controller on native Windows** (`ansible-core` fails with
   `check_blocking_io ... WinError 87` — a known Windows limitation; Windows is only supported as
   a managed WinRM target, never as the control node). Run `ansible-playbook` from WSL or a
   Linux/macOS shell, not from PowerShell/Git Bash on Windows directly, even inside a venv.
+- Ansible itself runs from a Python venv at the repo root (`.venv/`, gitignored) — the WSL image
+  has no system `pip`/`venv` and no passwordless sudo to install them via apt, so a venv (bootstrap
+  via `get-pip.py` if needed) is the path of least friction. Pinned in
+  `infra/ansible/requirements.txt` (`ansible==14.2.0`, `ansible-lint==26.6.0`), same
+  no-latest-tags principle as k3s/ArgoCD. See `infra/ansible/README.md` ## Voraussetzungen.
+- `ansible-playbook --syntax-check` on both playbooks, `ansible-lint`, `yamllint`, and a debug-task
+  render check of every Jinja expression (install commands, join URL, node-label loop, kubeconfig
+  regex) against the example inventory all pass. Two real bugs found and fixed this way: (1)
+  `group_vars/all.yml` lived directly under `infra/ansible/`, a location Ansible never auto-loads
+  (see above — moved to `inventory/group_vars/`), so every pinned version/CIDR silently resolved to
+  undefined and the `k3s-Server installieren` task would have failed immediately on a real run; (2)
+  the `curl | sh` k3s install in `k3s_server`/`k3s_agent` had no `pipefail`, so a failed download
+  could report success (`sh` exits 0 on empty stdin) — added `set -o pipefail`. What's still
+  unverified: actual apt/hostname/k3s/ArgoCD behavior against real VMs (needs `terraform apply`
+  first), and the passwordless-sudo/cloud-image assumptions in `infra/ansible/README.md`
+  ## Offene Punkte.
 
 ## Commands
 
@@ -141,12 +161,18 @@ terraform plan
 terraform apply        # also generates ../ansible/inventory/hosts.ini
 
 # Ansible (infra/ansible/) — must run from WSL/Linux, not native Windows
+source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Voraussetzungen
 cd infra/ansible
 ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/bootstrap-gitops.yml   # re-run only the ArgoCD/App-of-Apps step
 export KUBECONFIG=infra/ansible/kubeconfig
 kubectl get nodes -o wide
 kubectl -n argocd get pods
+
+# Ansible static checks (no VMs needed)
+cd infra/ansible
+ansible-playbook playbooks/site.yml --syntax-check
+ansible-lint
 ```
 
 No app build/lint/test commands exist yet — `src/*` has no code, and `charts/ticketflow` has no
@@ -155,8 +181,10 @@ of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
-- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, untested against real
-  VMs — pending the WSL ansible setup), repo scaffold + all folder-level READMEs, root
+- **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, statically verified —
+  syntax-check/ansible-lint/yamllint/Jinja render checks pass, two bugs found+fixed this way, see
+  Ansible specifics above — still untested against real VMs, pending `terraform apply`), repo
+  scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
 - **Not started:** `gitops/apps/*.yaml` (App-of-Apps + per-operator Applications),

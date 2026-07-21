@@ -6,6 +6,7 @@
 
 - name: k3s-Agent installieren und mit der Control-Plane verbinden
   shell: |
+    set -o pipefail
     curl -sfL https://get.k3s.io | \
     INSTALL_K3S_VERSION={{ k3s_version }} \
     K3S_URL=https://[{{ hostvars[groups['control_plane'][0]].ansible_host }}]:6443 \

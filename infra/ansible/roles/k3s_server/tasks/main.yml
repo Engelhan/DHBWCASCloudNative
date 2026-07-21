@@ -5,10 +5,11 @@
   register: k3s_bin
 
 # DHBWV6 ist IPv6-only: --node-ip/--tls-san auf die eigene Adresse, --cluster-cidr/--service-cidr
-# als IPv6-Bloecke (siehe group_vars/all.yml), --flannel-ipv6-masq fuer Pod-Egress-NAT, da die
-# Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind.
+# als IPv6-Bloecke (siehe inventory/group_vars/all.yml), --flannel-ipv6-masq fuer Pod-Egress-NAT,
+# da die Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind.
 - name: k3s-Server installieren
   shell: |
+    set -o pipefail
     curl -sfL https://get.k3s.io | \
     INSTALL_K3S_VERSION={{ k3s_version }} \
     sh -s - server \

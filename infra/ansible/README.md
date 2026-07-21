@@ -8,8 +8,8 @@ Kubernetes-seitige Konfiguration.
 ## Versionen
 
 Bewusst gepinnt statt "latest"/"stable"-Tags zu folgen (Reproduzierbarkeit, siehe P3-Prinzip
-"keine `:latest`-Tags" auch hier angewendet). Zum Aktualisieren [`group_vars/all.yml`](group_vars/all.yml)
-anpassen:
+"keine `:latest`-Tags" auch hier angewendet). Zum Aktualisieren
+[`inventory/group_vars/all.yml`](inventory/group_vars/all.yml) anpassen:
 
 | Komponente | Version | Quelle |
 |---|---|---|
@@ -34,10 +34,11 @@ Das Cluster-Netz ist reines IPv6 (siehe [`../terraform/`](../terraform/)). Darau
 ```
 ansible/
 ├── ansible.cfg
-├── group_vars/
-│   └── all.yml             # gepinnte Versionen, IPv6-CIDRs
 ├── inventory/
-│   └── hosts.ini            # von Terraform generiert, git-ignoriert (siehe hosts.ini.example)
+│   ├── group_vars/
+│   │   └── all.yml          # gepinnte Versionen, IPv6-CIDRs
+│   ├── hosts.ini             # von Terraform generiert, git-ignoriert (siehe hosts.ini.example)
+│   └── hosts.ini.example
 ├── playbooks/
 │   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap
 │   └── bootstrap-gitops.yml # nur der ArgoCD-Teil, separat erneut aufrufbar
@@ -56,6 +57,34 @@ Ausrollen von k3s nach einem manuellen Node-Reboot, oder gezielt nur die `node_l
 laufen lassen) ist mit einem eigenständigen Konfigurationswerkzeug einfacher und idempotent, ohne
 Terraform-State anzufassen. Das ist auch die von der Aufgabenstellung vorgegebene Kombination
 (Terraform/OpenTofu + Ansible).
+
+## Voraussetzungen
+
+Ansible ist nicht systemweit installiert vorausgesetzt, sondern läuft aus einem Python-venv (auf
+diesem Debian/Ubuntu-System fehlt `pip` sogar im System-Python, und `apt install`
+erfordert Root-Rechte, die im WSL-Setup nicht passwortlos verfügbar sind — ein venv braucht
+keine der beiden). Einmalig einrichten, venv liegt bewusst im Projekt-Root (`../../.venv`,
+dort schon in `.gitignore`), nicht unter `infra/ansible/`, damit es projektweit für andere
+Tools (Terraform-Helper, Python-Skripte) mitbenutzt werden kann:
+
+```bash
+cd /pfad/zum/repo-root         # DHBWCASCloudNative/
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r infra/ansible/requirements.txt
+```
+
+Vor jedem Ansible-Aufruf aktivieren (`ansible-playbook`, `ansible-lint`, `ansible-inventory`, ...):
+
+```bash
+source /pfad/zum/repo-root/.venv/bin/activate
+```
+
+`ansible-core`/`ansible-lint` sind wie k3s/ArgoCD bewusst version-gepinnt
+([`requirements.txt`](requirements.txt)), zum Aktualisieren dort anpassen statt `pip install -U`
+ohne Pin laufen zu lassen. Gilt nur für die Ansible-Steuerungsmaschine (WSL/Linux, siehe
+Root-`CLAUDE.md`) — auf den verwalteten VMs selbst wird nichts Python-seitig vorausgesetzt außer
+dem ohnehin auf Cloud-Images vorhandenen System-Python, das Ansible über SSH anspricht.
 
 ## Verwendung
 
@@ -87,3 +116,8 @@ Das ArgoCD-Admin-Passwort wird am Ende des Playbook-Laufs in der Konsolenausgabe
 - `become` setzt passwortlosen `sudo` für den in `hosts.ini` hinterlegten SSH-User voraus – auf
   den üblichen Cloud-Images (z.B. Ubuntu-Cloud-Images mit vorbereitetem `ubuntu`-User) ist das
   der Standard.
+- `ansible-lint` (Profil `basic`) meldet aktuell noch 42 rein stilistische Funde (FQCN-Modulnamen
+  wie `command` statt `ansible.builtin.command`, `no-role-prefix` bei `register`-Variablen,
+  Task-Namen mit Kleinbuchstaben wie "k3s-Server installieren", fehlendes `changed_when` bei den
+  gated Install-Shells) – keine davon ändert das Verhalten, bewusst nicht mitgefixt, um den Diff
+  klein zu halten. Bei Bedarf `ansible-lint` erneut laufen lassen, um die aktuelle Liste zu sehen.
