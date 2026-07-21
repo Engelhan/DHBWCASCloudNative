@@ -1,0 +1,57 @@
+---
+- name: Prüfen, ob k3s bereits installiert ist
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+# DHBWV6 ist IPv6-only: --node-ip/--tls-san auf die eigene Adresse, --cluster-cidr/--service-cidr
+# als IPv6-Bloecke (siehe group_vars/all.yml), --flannel-ipv6-masq fuer Pod-Egress-NAT, da die
+# Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind.
+- name: k3s-Server installieren
+  shell: |
+    curl -sfL https://get.k3s.io | \
+    INSTALL_K3S_VERSION={{ k3s_version }} \
+    sh -s - server \
+      --node-ip {{ ansible_host }} \
+      --tls-san {{ ansible_host }} \
+      --cluster-cidr {{ k3s_cluster_cidr }} \
+      --service-cidr {{ k3s_service_cidr }} \
+      --flannel-ipv6-masq \
+      --write-kubeconfig-mode 644
+  args:
+    executable: /bin/bash
+  when: not k3s_bin.stat.exists
+
+- name: Warten, bis die k3s-API antwortet
+  command: k3s kubectl get --raw=/readyz
+  register: k3s_ready
+  until: k3s_ready.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Node-Token auslesen
+  slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k3s_node_token_raw
+
+- name: Node-Token als Fact bereitstellen (fuer den Agent-Join der Worker)
+  set_fact:
+    k3s_node_token: "{{ k3s_node_token_raw.content | b64decode | trim }}"
+
+- name: kubeconfig lokal abholen
+  fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ playbook_dir }}/../kubeconfig"
+    flat: true
+
+# Die kubeconfig von k3s zeigt standardmaessig auf 127.0.0.1 (fuer lokale Nutzung auf der
+# Control-Plane selbst). Fuer Zugriff von aussen auf die tatsaechliche IPv6-Adresse umbiegen -
+# Klammer-Syntax, da sonst der Doppelpunkt vor dem Port mit den Adress-Doppelpunkten kollidiert.
+- name: Server-URL in der lokal abgeholten kubeconfig auf die echte Adresse setzen
+  delegate_to: localhost
+  become: false
+  replace:
+    path: "{{ playbook_dir }}/../kubeconfig"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://[{{ ansible_host }}]:6443"

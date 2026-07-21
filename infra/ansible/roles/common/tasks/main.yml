@@ -1,0 +1,27 @@
+---
+- name: Paketindex aktualisieren
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Basispakete installieren
+  apt:
+    name:
+      - curl
+      - ca-certificates
+    state: present
+
+# k3s registriert den Node unter seinem OS-Hostnamen. Wir setzen ihn explizit auf den
+# Terraform-Ressourcennamen (z.B. ticketflow-worker-1), damit er deterministisch mit
+# inventory_hostname übereinstimmt - node_labels und die Agent-Join-Prüfung verlassen sich
+# darauf, statt vom Cloud-Image-Standardverhalten abhängig zu sein.
+- name: Hostname auf den Terraform-Ressourcennamen setzen
+  hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Hostname in /etc/hosts eintragen
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ inventory_hostname }}"
+    state: present

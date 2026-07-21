@@ -1,0 +1,28 @@
+---
+- name: Prüfen, ob k3s bereits installiert ist
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+- name: k3s-Agent installieren und mit der Control-Plane verbinden
+  shell: |
+    curl -sfL https://get.k3s.io | \
+    INSTALL_K3S_VERSION={{ k3s_version }} \
+    K3S_URL=https://[{{ hostvars[groups['control_plane'][0]].ansible_host }}]:6443 \
+    K3S_TOKEN={{ hostvars[groups['control_plane'][0]].k3s_node_token }} \
+    sh -s - agent \
+      --node-ip {{ ansible_host }}
+  args:
+    executable: /bin/bash
+  when: not k3s_bin.stat.exists
+
+- name: Warten, bis der Node auf der Control-Plane als Ready gemeldet wird
+  command: >
+    k3s kubectl get node {{ inventory_hostname }}
+    -o jsonpath={.status.conditions[?(@.type=="Ready")].status}
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  register: node_ready
+  until: node_ready.stdout == "True"
+  retries: 30
+  delay: 5
+  changed_when: false

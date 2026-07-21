@@ -1,0 +1,12 @@
+---
+# Gepinnte Versionen (siehe Root-README ## Entscheidungen zu P2/P3 - keine "latest"-Bezüge).
+# Beim Aktualisieren: https://github.com/k3s-io/k3s/releases bzw.
+# https://github.com/argoproj/argo-cd/releases prüfen und hier bewusst anpassen.
+k3s_version: "v1.36.2+k3s1"
+argocd_version: "v3.4.4"
+
+# DHBWV6 ist ein reines IPv6-Netz (siehe infra/terraform). Pod-/Service-CIDR liegen bewusst im
+# ULA-Bereich (fd00::/8, RFC 4193) statt in einem global routbaren Block - sie müssen nicht von
+# außen erreichbar sein, --flannel-ipv6-masq übernimmt die Adressumsetzung für Pod-Egress-Traffic.
+k3s_cluster_cidr: "fd00:42::/56"
+k3s_service_cidr: "fd00:43::/112"

@@ -1,0 +1,42 @@
+# Binaries
+*.exe
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/*.tfvars
+!infra/terraform/terraform.tfvars.example
+infra/terraform/.terraform.lock.hcl
+infra/terraform/crash.log
+
+# Ansible
+infra/ansible/inventory/hosts.ini
+*.retry
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+src/frontend/dist/
+
+# Helm
+charts/**/charts/*.tgz
+charts/**/Chart.lock
+
+# Secrets / local env
+.env
+*.pem
+*.key
+kubeconfig*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

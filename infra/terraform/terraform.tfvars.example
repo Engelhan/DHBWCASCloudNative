@@ -1,0 +1,27 @@
+# Kopieren nach terraform.tfvars (wird von git ignoriert) und mit echten Werten füllen.
+# Es gibt bewusst nur eine Umgebung/einen Cluster - kein dev/prod-Terraform-Split.
+
+# OpenStack-Zugangsdaten (DHBWCloud) - Application Credential statt Username/Passwort
+os_auth_url                      = "https://newstack.dhbw.cloud:5000/v3"
+os_region                        = "CHANGE_ME"
+os_application_credential_id     = "CHANGE_ME"
+os_application_credential_secret = "CHANGE_ME" # nur einmal beim Anlegen im Portal sichtbar
+
+# Netzwerk
+network_name = "DHBWV6" # vorhandenes, extern routbares Projektnetz - kein eigenes Netz/Floating-IP/Security-Group nötig
+
+# SSH-Keypair (öffentlicher Schlüssel wird importiert, privater bleibt lokal)
+ssh_public_key_path  = "~/.ssh/ticketflow_dhbwcloud.pub"
+ssh_private_key_path = "~/.ssh/ticketflow_dhbwcloud"
+ssh_user             = "ubuntu"
+
+# Basis-Image
+image_name = "CHANGE_ME" # z.B. eine Ubuntu-LTS-Variante der DHBWCloud-Registry
+
+# Größe der VMs
+control_plane_flavor = "CHANGE_ME"
+worker_flavor        = "CHANGE_ME" # gleiches Flavor für alle Worker
+
+# Ein Worker je Eintrag, mit virtuell simulierter Region als Label (DHBWCloud hat real nur
+# eine Region/AZ). Default sind 3 Worker/3 Regionen; Liste ggf. erweitern/kürzen.
+# worker_regions = ["region-a", "region-b", "region-c"]

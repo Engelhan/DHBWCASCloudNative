@@ -1,0 +1,12 @@
+---
+# Läuft auf der Control-Plane (siehe playbooks/site.yml) und labelt jeden Worker mit seiner
+# virtuell simulierten Region aus dem Terraform-Inventory (var "region" je Worker-Host).
+# Grundlage der Platzierungsentscheidung P4: CNPG/Kafka-Charts spreaden später über dieses
+# Label (topology.ticketflow/region), siehe Root-README ## Entscheidungen.
+- name: Region-Label je Worker setzen
+  command: >
+    k3s kubectl label node {{ item }}
+    topology.ticketflow/region={{ hostvars[item].region }}
+    --overwrite
+  loop: "{{ groups['workers'] }}"
+  changed_when: true

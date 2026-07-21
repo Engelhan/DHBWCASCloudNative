@@ -1,0 +1,32 @@
+name: build-images
+
+# TODO: aktivieren, sobald src/*/Dockerfile existieren. Baut reproduzierbar Container-Images
+# aus src/ (P1) und taggt sie mit dem Git-Short-SHA statt `:latest` (P3).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - catalog-api
+          - reservation-worker
+          - notification-worker
+          - frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build \
+            -t ticketflow/${{ matrix.service }}:${GITHUB_SHA::8} \
+            src/${{ matrix.service }}
+
+      # TODO: Push in eine Registry (reine Bezugsquelle, laut Aufgabenstellung erlaubt),
+      # sobald ein Registry-Ziel feststeht.
