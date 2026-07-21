@@ -14,7 +14,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Engelhan/DHBWCASCloudNative.git
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
     targetRevision: main
     path: gitops/apps
     directory:

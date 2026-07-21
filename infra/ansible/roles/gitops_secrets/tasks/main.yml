@@ -1,16 +1,59 @@
 ---
-# Legt die RFC2136-TSIG-K8s-Secrets an, die gitops/apps/cert-manager-issuer.yaml und
-# gitops/apps/external-dns.yaml per secretKeyRef referenzieren (siehe gitops/README.md ##
-# DNS/ACME). Der Wert selbst darf laut CLAUDE.md ## Infra layering nicht im Git-Repo landen -
-# ArgoCD (git-getrieben) kann ihn deshalb prinzipiell nicht selbst bereitstellen. Das ist KEINE
-# Wiederholung der revertierten Addon-Installation auf Branch ansible-bootstrap: diese Rolle
-# installiert keine Helm-Charts/Operatoren (das bleibt vollstaendig GitOps-eigen), sondern legt
-# nur zwei Secret-Objekte an - das ist das uebliche "Secrets werden ausserhalb von GitOps
-# bootstrapped"-Muster.
+# Legt Secrets an, die GitOps strukturell nicht selbst bereitstellen kann (ArgoCD ist
+# git-getrieben, die Werte hier duerfen laut CLAUDE.md ## Infra layering explizit NICHT im
+# Git-Repo landen): das ArgoCD-Repository-Credential fuers private GitHub-Repo selbst, und die
+# RFC2136-TSIG-Secrets, die gitops/apps/cert-manager-issuer.yaml/external-dns.yaml per
+# secretKeyRef referenzieren (siehe gitops/README.md ## DNS/ACME). Das ist KEINE Wiederholung
+# der revertierten Addon-Installation auf Branch ansible-bootstrap: diese Rolle installiert
+# keine Helm-Charts/Operatoren (das bleibt vollstaendig GitOps-eigen), sondern nur
+# Secret-Objekte - das uebliche "Secrets werden ausserhalb von GitOps bootstrapped"-Muster.
 #
-# Laeuft komplett lokal (delegate_to: localhost) gegen die frisch abgeholte kubeconfig - das
-# TSIG-Secret geht dadurch nie per SSH auf die Control-Plane und landet nicht in deren
+# Laeuft komplett lokal (delegate_to: localhost) gegen die frisch abgeholte kubeconfig - die
+# Geheimnisse gehen dadurch nie per SSH auf die Control-Plane und landen nicht in deren
 # Prozessliste.
+- name: Prüfen, ob der ArgoCD-SSH-Deploy-Key lokal vorhanden ist
+  stat:
+    path: "{{ playbook_dir }}/../argocd_deploy_key"
+  delegate_to: localhost
+  become: false
+  register: gitops_secrets_deploy_key_file
+
+# Repo ist privat (siehe gitops/README.md) - ohne dieses Credential kann ArgoCDs repo-server
+# gitops/apps/app-of-apps.yaml und alles darunter gar nicht erst klonen. Ueberspringt sich
+# selbst, solange kein Deploy-Key lokal liegt (siehe infra/ansible/README.md ## GitOps-Secrets
+# fuer die Erzeugung).
+- name: ArgoCD-Repository-Credential (SSH-Deploy-Key) anlegen/aktualisieren
+  when: gitops_secrets_deploy_key_file.stat.exists
+  delegate_to: localhost
+  become: false
+  environment:
+    KUBECONFIG: "{{ playbook_dir }}/../kubeconfig"
+  no_log: true
+  block:
+    # --from-file statt --from-literal: der private Schluessel wird so aus der Datei gelesen,
+    # ohne je selbst als CLI-Argument (und damit in der lokalen Prozessliste) aufzutauchen -
+    # nur der Dateipfad ist ein Argument.
+    - name: Repository-Secret anlegen/aktualisieren
+      shell: |
+        set -o pipefail
+        kubectl create secret generic repo-ticketflow -n argocd \
+          --from-literal=type=git \
+          --from-literal=url=git@github.com:Engelhan/DHBWCASCloudNative.git \
+          --from-file=sshPrivateKey={{ playbook_dir }}/../argocd_deploy_key \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      register: gitops_secrets_repo_apply
+      changed_when: "'unchanged' not in gitops_secrets_repo_apply.stdout"
+
+    # Erst dieses Label macht aus einem gewoehnlichen Secret ein von ArgoCD erkanntes
+    # Repository-Credential - "kubectl create secret" kennt keine --labels-Option.
+    - name: Repository-Secret als ArgoCD-Repository-Credential labeln
+      command: >-
+        kubectl label secret repo-ticketflow -n argocd
+        argocd.argoproj.io/secret-type=repository --overwrite
+      changed_when: true
+
 - name: Prüfen, ob secrets.yml lokal vorhanden ist
   stat:
     path: "{{ playbook_dir }}/../secrets.yml"

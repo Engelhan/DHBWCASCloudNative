@@ -13,6 +13,8 @@ infra/terraform/crash.log
 # Ansible
 infra/ansible/inventory/hosts.ini
 infra/ansible/secrets.yml
+infra/ansible/argocd_deploy_key
+infra/ansible/argocd_deploy_key.pub
 *.retry
 
 # Python
