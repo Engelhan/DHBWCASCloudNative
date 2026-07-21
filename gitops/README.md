@@ -44,36 +44,31 @@ Custom Resource (kein Operator), braucht aber Templating (dns01/http01-Switch, o
 Wildcard-Zertifikat) — dafür liegt in `../charts/cert-manager-config/` ein winziger lokaler
 Chart, analog zur CNPG-`Cluster`-CR in `charts/ticketflow`.
 
-## DNS/ACME-Aktivierung (cert-manager-issuer, external-dns)
+## DNS/ACME (cert-manager-issuer, external-dns)
 
-Es gibt noch keine eigene DHBW-DNS-Zone (self-service.dhbw.cloud). `cert-manager-issuer.yaml`
-und `external-dns.yaml` enthalten deshalb `CHANGE_ME_*`-Platzhalter statt echter Zone/TSIG-Daten
-und haben **bewusst kein `syncPolicy.automated`** — ArgoCD legt die `Application`-Objekte an,
-synct ihre Ressourcen aber nicht automatisch. Aktivierung (sobald eine echte Zone/TSIG-Key
-vorliegt):
+Nutzen die echte DHBW-DNS-Zone `cas438007-at-cas-dhbw-de.users.dhbw.site`
+(self-service.dhbw.cloud) — Zone/TSIG-Keyname stehen in `charts/cert-manager-config/values.yaml`
+bzw. `gitops/apps/external-dns.yaml` (dieselben Werte an beiden Stellen). Beide `Application`s
+sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
+
+**Das eigentliche TSIG-Secret steht bewusst NICHT im Repo** (nur die Referenz
+`external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`) — vor dem ersten Sync manuell anlegen:
 
 ```bash
-# 1. Platzhalter ersetzen: charts/cert-manager-config/values.yaml (email, rfc2136.zone,
-#    rfc2136.tsigKeyName) und gitops/apps/external-dns.yaml (domainFilters, --rfc2136-zone,
-#    --rfc2136-tsig-keyname) — dieselbe Zone/derselbe Key an beiden Stellen.
-
-# 2. TSIG-Secrets manuell anlegen (NICHT ins Repo committen):
 kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
-  --from-literal=secret=<echter TSIG-Wert>
+  --from-literal=secret=<TSIG-Wert>
 kubectl create namespace external-dns
 kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
-  --from-literal=secret=<echter TSIG-Wert>
-
-# 3. Manuell synchen
-argocd app sync cert-manager-issuer
-argocd app sync external-dns
+  --from-literal=secret=<TSIG-Wert>
 ```
 
-Jede `Application` außer `cert-manager-issuer`/`external-dns` (siehe oben, bewusst manuell wegen
-Platzhalter-Werten) ist auf `syncPolicy.automated.selfHeal: true` und `prune: true` konfiguriert:
-manuelle `kubectl edit`-Änderungen (z.B. eine per Hand hochgesetzte Replica-Zahl) werden von
-ArgoCD automatisch wieder auf den in Git definierten Zustand zurückgedreht – das ist der im
-Screencast zu zeigende Drift-Nachweis für W2.
+Ohne dieses Secret bleiben die jeweiligen Pods in `CreateContainerConfigError` hängen, bis das
+Secret existiert — `selfHeal` holt den Rollout dann automatisch nach, kein erneuter Sync nötig.
+
+Jede `Application` in diesem Ordner ist auf `syncPolicy.automated.selfHeal: true` und
+`prune: true` konfiguriert: manuelle `kubectl edit`-Änderungen (z.B. eine per Hand hochgesetzte
+Replica-Zahl) werden von ArgoCD automatisch wieder auf den in Git definierten Zustand
+zurückgedreht – das ist der im Screencast zu zeigende Drift-Nachweis für W2.
 
 ## Warum ArgoCD statt reinem `kubectl apply`/CI-Pipeline
 

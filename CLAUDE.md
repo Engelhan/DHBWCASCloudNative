@@ -221,9 +221,10 @@ of leaving this section stale.
 - **Done:** `gitops/apps/app-of-apps.yaml`, `longhorn.yaml`, `cert-manager.yaml`,
   `cert-manager-issuer.yaml` + its chart `charts/cert-manager-config/`, and `external-dns.yaml` —
   cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm instead of the
-  Ansible roles on branch `ansible-bootstrap` (see Infra layering above).
-  `cert-manager-issuer`/`external-dns` carry `CHANGE_ME_*` placeholders (no real DHBW DNS zone
-  yet) and are intentionally not `syncPolicy.automated` until activated.
+  Ansible roles on branch `ansible-bootstrap` (see Infra layering above). All four use the real
+  DHBW DNS zone (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The
+  RFC2136 TSIG secret itself is deliberately **not** in the repo — see `gitops/README.md` ##
+  DNS/ACME for the `kubectl create secret` step required before the first real sync.
 - **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
   `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +

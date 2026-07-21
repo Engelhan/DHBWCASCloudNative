@@ -15,5 +15,5 @@ Die eine Ausnahme ist [`cert-manager-config/`](cert-manager-config/): kein Opera
 sondern unsere **eigene** Custom Resource (ein `ClusterIssuer`, den es upstream nicht als Chart
 gibt) – analog zur CNPG-`Cluster`-CR in `ticketflow/`, nur eben nicht Teil des ticketflow-Charts,
 weil sie zum Addon-Layer statt zur TicketFlow-Anwendung gehört. Siehe
-[`../gitops/README.md`](../gitops/README.md) für den Aktivierungs-Ablauf (die Werte sind aktuell
-Platzhalter).
+[`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die noetige TSIG-Secret-Voraussetzung
+(das Secret selbst steht bewusst nicht im Repo).
