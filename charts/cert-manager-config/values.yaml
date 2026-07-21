@@ -1,18 +1,11 @@
-# Alle "CHANGE_ME_"-Werte sind Platzhalter (keine eigene DHBW-DNS-Zone/ACME-Kontakt bisher
-# vorhanden, siehe infra/ansible/README.md ## Uebernommene Funktionen aus k3s-dhbw-cloud-role
-# und die urspruengliche Ansible-Rolle cert_manager auf Branch ansible-bootstrap). Solange sie
-# Platzhalter sind, bleibt gitops/apps/cert-manager-issuer.yaml bewusst OHNE
-# syncPolicy.automated - der ClusterIssuer wird also nur ausgerollt, wenn hier echte Werte
-# eingetragen und `argocd app sync cert-manager-issuer` manuell ausgefuehrt wird.
+# DHBW-DNS-Zone/ACME-Kontakt der eigenen Zone (self-service.dhbw.cloud) - dieselbe Zone/derselbe
+# TSIG-Key wie in gitops/apps/external-dns.yaml.
 #
-# Aktivierung:
-#   1. Werte unten ersetzen (email, rfc2136.zone, rfc2136.tsigKeyName; ggf. rfc2136.tsigAlgorithm)
-#   2. TSIG-Secret VORHER manuell anlegen (nicht ins Repo committen!):
-#        kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
-#          --from-literal=secret=<echter TSIG-Wert>
-#   3. argocd app sync cert-manager-issuer
+# Voraussetzung (VOR dem ersten Sync manuell angelegt, nicht im Repo):
+#   kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
+#     --from-literal=secret=<TSIG-Wert>
 
-email: "CHANGE_ME_ACME_EMAIL"
+email: "cas438007@cas.dhbw.de"
 # DHBW-internes ACME-Verzeichnis (nur aus dem DHBW-Netz/VPN erreichbar).
 acmeServer: "https://certificates.dhbw.cloud"
 clusterIssuerName: certificate-cluster-issuer
@@ -26,8 +19,8 @@ rfc2136:
   # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname.
   host: "141.72.5.244"
   port: 53
-  zone: "CHANGE_ME_RFC2136_ZONE" # z.B. "team.dhbw.cloud"
-  tsigKeyName: "CHANGE_ME_RFC2136_TSIG_KEYNAME"
+  zone: "cas438007-at-cas-dhbw-de.users.dhbw.site"
+  tsigKeyName: "user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124"
   tsigAlgorithm: hmac-sha512
   # Verweist nur auf ein manuell/per External-Secret angelegtes Secret - der Wert selbst steht
   # bewusst NICHT im Repo (siehe Aktivierungs-Hinweis oben).

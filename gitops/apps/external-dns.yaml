@@ -1,17 +1,12 @@
 ---
-# external-dns, direkt aus dem Upstream-Chart. Enthaelt Platzhalter (CHANGE_ME_*) fuer die
-# DHBW-DNS-Zone/TSIG-Keyname - ohne eigene Zone (self-service.dhbw.cloud) bleibt external-dns
-# funktionslos. Deshalb bewusst OHNE syncPolicy.automated, bis echte Werte eingetragen sind
-# (Aktivierung siehe unten, analog zu charts/cert-manager-config/values.yaml ## Aktivierung -
-# beide nutzen dieselbe Zone/denselben TSIG-Key).
+# external-dns, direkt aus dem Upstream-Chart. Nutzt die echte DHBW-DNS-Zone
+# (self-service.dhbw.cloud) - siehe charts/cert-manager-config/values.yaml, das denselben
+# Zone-/TSIG-Key fuer den cert-manager-dns01-Solver nutzt.
 #
-# Aktivierung:
-#   1. Alle "CHANGE_ME_"-Platzhalter unten ersetzen
-#   2. TSIG-Secret VORHER manuell anlegen (nicht ins Repo committen!):
-#        kubectl create namespace external-dns
-#        kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
-#          --from-literal=secret=<echter TSIG-Wert>
-#   3. argocd app sync external-dns
+# Voraussetzung (VOR dem ersten Sync manuell angelegt, nicht im Repo):
+#   kubectl create namespace external-dns
+#   kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
+#     --from-literal=secret=<TSIG-Wert>
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -45,7 +40,7 @@ spec:
           - AAAA
           - CNAME
         domainFilters:
-          - CHANGE_ME_RFC2136_ZONE
+          - cas438007-at-cas-dhbw-de.users.dhbw.site
         env:
           - name: RFC2136_TSIG_SECRET
             valueFrom:
@@ -67,10 +62,13 @@ spec:
           # charts/cert-manager-config/values.yaml.
           - --rfc2136-host=141.72.5.244
           - --rfc2136-port=53
-          - --rfc2136-zone=CHANGE_ME_RFC2136_ZONE
+          - --rfc2136-zone=cas438007-at-cas-dhbw-de.users.dhbw.site
+          # $(VAR) wird von Kubernetes aus dem Container-Env aufgeloest (siehe env: oben) - das
+          # eigentliche Secret steht NICHT hier im Repo, sondern in einem vorab angelegten
+          # K8s-Secret (external-dns-rfc2136-tsig).
           - --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)
           - --rfc2136-tsig-secret-alg=hmac-sha512
-          - --rfc2136-tsig-keyname=CHANGE_ME_RFC2136_TSIG_KEYNAME
+          - --rfc2136-tsig-keyname=user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
           - --rfc2136-tsig-axfr
         # Kein rbac.additionalPermissions noetig: der Chart fuegt die traefik.io-RBAC-Regeln
         # (ingressroutes/-tcps/-udps) automatisch hinzu, sobald "traefik-proxy" in sources steht
@@ -80,5 +78,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: external-dns
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true

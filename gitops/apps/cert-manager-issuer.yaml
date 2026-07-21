@@ -1,16 +1,14 @@
 ---
-# ClusterIssuer-Konfiguration aus charts/cert-manager-config, mit Platzhaltern (siehe dortige
-# values.yaml). Bewusst OHNE syncPolicy.automated: solange die Platzhalter nicht durch echte
-# Werte ersetzt sind, soll ArgoCD hier NICHT automatisch synchen. Aktivierung siehe
-# charts/cert-manager-config/values.yaml ## Aktivierung.
+# ClusterIssuer-Konfiguration aus charts/cert-manager-config (echte Werte, siehe dortige
+# values.yaml).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cert-manager-issuer
   namespace: argocd
   annotations:
-    # Nur informativ (diese Application syncd ohnehin nicht automatisch) - dokumentiert, dass
-    # die cert-manager-CRDs vor einem manuellen Sync bereits vorhanden sein muessen.
+    # Sync-Wave nach cert-manager.yaml (Wave 0/Default) - die cert-manager-CRDs muessen
+    # existieren, bevor der ClusterIssuer angewendet wird.
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
@@ -22,5 +20,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: cert-manager
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
