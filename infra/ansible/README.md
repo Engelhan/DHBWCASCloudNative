@@ -137,11 +137,16 @@ cat argocd_deploy_key.pub
 ```
 
 Den ausgegebenen Public Key unter GitHub → Repo → Settings → Deploy keys → "Add deploy key" als
-**Read-only**-Key eintragen. `argocd_deploy_key`/`argocd_deploy_key.pub` sind git-ignoriert.
-`gitops/apps/app-of-apps.yaml` und `cert-manager-issuer.yaml` nutzen deshalb bewusst
-`repoURL: git@github.com:...` (SSH) statt `https://...` — alle Applications, die stattdessen
-einen fremden Upstream-Helm-Repo referenzieren (Longhorn, cert-manager, external-dns), bleiben
-unverändert HTTPS, die brauchen kein Credential.
+**Read-only**-Key eintragen. `argocd_deploy_key`/`argocd_deploy_key.pub` sind git-ignoriert. Jede
+`Application` in `gitops/apps/` zeigt auf einen Chart in diesem Repo (siehe `gitops/README.md`
+## Struktur) und nutzt deshalb `repoURL: git@github.com:...` (SSH) statt `https://...` — nur die
+Upstream-Helm-Repos, die die Wrapper-Charts in ihrem `Chart.yaml.dependencies` referenzieren
+(Longhorn, cert-manager, external-dns), bleiben unverändert öffentliches HTTPS, die brauchen
+kein Credential.
+
+Bei einem **eigenen Fork** steht diese Repo-URL in sechs Dateien fest verdrahtet — dafür gibt es
+`../scripts/personalize.py` (siehe Root-`README.md` ## Betrieb), statt sie einzeln von Hand zu
+suchen und zu ersetzen.
 
 **RFC2136-TSIG (sobald die DNS-Zone aktiv ist):**
 

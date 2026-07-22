@@ -224,6 +224,15 @@ if needed rather than reviving the Ansible role.
 ## Commands
 
 ```bash
+# Fork personalization (only when deploying under a different DHBW account/repo — skip for
+# work on the original repo). Rewrites the non-secret, git-tracked identity values (fork
+# repoURL, DNS zone, ACME email, TSIG keyname) across gitops/**/*.yaml + charts/**/*.yaml in
+# one pass instead of hand-editing ~9 files. Secrets (TSIG value, OpenStack creds) are
+# untouched by this — those still go through terraform.tfvars/secrets.yml as usual.
+cp deploy.env.example deploy.env   # fill in real values, or set as env vars instead
+python3 scripts/personalize.py
+git diff                           # review before committing
+
 # Terraform (infra/terraform/)
 cd infra/terraform
 cp terraform.tfvars.example terraform.tfvars   # fill in OpenStack app credential + flavors/image
@@ -277,6 +286,12 @@ of leaving this section stale.
   excludes itself from its own directory source (`source.directory.exclude`) — without it,
   self-tracking + `prune: true` risked ArgoCD deleting its own root Application (and cascading
   through the `resources-finalizer` to every child app); see `gitops/README.md` ## Struktur.
+- **Done:** `scripts/personalize.py` + `deploy.env.example` — lets another student/the professor
+  deploy their own fork by rewriting the git-tracked, non-secret identity values (fork repoURL,
+  DNS zone, ACME email, TSIG keyname) across `gitops/**/*.yaml` + `charts/**/*.yaml` in one pass
+  instead of hand-editing ~9 files; supports env-var overrides too. Secrets are deliberately out
+  of scope for this script (stay in `terraform.tfvars`/`secrets.yml` as before). See root
+  `README.md` ## Betrieb ### Eigenes Deployment.
 - **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
   `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +

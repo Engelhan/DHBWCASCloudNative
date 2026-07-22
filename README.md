@@ -90,6 +90,31 @@ Detailskizze und Screenshots des tatsächlichen Deployments folgen in
 > `TODO`: Sobald Terraform/Ansible/Charts final sind, exakte, kopierbare Befehle inkl. Beispielwerten
 > hier verifizieren. Geplanter Ablauf:
 
+### Eigenes Deployment (anderer Studierender / Dozent)
+
+Dieses Repo gehört zu einer konkreten DHBW-Kennung (`cas438007`) und einem konkreten privaten
+GitHub-Fork. Für ein eigenes Deployment davon abweichend:
+
+1. **Repo forken/klonen** unter dem eigenen GitHub-Account (privat, siehe
+   [`gitops/README.md`](gitops/README.md) ## Privates Repo).
+2. **Personalisierbare, nicht-geheime Werte** (Fork-URL, DNS-Zone, ACME-E-Mail, TSIG-Keyname) an
+   einer Stelle setzen statt in bis zu neun Dateien einzeln zu suchen:
+   ```bash
+   cp deploy.env.example deploy.env   # eigene Werte eintragen
+   python3 scripts/personalize.py     # schreibt sie in gitops/**/*.yaml + charts/**/*.yaml
+   git diff                           # pruefen, dann committen
+   ```
+   Jeder Wert lässt sich alternativ auch als Umgebungsvariable setzen (siehe
+   `deploy.env.example`) — praktisch für CI oder um `deploy.env` gar nicht erst anzulegen.
+3. **Secrets bleiben davon unberührt** (das Skript fasst nur getrackte, unkritische Werte an) —
+   separat ausfüllen:
+   - `infra/terraform/terraform.tfvars` (aus `.example`): eigene OpenStack-Application-Credentials.
+   - `infra/ansible/secrets.yml` (aus `.example`): eigener RFC2136-TSIG-Secret-*Wert*.
+   - `infra/ansible/argocd_deploy_key`: `ssh-keygen -t ed25519 -f infra/ansible/argocd_deploy_key
+     -N ""`, Public Key als Read-only-Deploy-Key im eigenen Fork eintragen — siehe
+     [`infra/ansible/README.md`](infra/ansible/README.md) ## GitOps-Secrets.
+4. Ab hier der normale Ablauf unten (`terraform apply` → `ansible-playbook site.yml`).
+
 ```bash
 # 1. Infrastruktur auf der DHBWCloud erzeugen
 cd infra/terraform

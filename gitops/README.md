@@ -73,6 +73,11 @@ Upstream-Helm-Repos selbst (`charts.longhorn.io`, `charts.jetstack.io`,
 Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim Sync per
 `helm dependency build` automatisch.
 
+**Bei einem eigenen Fork** steht `git@github.com:Engelhan/DHBWCASCloudNative.git` in sechs
+Dateien (allen `gitops/apps/*.yaml`) — nicht einzeln suchen und ersetzen, sondern
+`../deploy.env.example` nach `../deploy.env` kopieren, eigene Fork-URL eintragen und
+`python3 ../scripts/personalize.py` laufen lassen, siehe Root-`README.md` ## Betrieb.
+
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
 per Ansible-Rolle installiert (siehe `infra/ansible/README.md` ## Übernommene Funktionen aus
@@ -85,8 +90,9 @@ werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
 
 Nutzen die echte DHBW-DNS-Zone `cas438007-at-cas-dhbw-de.users.dhbw.site`
 (self-service.dhbw.cloud) — Zone/TSIG-Keyname stehen in `charts/cert-manager-config/values.yaml`
-bzw. `gitops/apps/external-dns.yaml` (dieselben Werte an beiden Stellen). Beide `Application`s
-sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
+bzw. `charts/external-dns/values.yaml` (dieselben Werte an beiden Stellen — bei einem eigenen
+Fork per `../scripts/personalize.py` an beiden Stellen gleichzeitig ersetzbar, siehe ## Privates
+Repo oben). Beide `Application`s sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
 
 **Das eigentliche TSIG-Secret steht bewusst NICHT im Repo** (nur die Referenz
 `external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`) — vor dem ersten Sync manuell anlegen:
