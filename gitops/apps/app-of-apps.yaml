@@ -19,6 +19,13 @@ spec:
     path: gitops/apps
     directory:
       recurse: false
+      # Ohne das wuerde diese Application sich selbst als verwaltete Ressource auffassen (sie
+      # liegt im selben Ordner, den sie synct) - mit prune+selfHeal aktiv waere das potenziell
+      # selbstzerstoererisch (ein Sync koennte versuchen, die eigene Application-Ressource zu
+      # loeschen). exclude nimmt genau diese Datei aus der Ressourcenliste raus, ohne sie in
+      # einen separaten Ordner verschieben zu muessen (an diesem Pfad erwartet z.B.
+      # infra/ansible/roles/argocd_bootstrap sie).
+      exclude: "app-of-apps.yaml"
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
