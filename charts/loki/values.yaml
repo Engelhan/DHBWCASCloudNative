@@ -52,6 +52,16 @@ loki:
         cpu: 100m
         memory: 128Mi
 
+  # Chart-Default aktiviert zusaetzlich zwei eigene Memcached-StatefulSets (chunks-cache,
+  # results-cache) mit happigen Default-Anforderungen (chunksCache.allocatedMemory: 8192 = 8Gi!,
+  # resultsCache.allocatedMemory: 1024 = 1Gi) - eine reine Latenz-Optimierung fuer echtes
+  # Produktions-Log-Volumen, fuer die kleine Lab-Groesse unnoetig. Deaktiviert statt
+  # runterzutunen, spart zwei zusaetzliche Pods komplett.
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
   # Gateway (nginx) ist der dokumentierte Standard-Entrypoint, auch im SingleBinary-Modus -
   # Grafana-Datasource (charts/kube-prometheus-stack/values.yaml) zeigt darauf.
   gateway:
