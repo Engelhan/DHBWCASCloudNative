@@ -38,6 +38,12 @@ Zwei Varianten:
   - [`argocd-ingress/`](argocd-ingress/): `Certificate` + Traefik `IngressRouteTCP`, macht die
     ArgoCD-UI über die echte DHBW-DNS-Zone erreichbar. Siehe
     [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
+  - [`traefik-config/`](traefik-config/): kein Wrapper- und kein Custom-Resource-Chart im obigen
+    Sinn, sondern ein einzelnes `HelmChartConfig`-Objekt (`helm.cattle.io/v1`), das Werte in k3s'
+    eigenes, gebündeltes Traefik-`HelmChart` mergt, ohne dessen `helm-controller` die Ownership
+    streitig zu machen — gibt Traefiks `LoadBalancer`-Service einen stabilen, per external-dns
+    veröffentlichten Hostnamen als rebuild-festes CNAME-Ziel für `argocd-ingress` & Co. Siehe
+    [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
 
 Lokal nachvollziehen/testen (kein Cluster nötig):
 

@@ -288,9 +288,15 @@ of leaving this section stale.
   `IngressRouteTCP`/`-UDP`** — unlike plain `Ingress`, its `traefik-proxy` source reads the
   target *only* from the `external-dns.alpha.kubernetes.io/target` annotation, never from the
   Traefik `Service`'s `LoadBalancer` status (confirmed against `source/traefik_proxy.go`
-  upstream); `charts/argocd-ingress/templates/ingressroute-tcp.yaml` sets that annotation
-  explicitly from `values.yaml` → `externalDnsTargets` (Traefik's current IPv6 VIPs) — a static
-  value that needs manually refreshing after a cluster rebuild changes the VIPs. Every
+  upstream); `charts/argocd-ingress/templates/ingressroute-tcp.yaml` sets that annotation to a
+  stable hostname (`values.yaml` → `externalDnsTarget`, `traefik.<zone>`) rather than raw VIPs.
+  That hostname is published by `gitops/apps/traefik-config.yaml` + `charts/traefik-config/`, a
+  `HelmChartConfig` (`helm.cattle.io/v1`) that merges an `external-dns.alpha.kubernetes.io/
+  hostname` annotation into k3s' own bundled Traefik `HelmChart` (the documented way to add
+  values to a k3s-managed chart without fighting its `helm-controller` for ownership) — for the
+  Traefik `Service` itself, external-dns' `service` source *can* auto-derive the target from
+  `LoadBalancer` status, so `traefik.<zone>` tracks VIP changes automatically and
+  `argocd.<zone>` effectively CNAMEs to it. No manual step after a cluster rebuild. Every
   `Application` points at its own chart under `charts/`: wrapper charts
   (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
   `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the

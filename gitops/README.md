@@ -18,6 +18,7 @@ gitops/
     ├── cert-manager.yaml       # cert-manager-Operator, Wrapper-Chart ../charts/cert-manager
     ├── cert-manager-issuer.yaml # ClusterIssuer, eigener Chart ../charts/cert-manager-config
     ├── external-dns.yaml       # external-dns, Wrapper-Chart ../charts/external-dns
+    ├── traefik-config.yaml     # HelmChartConfig-Override fuer k3s-Traefik, eigener Chart ../charts/traefik-config
     ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, eigener Chart ../charts/argocd-ingress
     ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator
     ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator
@@ -96,13 +97,20 @@ Traefik `IngressRouteTCP` mit `tls.passthrough: true` routet nur anhand der SNI 
 `IngressRouteTCP`/`-UDP` das Ziel niemals aus dem Status des Traefik-`LoadBalancer`-Service,
 sondern ausschließlich aus der Annotation `external-dns.alpha.kubernetes.io/target`
 (`source/traefik_proxy.go` im external-dns-Repo) — ohne sie: "No endpoints could be generated",
-kein DNS-Record, live so beobachtet. `charts/argocd-ingress/templates/ingressroute-tcp.yaml`
-setzt diese Annotation deshalb explizit auf die aktuellen IPv6-VIPs des
-Traefik-`LoadBalancer`-Service (`charts/argocd-ingress/values.yaml` → `externalDnsTargets`,
-IPv4-VIPs bewusst weggelassen, analog zu `--exclude-target-net=10.0.0.0/8` bei den
-Ingress-basierten Records). Das ist ein statischer Wert, kein dynamisch nachgeführter — **nach
-einem Cluster-Rebuild (neue VIPs) muss `externalDnsTargets` von Hand aktualisiert werden**:
-`kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[*].ip}'`.
+kein DNS-Record, live so beobachtet. Statt hier rohe Traefik-VIPs zu hinterlegen (die bei jedem
+Cluster-Rebuild neu vergeben werden und damit gegen "ein Ablauf bringt alles hoch" verstoßen
+würden), setzt `charts/argocd-ingress/templates/ingressroute-tcp.yaml` diese Annotation auf einen
+stabilen Hostnamen (`charts/argocd-ingress/values.yaml` → `externalDnsTarget`,
+`traefik.<zone>`). Dieser Hostname wiederum wird von `gitops/apps/traefik-config.yaml` +
+`charts/traefik-config/` erzeugt: ein `HelmChartConfig`-Objekt (`helm.cattle.io/v1`, Name/
+Namespace `traefik`/`kube-system`) mergt eine `external-dns.alpha.kubernetes.io/hostname`-
+Annotation in k3s' eigenes, gebündeltes Traefik-`HelmChart` — der offiziell dokumentierte Weg,
+zusätzliche Werte für ein von k3s selbst verwaltetes Chart zu setzen, ohne mit dessen
+`helm-controller` um die Ownership zu konkurrieren. Für den Traefik-`Service` selbst (anders als
+für `IngressRoute`/`-TCP`/`-UDP`) kann external-dns' `service`-Source das Ziel automatisch aus dem
+`LoadBalancer`-Status ableiten, sodass `traefik.<zone>` bei jedem VIP-Wechsel automatisch
+mitzieht — `argocd.<zone>` zeigt dann effektiv per CNAME auf `traefik.<zone>`. Kein manueller
+Schritt nach einem Cluster-Rebuild mehr nötig.
 
 ## Privates Repo — ArgoCD braucht ein Credential
 
