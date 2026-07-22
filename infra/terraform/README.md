@@ -14,8 +14,11 @@ sich auf den Helm-Chart, nicht auf die Infrastruktur.)
   bereit. `main.tf` sucht dieses Netz nur per Data-Source, legt nichts neu an.
 - Ein SSH-Keypair (importierter öffentlicher Schlüssel)
 - VMs ([`modules/compute`](modules/compute/)), jede direkt an DHBWV6 mit unmittelbar
-  erreichbarer `access_ip_v6` (**DHBWV6 ist ein reines IPv6-Netz**, die VMs bekommen keine
-  IPv4-Adresse):
+  erreichbarer `access_ip_v6` (primäre Adresse für SSH/kubeconfig) **und** einer per DHCP
+  zugewiesenen, tatsächlich Internet-gerouteten `access_ip_v4` (**DHBWV6 ist entgegen dem Namen
+  dual-stack**, nicht IPv6-only — Terraform reicht `access_ip_v4` nur zusätzlich durch, damit
+  k3s dual-stack laufen kann, siehe [`../ansible/README.md`](../ansible/README.md) ## IPv6
+  (DHBWV6) und Dual-Stack):
   - 1× `control-plane` (k3s-Server)
   - 1× Worker je Eintrag in `var.worker_regions` (Default 3: `region-a`, `region-b`, `region-c`),
     alle mit demselben Flavor
@@ -81,8 +84,10 @@ ist `ansible-playbook -i inventory/hosts.ini playbooks/site.yml` in
   DHBWCloud-Projekts. Falls diese SSH/k3s-API/NodePort nicht bereits erlaubt, muss sie einmalig
   passend konfiguriert werden (außerhalb dieses Terraform-Codes, da laut Vorgabe hier explizit
   keine Security-Group-Verwaltung gewünscht ist).
-- IPv6-only: `ssh`/`ansible` erreichen die VMs über `access_ip_v6`, das generierte
-  `hosts.ini` trägt die IPv6-Adresse direkt als `ansible_host`. k3s muss in
-  [`../ansible/`](../ansible/) entsprechend mit `--node-ip`/`--tls-san` auf IPv6 konfiguriert
-  werden, und die kubeconfig-Server-URL braucht die Klammer-Syntax `https://[<ipv6>]:6443`
-  (siehe `outputs.tf` → `kubeconfig_hint`).
+- IPv6-primär: `ssh`/`ansible` erreichen die VMs über `access_ip_v6`, das generierte `hosts.ini`
+  trägt die IPv6-Adresse als `ansible_host` und zusätzlich `access_ip_v4` als `node_ip_v4`
+  (eigener Host-Var, siehe `hosts.ini.tpl`). k3s läuft in [`../ansible/`](../ansible/) dual-stack
+  (`--node-ip`/`--cluster-cidr`/`--service-cidr` mit IPv6 zuerst, IPv4 zusätzlich —
+  siehe dortige README ## IPv6 (DHBWV6) und Dual-Stack), die kubeconfig-Server-URL bleibt
+  IPv6-only mit Klammer-Syntax `https://[<ipv6>]:6443` (siehe `outputs.tf` →
+  `kubeconfig_hint`).

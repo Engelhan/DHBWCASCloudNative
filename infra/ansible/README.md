@@ -16,18 +16,30 @@ Bewusst gepinnt statt "latest"/"stable"-Tags zu folgen (Reproduzierbarkeit, sieh
 | k3s | `v1.36.2+k3s1` | [k3s-io/k3s Releases](https://github.com/k3s-io/k3s/releases) |
 | ArgoCD | `v3.4.4` | [argoproj/argo-cd Releases](https://github.com/argoproj/argo-cd/releases) (neueste stabile Version, nicht die 3.5-Release-Candidates) |
 
-## IPv6 (DHBWV6)
+## IPv6 (DHBWV6) und Dual-Stack
 
-Das Cluster-Netz ist reines IPv6 (siehe [`../terraform/`](../terraform/)). Daraus folgt für
-`roles/k3s_server`:
+`DHBWV6` ist entgegen dem Namen **dual-stack**: jede VM bekommt per DHCP zusätzlich zur
+IPv6-Adresse eine private, aber tatsächlich Internet-geroutete IPv4-Adresse (siehe
+[`../terraform/`](../terraform/)) — ursprünglich fälschlich als IPv6-only angenommen, auf einem
+laufenden Cluster widerlegt (VMs erreichen `github.com` per IPv4 problemlos, das keinen
+`AAAA`-Eintrag hat). IPv6 bleibt überall primär, IPv4 kommt nur dazu, damit k3s dual-stack
+laufen kann und Pods (ArgoCD, external-dns) IPv4-only-Ziele erreichen. Für `roles/k3s_server`
+folgt daraus:
 
-- `--node-ip`/`--tls-san` auf die eigene, von Terraform gelieferte IPv6-Adresse
-- `--cluster-cidr`/`--service-cidr` als IPv6-Blöcke im ULA-Bereich `fd00::/8` (RFC 4193) statt
-  eines global routbaren Blocks – Pods/Services müssen von außen nicht erreichbar sein
-- `--flannel-ipv6-masq`, damit Pod-Egress-Traffic über die Node-Adresse maskiert wird
-- Die von k3s erzeugte lokale `kubeconfig` verweist standardmäßig auf `127.0.0.1`; `k3s_server`
-  biegt das nach dem Abholen auf `https://[<ipv6>]:6443` um (Klammer-Syntax, sonst kollidiert der
-  Port-Doppelpunkt mit den Adress-Doppelpunkten)
+- `--node-ip`/`--cluster-cidr`/`--service-cidr` bekommen je ein `<IPv6>,<IPv4>`-Paar (IPv6
+  zuerst); `--tls-san` bekommt beide Adressen als getrennte Flags
+- IPv6-CIDRs bleiben im ULA-Bereich `fd00::/8` (RFC 4193) statt eines global routbaren Blocks –
+  Pods/Services müssen von außen nicht erreichbar sein; IPv4-CIDRs sind k3s' eigene Defaults
+  (`10.42.0.0/16`/`10.43.0.0/16`), kollidieren nicht mit dem VM-eigenen DHCP-Bereich
+  `10.200.0.0/19`
+- `--flannel-ipv6-masq`, damit IPv6-Pod-Egress-Traffic über die Node-Adresse maskiert wird
+  (ULA ist nicht global routbar); IPv4-Pod-Egress maskiert k3s/Flannel standardmäßig, kein
+  äquivalentes Flag nötig
+- Die von k3s erzeugte lokale `kubeconfig` verweist standardmäßig auf `127.0.0.1`/`[::1]`
+  (IPv6 zuerst in `--node-ip`, siehe oben); `k3s_server` biegt das nach dem Abholen auf
+  `https://[<ipv6>]:6443` um (Klammer-Syntax, sonst kollidiert der Port-Doppelpunkt mit den
+  Adress-Doppelpunkten) — kubeconfig/SSH bleiben bewusst IPv6-only, nur k3s selbst läuft
+  dual-stack
 
 ## Struktur
 

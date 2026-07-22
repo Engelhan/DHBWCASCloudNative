@@ -91,9 +91,13 @@ if needed rather than reviving the Ansible role.
 - No network/subnet/router/security-group management — the DHBWCloud project already provides an
   existing, externally routable network named **`DHBWV6`**, looked up via a data source
   (`network_name` var, default `"DHBWV6"`). VMs attach to it directly.
-- **`DHBWV6` is IPv6-only.** VMs get no IPv4 address at all — use `access_ip_v6`, never
-  `access_ip_v4`, anywhere in `modules/compute`. Any new resource/output touching instance IPs
-  must follow this.
+- **`DHBWV6` is dual-stack, not IPv6-only** (corrected after a live cluster showed this — VMs get
+  a real, internet-routed IPv4 via DHCP on the same NIC in addition to their IPv6 address). IPv6
+  stays the **primary** address everywhere (`access_ip_v6`, SSH, kubeconfig, k3s `--node-ip`
+  first entry) — `access_ip_v4` (`modules/compute/outputs.tf`) is exposed *only* so k3s can run
+  dual-stack (`--node-ip`/`--cluster-cidr`/`--service-cidr` each get an IPv6 value first, IPv4
+  second — see Ansible specifics below), because pods otherwise cannot reach IPv4-only hosts
+  like `github.com` (no `AAAA` record). Don't make IPv4 primary anywhere; it's additive only.
 - No security groups are created or managed here (explicit user decision) — the project's
   default security group applies.
 - Auth is via **OpenStack Application Credentials** (`os_application_credential_id` /
@@ -126,11 +130,21 @@ if needed rather than reviving the Ansible role.
   `node_labels` → `argocd_bootstrap` → `gitops_secrets`. Each depends on state from the previous
   one (e.g. agents need the server's node-token; labels need registered nodes; `gitops_secrets`
   needs the kubeconfig `k3s_server` fetched locally).
-- k3s is installed with **IPv6-specific flags** because the cluster network is IPv6-only:
-  `--node-ip`/`--tls-san` on the node's own IPv6, `--cluster-cidr`/`--service-cidr` in the ULA
-  range `fd00::/8` (not globally routable on purpose), `--flannel-ipv6-masq` for pod egress NAT.
-  Versions/CIDRs are centralized in `inventory/group_vars/all.yml` — change them there, not inline
-  in role tasks. It lives under `inventory/`, not directly under `infra/ansible/`, because Ansible
+- k3s runs **dual-stack, IPv6-primary**: `--node-ip`/`--cluster-cidr`/`--service-cidr` each take
+  a comma-separated `<IPv6>,<IPv4>` pair (IPv6 first — kubeconfig/SSH stay IPv6-only; `--tls-san`
+  gets both addresses as two separate flags, harmless and future-proofs the cert in case anything
+  ever reaches the API server over IPv4), sourced from `ansible_host`/`node_ip_v4` (`node_ip_v4`
+  comes from Terraform's `hosts.ini.tpl`, see Terraform specifics above) and `k3s_cluster_cidr(_v4)`/
+  `k3s_service_cidr(_v4)` in `inventory/group_vars/all.yml`. IPv6 CIDRs stay in the ULA range
+  `fd00::/8` (not globally routable on purpose); IPv4 CIDRs are k3s's own defaults
+  (`10.42.0.0/16`/`10.43.0.0/16`, chosen to not collide with the VMs' own `10.200.0.0/19` DHCP
+  range). `--flannel-ipv6-masq` handles IPv6 pod egress NAT (ULA isn't globally routable); IPv4
+  pod egress is masqueraded by k3s/Flannel automatically, no equivalent flag needed. The whole
+  IPv4 side exists for exactly one reason: pods (ArgoCD, external-dns) need to reach IPv4-only
+  hosts like `github.com`, which has no `AAAA` record — see gitops layer above and
+  `gitops/README.md` ## Privates Repo. Versions/CIDRs are centralized in
+  `inventory/group_vars/all.yml` — change them there, not inline in role tasks. It lives under
+  `inventory/`, not directly under `infra/ansible/`, because Ansible
   only auto-loads `group_vars/` when it sits next to the inventory file (or next to the playbook) —
   a plain top-level `infra/ansible/group_vars/` is silently never loaded and every pinned var
   resolves to undefined. Verified by reproducing the documented `ansible-playbook playbooks/site.yml`
