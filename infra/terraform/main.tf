@@ -25,6 +25,7 @@ resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/templates/hosts.ini.tpl", {
     control_plane_name   = module.compute.control_plane.name
     control_plane_ip     = module.compute.control_plane.ip
+    control_plane_ip_v4  = module.compute.control_plane.ip_v4
     workers              = module.compute.workers
     ssh_user             = var.ssh_user
     ssh_private_key_path = var.ssh_private_key_path

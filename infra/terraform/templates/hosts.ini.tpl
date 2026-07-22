@@ -2,11 +2,11 @@
 ; Nicht manuell bearbeiten - Aenderungen gehen beim naechsten "terraform apply" verloren.
 
 [control_plane]
-${control_plane_name} ansible_host=${control_plane_ip}
+${control_plane_name} ansible_host=${control_plane_ip} node_ip_v4=${control_plane_ip_v4}
 
 [workers]
 %{ for w in workers ~}
-${w.name} ansible_host=${w.ip} region=${w.region}
+${w.name} ansible_host=${w.ip} node_ip_v4=${w.ip_v4} region=${w.region}
 %{ endfor ~}
 
 [k3s_cluster:children]

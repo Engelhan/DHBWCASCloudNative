@@ -3,12 +3,12 @@
 ; Diese Datei dient nur als Beispiel/Fallback für den manuellen Fall.
 
 [control_plane]
-ticketflow-cp ansible_host=CHANGE_ME
+ticketflow-cp ansible_host=CHANGE_ME node_ip_v4=CHANGE_ME
 
 [workers]
-ticketflow-worker-1 ansible_host=CHANGE_ME region=region-a
-ticketflow-worker-2 ansible_host=CHANGE_ME region=region-b
-ticketflow-worker-3 ansible_host=CHANGE_ME region=region-c
+ticketflow-worker-1 ansible_host=CHANGE_ME node_ip_v4=CHANGE_ME region=region-a
+ticketflow-worker-2 ansible_host=CHANGE_ME node_ip_v4=CHANGE_ME region=region-b
+ticketflow-worker-3 ansible_host=CHANGE_ME node_ip_v4=CHANGE_ME region=region-c
 
 [k3s_cluster:children]
 control_plane

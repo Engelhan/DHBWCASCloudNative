@@ -2,9 +2,10 @@
 #
 # Alle VMs haengen direkt am vorhandenen, extern routbaren Netz DHBWV6 (siehe root main.tf) -
 # keine eigenen Floating-IPs, keine selbst verwaltete Security Group (Projekt-Default gilt).
-# DHBWV6 ist ein reines IPv6-Netz: die Instanzen bekommen nur eine IPv6-Adresse, siehe
-# access_ip_v6 in outputs.tf statt access_ip_v4. Ansible/k3s muessen entsprechend mit
-# IPv6-Adressen umgehen (--node-ip, --tls-san, kubeconfig-Server-URL in Klammer-Syntax).
+# DHBWV6 ist trotz des Namens dual-stack: die Instanzen bekommen per DHCP sowohl eine
+# IPv6- als auch eine private, aber Internet-geroutete IPv4-Adresse (siehe outputs.tf). IPv6
+# bleibt primaer (--node-ip, --tls-san, kubeconfig-Server-URL in Klammer-Syntax), IPv4 wird
+# zusaetzlich fuer k3s-Dual-Stack-Networking durchgereicht.
 #
 # Platzierung (P4): die DHBWCloud stellt real nur eine Region/AZ bereit. Um trotzdem eine
 # region-bewusste Verteilung von CNPG-Replicas und Kafka-Brokern ueber die Worker zeigen zu
