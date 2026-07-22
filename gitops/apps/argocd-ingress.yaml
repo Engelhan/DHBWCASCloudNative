@@ -1,0 +1,26 @@
+---
+# Oeffentlicher Zugriff auf die ArgoCD-UI ueber die echte DHBW-DNS-Zone - eigener Chart statt
+# Upstream-Application (analog zu cert-manager-issuer.yaml: Certificate + IngressRouteTCP sind
+# unsere eigenen Ressourcen, kein Operator). Siehe charts/argocd-ingress/ fuer Details/Warum
+# TLS-Passthrough statt --insecure + Ingress-Termination.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-ingress
+  namespace: argocd
+  annotations:
+    # Nach cert-manager-issuer.yaml (Wave 1) - braucht die dort erzeugte ClusterIssuer.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/argocd-ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

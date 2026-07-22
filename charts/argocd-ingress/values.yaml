@@ -1,0 +1,16 @@
+# Aendern, falls ein anderer Hostname gewuenscht ist - muss innerhalb der aktivierten
+# RFC2136-Zone liegen (siehe charts/cert-manager-config/values.yaml rfc2136.zone), sonst kann
+# weder cert-manager (dns01) noch external-dns dafuer einen Record/Zertifikat ausstellen.
+hostname: "argocd.cas438007-at-cas-dhbw-de.users.dhbw.site"
+
+clusterIssuerName: certificate-cluster-issuer
+tlsSecretName: argocd-server-tls
+
+argocdServer:
+  namespace: argocd
+  serviceName: argocd-server
+  servicePort: 443
+
+# Traefik-Entrypoint fuer TLS - k3s' gebuendeltes Traefik-Chart definiert "websecure" (Port 443)
+# standardmaessig, siehe traefik-Service in kube-system.
+traefikEntryPoint: websecure

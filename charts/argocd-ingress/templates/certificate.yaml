@@ -1,0 +1,16 @@
+# ArgoCDs API-Server erkennt ein Secret namens "argocd-server-tls" im eigenen Namespace
+# automatisch und verwendet es fuer sein TLS statt des selbstsignierten Default-Zertifikats -
+# kein Ingress-seitiges TLS-Termination-Setup noetig, siehe templates/ingressroute-tcp.yaml
+# (Passthrough).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argocd-server-tls
+  namespace: {{ .Values.argocdServer.namespace }}
+spec:
+  secretName: {{ .Values.tlsSecretName }}
+  dnsNames:
+    - {{ .Values.hostname | quote }}
+  issuerRef:
+    name: {{ .Values.clusterIssuerName }}
+    kind: ClusterIssuer
