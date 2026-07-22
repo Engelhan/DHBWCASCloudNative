@@ -14,7 +14,7 @@ Bewusst gepinnt statt "latest"/"stable"-Tags zu folgen (Reproduzierbarkeit, sieh
 | Komponente | Version | Quelle |
 |---|---|---|
 | k3s | `v1.36.2+k3s1` | [k3s-io/k3s Releases](https://github.com/k3s-io/k3s/releases) |
-| ArgoCD | `v3.4.4` | [argoproj/argo-cd Releases](https://github.com/argoproj/argo-cd/releases) (neueste stabile Version, nicht die 3.5-Release-Candidates) |
+| ArgoCD | `v3.4.5` | [argoproj/argo-cd Releases](https://github.com/argoproj/argo-cd/releases) (neueste stabile Version, nicht die 3.5-Release-Candidates) |
 
 ## IPv6 (DHBWV6) und Dual-Stack
 

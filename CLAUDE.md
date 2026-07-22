@@ -198,7 +198,7 @@ if needed rather than reviving the Ansible role.
   enough to blow past the Kubernetes API's hard 262144-byte annotation-size limit ("Too long"),
   failing the apply after most other objects already got created. Server-side apply doesn't write
   that annotation at all. Found on a real run against DHBWCloud VMs.
-- Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.4` (latest
+- Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.5` (latest
   stable, not the 3.5 release candidates at time of writing).
 - **Ansible cannot run as the controller on native Windows** (`ansible-core` fails with
   `check_blocking_io ... WinError 87` — a known Windows limitation; Windows is only supported as
