@@ -321,7 +321,19 @@ of leaving this section stale.
 
   cnpg-operator/strimzi-operator/kube-prometheus-stack need `syncOptions: [ServerSideApply=true]`
   (see Infra layering above) — already set on all three; Loki/Tempo don't ship CRDs, don't need
-  it.
+  it. All eight workload charts (the five above plus Longhorn/cert-manager/external-dns) now set
+  explicit `resources.requests`/`resources.limits` and enable the chart's own `networkPolicy`
+  where one exists (cert-manager, kube-prometheus-stack, Loki, Tempo — external-dns/CNPG/
+  Strimzi/Longhorn have no native NetworkPolicy field, deliberately not hand-built). Most charts
+  already ship hardened `securityContext` defaults (`runAsNonRoot`, `readOnlyRootFilesystem`,
+  `capabilities.drop: [ALL]`) and were left alone; only Strimzi (`{}` by default) and Tempo
+  (missing a couple of container-level fields) needed explicit overrides, and Longhorn has no
+  security-context field at all (needs privileged host access for iSCSI/block devices — an
+  unavoidable, documented exception, not an oversight). See `charts/README.md` ##
+  Resource-Limits, Security-Context, NetworkPolicy for the full rationale and a real
+  pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo splits
+  them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one chart's
+  values shape applies to another without checking the template first).
 - **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
   `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, all `src/*`
   application code, `observability/dashboards/` + `observability/alerts/` content.

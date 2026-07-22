@@ -45,3 +45,43 @@ Lokal nachvollziehen/testen (kein Cluster nötig):
 helm dependency update charts/longhorn   # zieht den Upstream-Chart nach charts/longhorn/charts/
 helm template charts/longhorn
 ```
+
+## Resource-Limits, Security-Context, NetworkPolicy
+
+Alle acht Wrapper-Charts oben setzen durchgehend `resources.requests`/`resources.limits`
+(Werte klein für die Lab-VMs, siehe die einzelnen `values.yaml`-Kommentare) und aktivieren die
+Chart-eigene `networkPolicy`, wo der Upstream-Chart eine anbietet (cert-manager,
+kube-prometheus-stack, Loki, Tempo — external-dns/CNPG/Strimzi/Longhorn haben kein natives
+NetworkPolicy-Feld, dafür wurde bewusst keine eigene NetworkPolicy von Hand nachgebaut, siehe
+unten).
+
+Bei `securityContext`/`podSecurityContext` gilt: **erst prüfen, dann setzen**. Die meisten
+dieser Charts (cert-manager, external-dns, CNPG, kube-prometheus-stack inkl. aller
+Subcharts, Loki) liefern bereits einen vollständig gehärteten Default (`runAsNonRoot`,
+`readOnlyRootFilesystem`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`) — dort
+wurde bewusst **nichts überschrieben**, nur per Kommentar in der jeweiligen `values.yaml`
+vermerkt, dass das schon passt. Explizit ergänzt wurde nur, wo der Chart-Default tatsächlich
+leer war (Strimzi: `podSecurityContext`/`securityContext` beide `{}`) oder ein Feld fehlte
+(Tempo: `allowPrivilegeEscalation`/`capabilities.drop` fehlten am Container, `readOnlyRootFilesystem`
+bewusst NICHT gesetzt — der Chart warnt im eigenen values.yaml-Kommentar "fails if true, do not
+enable"). **Longhorn** hat als einziger Chart gar kein Security-Context-Feld — Longhorn-Manager/
+-Driver brauchen privilegierten Host-Zugriff (iSCSI, Blockgeräte) und lassen sich strukturell
+nicht auf ein "restricted" Profil härten; das ist eine dokumentierte, unvermeidbare Ausnahme,
+keine Unterlassung.
+
+Ein Stolperstein beim Editieren, der einmal live aufgetreten ist: manche Charts trennen
+Pod-Level- und Container-Level-`securityContext` in **zwei gleichnamig wirkende, aber
+unterschiedlich verschachtelte** Felder (z.B. bei Tempo: `tempo.tempo.securityContext` landet
+im Container, `tempo.securityContext` im Pod — siehe `templates/statefulset.yaml` im
+Upstream-Chart). `allowPrivilegeEscalation`/`capabilities` gehören ausschließlich in den
+Container-Level-Block; im Pod-Level-Block sind das ungültige Felder (Kubernetes' `PodSecurityContext`-
+Typ kennt sie nicht). Vor jedem neuen `securityContext`-Override im Upstream-Chart-Template
+nachsehen, welches Values-Feld wirklich wohin gemappt wird, dann mit `helm template` +
+`python3 -c "...c.get('securityContext')..."` (Pod **und** Container getrennt ausgeben)
+gegenprüfen, statt der Struktur eines anderen Charts blind zu folgen.
+
+NetworkPolicies wurden bewusst **nicht** auf konkrete Pod-/Namespace-Selektoren verengt
+(Chart-Default-Regeln reichen, `enabled: true` genügt) — die genauen Cross-Namespace-Verkehrsflüsse
+(z.B. welche Namespaces Prometheus scrapen darf) stehen erst fest, sobald
+`charts/ticketflow` existiert; eine zu früh verengte Policy würde sonst später stillschweigend
+Metrics-/Log-/Trace-Sammlung blockieren, ohne dass ein Fehler sichtbar wird.
