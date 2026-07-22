@@ -17,6 +17,13 @@ spec:
     targetRevision: 1.11.3
     helm:
       valuesObject:
+        # Der Chart selbst empfiehlt das (siehe values.yaml-Kommentar): der pre-upgrade-Hook-Job
+        # mappt unter ArgoCD auf PreSync, das VOR allen regulaeren Chart-Ressourcen laeuft -
+        # inklusive der ServiceAccount, die der Job selbst braucht ("longhorn-service-account"
+        # not found). Ein reiner Versions-Vergleich gegen ein vorheriges Helm-Release ergibt bei
+        # einem GitOps-verwalteten Neuinstall ohnehin keinen Sinn.
+        preUpgradeChecker:
+          jobEnabled: false
         persistence:
           defaultClass: true
           # <= Node-Anzahl, sonst bleiben Replicas dauerhaft ungeplant ("Degraded"); 1 haelt den
