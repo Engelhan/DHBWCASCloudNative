@@ -323,17 +323,26 @@ of leaving this section stale.
   (see Infra layering above) — already set on all three; Loki/Tempo don't ship CRDs, don't need
   it. All eight workload charts (the five above plus Longhorn/cert-manager/external-dns) now set
   explicit `resources.requests`/`resources.limits` and enable the chart's own `networkPolicy`
-  where one exists (cert-manager, kube-prometheus-stack, Loki, Tempo — external-dns/CNPG/
-  Strimzi/Longhorn have no native NetworkPolicy field, deliberately not hand-built). Most charts
-  already ship hardened `securityContext` defaults (`runAsNonRoot`, `readOnlyRootFilesystem`,
-  `capabilities.drop: [ALL]`) and were left alone; only Strimzi (`{}` by default) and Tempo
-  (missing a couple of container-level fields) needed explicit overrides, and Longhorn has no
-  security-context field at all (needs privileged host access for iSCSI/block devices — an
-  unavoidable, documented exception, not an oversight). See `charts/README.md` ##
-  Resource-Limits, Security-Context, NetworkPolicy for the full rationale and a real
-  pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo splits
-  them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one chart's
-  values shape applies to another without checking the template first).
+  where one exists AND is safely scoped (cert-manager, kube-prometheus-stack, Tempo —
+  external-dns/CNPG/Strimzi/Longhorn have no native NetworkPolicy field, deliberately not
+  hand-built). **Loki's `networkPolicy.enabled` is deliberately `false`**, unlike the others —
+  its chart unconditionally adds a `<release>-namespace-only` policy with an **empty
+  `podSelector: {}`**, which applies to every pod in the shared `monitoring` namespace, not just
+  Loki's own. Caught live: it cut Grafana's sidecar containers off from the Kubernetes API
+  server (same namespace, different traffic target) → CrashLoopBackOff
+  ("connection refused" on the API server's ClusterIP). No chart-level sub-toggle exists to
+  disable just that one policy, so Loki's `networkPolicy` stays off entirely; see
+  `charts/README.md` ## Resource-Limits, Security-Context, NetworkPolicy. **Before enabling
+  `networkPolicy.enabled` on any future chart sharing this namespace, render it first and check
+  the `podSelector` isn't empty/missing** — that's the actual failure signature to watch for.
+  Most charts already ship hardened `securityContext` defaults (`runAsNonRoot`,
+  `readOnlyRootFilesystem`, `capabilities.drop: [ALL]`) and were left alone; only Strimzi (`{}`
+  by default) and Tempo (missing a couple of container-level fields) needed explicit overrides,
+  and Longhorn has no security-context field at all (needs privileged host access for
+  iSCSI/block devices — an unavoidable, documented exception, not an oversight). Same doc also
+  covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
+  splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
+  chart's values shape applies to another without checking the template first).
 - **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
   `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, all `src/*`
   application code, `observability/dashboards/` + `observability/alerts/` content.

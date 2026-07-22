@@ -50,10 +50,22 @@ helm template charts/longhorn
 
 Alle acht Wrapper-Charts oben setzen durchgehend `resources.requests`/`resources.limits`
 (Werte klein für die Lab-VMs, siehe die einzelnen `values.yaml`-Kommentare) und aktivieren die
-Chart-eigene `networkPolicy`, wo der Upstream-Chart eine anbietet (cert-manager,
-kube-prometheus-stack, Loki, Tempo — external-dns/CNPG/Strimzi/Longhorn haben kein natives
-NetworkPolicy-Feld, dafür wurde bewusst keine eigene NetworkPolicy von Hand nachgebaut, siehe
-unten).
+Chart-eigene `networkPolicy`, wo der Upstream-Chart eine anbietet und sie sich als sicher
+erwiesen hat (cert-manager, kube-prometheus-stack, Tempo — external-dns/CNPG/Strimzi/Longhorn
+haben kein natives NetworkPolicy-Feld, dafür wurde bewusst keine eigene NetworkPolicy von Hand
+nachgebaut, siehe unten). **Loki ist die eine Ausnahme: `networkPolicy.enabled: false`,
+bewusst NICHT aktiviert** — der Chart legt bei `enabled: true` zusätzlich ungefragt eine
+`<release>-namespace-only`-Policy mit **leerem `podSelector: {}`** an
+(`templates/networkpolicy.yaml`), die dann für **alle** Pods im Namespace `monitoring` gilt,
+nicht nur für Loki selbst, und nur noch Traffic innerhalb der Namespace-Grenze erlaubt. Live
+beobachtet: das hat den Grafana-Sidecars (selber Namespace, aus `charts/kube-prometheus-stack`)
+den Egress zum Kubernetes-API-Server gekappt ("connection refused" auf die
+Service-ClusterIP) → CrashLoopBackOff. Kein Chart-eigenes Sub-Flag, um nur diese eine Policy
+abzuschalten, deshalb für Loki komplett aus. Tempos NetworkPolicy hat dasselbe Problem nicht
+(dort korrekt über `podSelector.matchLabels` auf die eigenen Pods beschränkt) — **bei jedem
+neuen Chart erst den gerenderten NetworkPolicy-`podSelector` prüfen, bevor `enabled: true`
+gesetzt wird**, ein leerer/fehlender Selector auf einer geteilten Namespace ist der
+Symptomkiller.
 
 Bei `securityContext`/`podSecurityContext` gilt: **erst prüfen, dann setzen**. Die meisten
 dieser Charts (cert-manager, external-dns, CNPG, kube-prometheus-stack inkl. aller
