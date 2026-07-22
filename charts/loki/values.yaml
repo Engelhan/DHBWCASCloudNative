@@ -10,10 +10,18 @@
 loki:
   fullnameOverride: loki
 
-  # Chart-eigene NetworkPolicy mit sinnvollen Default-Regeln - nicht auf konkrete
-  # Pod-/Namespace-Selektoren verengt, siehe cert-manager/values.yaml fuer die Begruendung.
+  # BEWUSST deaktiviert (anders als bei den anderen Charts): der Chart legt bei
+  # networkPolicy.enabled=true ungefragt zusaetzlich eine "<release>-namespace-only"-Policy mit
+  # LEEREM podSelector an (templates/networkpolicy.yaml) - die gilt dann fuer ALLE Pods im
+  # Namespace "monitoring", nicht nur fuer Loki selbst, und erlaubt nur noch Traffic innerhalb
+  # der Namespace-Grenze. Live beobachtet: das hat den Grafana-Sidecars (im selben Namespace,
+  # siehe charts/kube-prometheus-stack) den Egress zum Kubernetes-API-Server gekappt
+  # ("connection refused" auf die Service-ClusterIP) - CrashLoopBackOff. Kein
+  # Chart-eigenes Sub-Flag, um nur diese eine Policy abzuschalten, deshalb hier komplett aus.
+  # Tempos networkPolicy hat dasselbe Problem NICHT (dort korrekt auf die eigenen Pods
+  # ueber podSelector.matchLabels beschraenkt, siehe charts/tempo/values.yaml).
   networkPolicy:
-    enabled: true
+    enabled: false
 
   deploymentMode: SingleBinary
   singleBinary:
