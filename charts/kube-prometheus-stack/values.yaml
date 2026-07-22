@@ -58,6 +58,15 @@ kube-prometheus-stack:
       enabled: true
       storageClassName: longhorn
       size: 5Gi
+    # Chart-Default (RollingUpdate) deadlockt mit einer einzelnen ReadWriteOnce-PVC bei jeder
+    # Aenderung am Pod-Template (z.B. den resources/networkPolicy-Werten hier): der neue Pod
+    # kann die PVC nicht attachen, solange der alte sie noch haelt ("Multi-Attach error"), aber
+    # Kubernetes killt den alten Pod erst, wenn der neue Ready ist - klassischer Deadlock, live
+    # beobachtet nach einem harmlosen resources-Update. Recreate terminiert den alten Pod zuerst
+    # (kurzer Grafana-Downtime beim Rollout, hier unkritisch) statt beide gleichzeitig um dieselbe
+    # Volume-Exklusivitaet konkurrieren zu lassen.
+    deploymentStrategy:
+      type: Recreate
     # securityContext/containerSecurityContext sind bereits Chart-Default gehaertet - kein
     # Override noetig.
     resources:
