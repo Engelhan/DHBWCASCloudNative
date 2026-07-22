@@ -7,3 +7,18 @@ strimzi-kafka-operator:
   # (charts/ticketflow/templates/messaging/kafka-cluster.yaml, noch nicht geschrieben) noch
   # nicht feststeht.
   watchAnyNamespace: true
+
+  # resources hat der Chart schon sinnvoll vorbelegt (limits 1000m/384Mi, requests 200m/384Mi) -
+  # kein Override noetig. podSecurityContext/securityContext sind dagegen Chart-Default leer
+  # ({}) - anders als alle anderen Operator-Charts hier nicht von Haus aus gehaertet, deshalb
+  # explizit gesetzt. Kein natives networkPolicy-Feld im Chart vorhanden.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL

@@ -4,8 +4,16 @@
 # "Zero out replica counts of other deployment modes"), nur Ressourcengroessen fuer die
 # kleinen Lab-VMs reduziert. Muss unter dem Dependency-Alias "loki" verschachtelt sein (siehe
 # Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+# loki.podSecurityContext/containerSecurityContext (globaler Block weiter unten) sind bereits
+# Chart-Default gehaertet (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL) und
+# gelten fuer alle Loki-eigenen Pods (singleBinary/gateway) - kein Override noetig.
 loki:
   fullnameOverride: loki
+
+  # Chart-eigene NetworkPolicy mit sinnvollen Default-Regeln - nicht auf konkrete
+  # Pod-/Namespace-Selektoren verengt, siehe cert-manager/values.yaml fuer die Begruendung.
+  networkPolicy:
+    enabled: true
 
   deploymentMode: SingleBinary
   singleBinary:
@@ -41,7 +49,9 @@ loki:
 
   # Eingebautes MinIO als S3-kompatibler Objektspeicher fuer Chunks/Ruler/Admin-API -
   # offiziell empfohlener Weg fuer SingleBinary ohne echtes Cloud-Object-Storage, siehe
-  # Upstream-Chart-Referenz single-binary-values.yaml.
+  # Upstream-Chart-Referenz single-binary-values.yaml. containerSecurityContext.
+  # readOnlyRootFilesystem bleibt bewusst false (Chart-Default, minio schreibt Laufzeitdaten
+  # ausserhalb des deklarierten Volumes) - restliche Haertung trotzdem ergaenzt.
   minio:
     enabled: true
     persistence:
@@ -51,6 +61,15 @@ loki:
       requests:
         cpu: 100m
         memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    containerSecurityContext:
+      readOnlyRootFilesystem: false
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
 
   # Chart-Default aktiviert zusaetzlich zwei eigene Memcached-StatefulSets (chunks-cache,
   # results-cache) mit happigen Default-Anforderungen (chunksCache.allocatedMemory: 8192 = 8Gi!,
@@ -64,8 +83,17 @@ loki:
 
   # Gateway (nginx) ist der dokumentierte Standard-Entrypoint, auch im SingleBinary-Modus -
   # Grafana-Datasource (charts/kube-prometheus-stack/values.yaml) zeigt darauf.
+  # podSecurityContext/containerSecurityContext sind bereits Chart-Default gehaertet - kein
+  # Override noetig.
   gateway:
     enabled: true
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
   # Fuettert Loki-eigene Metriken in Prometheus (kube-prometheus-stack, ServiceMonitor-CRD
   # muss existieren - gleicher Namespace, gleicher Sync-Batch ueber app-of-apps).

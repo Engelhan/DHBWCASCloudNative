@@ -16,10 +16,22 @@ kube-prometheus-stack:
             resources:
               requests:
                 storage: 20Gi
+      # securityContext/containerSecurityContext (alertmanagerSpec/prometheusSpec-Ebene) sind
+      # bereits Chart-Default gehaertet (runAsNonRoot, readOnlyRootFilesystem, capabilities
+      # drop ALL, seccompProfile RuntimeDefault) - kein Override noetig.
       resources:
         requests:
           cpu: 250m
           memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+    # Chart-eigene NetworkPolicy mit sinnvollen Default-Regeln - nicht auf konkrete
+    # Pod-/Namespace-Selektoren verengt, siehe cert-manager/values.yaml fuer die Begruendung
+    # (charts/ticketflow existiert noch nicht, genaue Cross-Namespace-Scrape-Ziele stehen noch
+    # nicht fest).
+    networkPolicy:
+      enabled: true
 
   alertmanager:
     alertmanagerSpec:
@@ -31,12 +43,32 @@ kube-prometheus-stack:
             resources:
               requests:
                 storage: 2Gi
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    networkPolicy:
+      enabled: true
 
   grafana:
     persistence:
       enabled: true
       storageClassName: longhorn
       size: 5Gi
+    # securityContext/containerSecurityContext sind bereits Chart-Default gehaertet - kein
+    # Override noetig.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    networkPolicy:
+      enabled: true
     # Loki/Tempo als zusaetzliche Datasources neben dem vom Chart selbst angelegten
     # Prometheus/Alertmanager-Datasource (siehe grafana.sidecar.datasources, Chart-Default) -
     # zusammen ergibt das den vollen LGTM-Stack (Logs/Grafana/Tempo/Metrics) in EINEM Grafana.
@@ -62,3 +94,40 @@ kube-prometheus-stack:
           # Service-Graph aus Tempo-Spans gegen Prometheus-Metriken.
           serviceMap:
             datasourceUid: prometheus
+
+  prometheusOperator:
+    # securityContext/containerSecurityContext sind bereits Chart-Default gehaertet - kein
+    # Override noetig.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    networkPolicy:
+      enabled: true
+
+  # node-exporter braucht zwangslaeufig hostNetwork/hostPID/hostPath (liest /proc, /sys vom
+  # Host fuer Node-Metriken) - kein weiteres Haerten darueber hinaus moeglich/sinnvoll.
+  # securityContext/containerSecurityContext sind trotzdem bereits Chart-Default gehaertet
+  # (runAsNonRoot, readOnlyRootFilesystem). Kein natives networkPolicy-Feld im Chart.
+  prometheus-node-exporter:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  # securityContext ist bereits Chart-Default gehaertet - kein Override noetig. Kein natives
+  # networkPolicy-Feld im Chart.
+  kube-state-metrics:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

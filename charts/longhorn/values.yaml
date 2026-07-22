@@ -28,3 +28,20 @@ longhorn:
     nodeDrainPolicy: block-for-eviction-if-contains-last-replica
     # Thin-Provisioning - noetig fuer speicherhungrige Workloads auf den kleinen Lab-VMs.
     storageOverProvisioningPercentage: 300
+
+  # Longhorn-Manager ist der einzige Chart-Baustein mit einem eigenen resources-Feld
+  # (longhornUI/longhornDriver/CSI-Sidecars haben keins - vom Chart nicht exponiert, von
+  # Longhorns eigenen Controllern zur Laufzeit erzeugt statt als Helm-Template).
+  longhornManager:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # KEIN securityContext-/networkPolicy-Feld im Chart vorhanden - bewusste Luecke, keine
+  # Unterlassung: Longhorn-Manager/-Driver brauchen privilegierten Host-Zugriff (iSCSI,
+  # Blockgeraete), lassen sich strukturell nicht auf "restricted" haerten. Chart bietet dafuer
+  # auch keine Toggle an.

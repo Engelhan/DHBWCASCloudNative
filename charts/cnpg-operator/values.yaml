@@ -6,8 +6,19 @@
 # verschachtelt sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart
 # durchreicht.
 cloudnative-pg:
-  # PodMonitor braucht die Prometheus-Operator-CRDs (kube-prometheus-stack) - noch nicht
-  # deployt (siehe gitops/README.md TODO-Liste). Bei Aktivierung von kube-prometheus-stack
-  # hier mit aktivieren.
+  # kube-prometheus-stack ist inzwischen deployt (siehe gitops/apps/kube-prometheus-stack.yaml)
+  # - PodMonitor-CRD existiert also.
   monitoring:
-    podMonitorEnabled: false
+    podMonitorEnabled: true
+
+  # podSecurityContext/containerSecurityContext sind bereits Chart-Default gehaertet
+  # (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL, seccompProfile
+  # RuntimeDefault) - kein Override noetig. Kein natives networkPolicy-Feld im Chart
+  # vorhanden.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

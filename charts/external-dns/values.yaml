@@ -11,6 +11,16 @@ external-dns:
   image:
     tag: v0.21.0
   logLevel: debug
+  # podSecurityContext/securityContext sind bereits Chart-Default gehaertet (runAsNonRoot,
+  # readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault) - kein
+  # Override noetig. Kein natives networkPolicy-Feld im Chart vorhanden.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
   provider:
     name: rfc2136
   sources:
