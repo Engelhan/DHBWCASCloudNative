@@ -1,0 +1,5 @@
+# Muss unter dem Dependency-Alias "cert-manager" verschachtelt sein (siehe Chart.yaml), damit
+# Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+cert-manager:
+  crds:
+    enabled: true

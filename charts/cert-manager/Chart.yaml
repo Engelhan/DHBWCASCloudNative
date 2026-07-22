@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cert-manager
+description: Wrapper-Chart um den Upstream-cert-manager-Chart mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: cert-manager
+    version: "v1.19.6"
+    repository: "https://charts.jetstack.io"

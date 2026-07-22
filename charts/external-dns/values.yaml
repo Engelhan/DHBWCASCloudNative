@@ -1,0 +1,61 @@
+# Nutzt die echte DHBW-DNS-Zone (self-service.dhbw.cloud) - siehe
+# ../cert-manager-config/values.yaml, das denselben Zone-/TSIG-Key fuer den
+# cert-manager-dns01-Solver nutzt. Muss unter dem Dependency-Alias "external-dns" verschachtelt
+# sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+#
+# Voraussetzung (VOR dem ersten Sync manuell angelegt, nicht im Repo):
+#   kubectl create namespace external-dns
+#   kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
+#     --from-literal=secret=<TSIG-Wert>
+external-dns:
+  image:
+    tag: v0.19.0
+  logLevel: debug
+  provider:
+    name: rfc2136
+  sources:
+    - service
+    - ingress
+    - traefik-proxy
+  policy: sync
+  registry: txt
+  # Projekteindeutig (nicht der generische Upstream-Default), damit sich mehrere Cluster in
+  # derselben Zone nicht um dieselben TXT-Records streiten.
+  txtOwnerId: ticketflow-dns
+  txtPrefix: ticketflow-dns-
+  managedRecordTypes:
+    - A
+    - AAAA
+    - CNAME
+  domainFilters:
+    - cas438007-at-cas-dhbw-de.users.dhbw.site
+  env:
+    - name: RFC2136_TSIG_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: external-dns-rfc2136-tsig
+          key: secret
+  extraArgs:
+    # Ziel-Netze, die External DNS NIE veroeffentlicht (private/NAT-Adressen aus
+    # Node-/Ingress-Status).
+    - --exclude-target-net=10.0.0.0/8 # RFC1918
+    - --exclude-target-net=172.16.0.0/12 # RFC1918
+    - --exclude-target-net=192.168.0.0/16 # RFC1918
+    - --exclude-target-net=100.64.0.0/10 # CGNAT (RFC6598)
+    - --exclude-target-net=169.254.0.0/16 # IPv4 Link-Local
+    - --exclude-target-net=fc00::/7 # IPv6 ULA
+    - --exclude-target-net=fe80::/10 # IPv6 Link-Local
+    # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname; auch
+    # Nameserver fuer den cert-manager-dns01-Solver, siehe ../cert-manager-config/values.yaml.
+    - --rfc2136-host=141.72.5.244
+    - --rfc2136-port=53
+    - --rfc2136-zone=cas438007-at-cas-dhbw-de.users.dhbw.site
+    # $(VAR) wird von Kubernetes aus dem Container-Env aufgeloest (siehe env: oben) - das
+    # eigentliche Secret steht NICHT hier im Repo, sondern in einem vorab angelegten K8s-Secret
+    # (external-dns-rfc2136-tsig).
+    - --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)
+    - --rfc2136-tsig-secret-alg=hmac-sha512
+    - --rfc2136-tsig-keyname=user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
+    - --rfc2136-tsig-axfr
+  # Kein rbac.additionalPermissions noetig: der Chart fuegt die traefik.io-RBAC-Regeln
+  # (ingressroutes/-tcps/-udps) automatisch hinzu, sobald "traefik-proxy" in sources steht.

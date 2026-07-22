@@ -1,0 +1,9 @@
+apiVersion: v2
+name: external-dns
+description: Wrapper-Chart um den Upstream-external-dns-Chart mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: external-dns
+    version: "1.19.0"
+    repository: "https://kubernetes-sigs.github.io/external-dns/"
