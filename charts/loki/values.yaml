@@ -1,0 +1,91 @@
+# SingleBinary-Deployment-Modus statt SimpleScalable/Distributed - fuer die kleine Lab-Groesse
+# reicht eine Instanz, keine getrennten Read-/Write-/Backend-Komponenten. Struktur folgt
+# 1:1 dem offiziellen single-binary-values.yaml-Referenzbeispiel des Upstream-Charts (inkl.
+# "Zero out replica counts of other deployment modes"), nur Ressourcengroessen fuer die
+# kleinen Lab-VMs reduziert. Muss unter dem Dependency-Alias "loki" verschachtelt sein (siehe
+# Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+loki:
+  fullnameOverride: loki
+
+  deploymentMode: SingleBinary
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+  loki:
+    commonConfig:
+      replication_factor: 1
+    schemaConfig:
+      configs:
+        - from: "2024-04-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    # Kein externer S3-Bucket vorhanden - das eingebaute minio (unten) dient als
+    # S3-kompatibler Objektspeicher, auf einer Longhorn-PVC persistiert.
+    storage:
+      type: s3
+
+  # Eingebautes MinIO als S3-kompatibler Objektspeicher fuer Chunks/Ruler/Admin-API -
+  # offiziell empfohlener Weg fuer SingleBinary ohne echtes Cloud-Object-Storage, siehe
+  # Upstream-Chart-Referenz single-binary-values.yaml.
+  minio:
+    enabled: true
+    persistence:
+      storageClass: longhorn
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  # Gateway (nginx) ist der dokumentierte Standard-Entrypoint, auch im SingleBinary-Modus -
+  # Grafana-Datasource (charts/kube-prometheus-stack/values.yaml) zeigt darauf.
+  gateway:
+    enabled: true
+
+  # Fuettert Loki-eigene Metriken in Prometheus (kube-prometheus-stack, ServiceMonitor-CRD
+  # muss existieren - gleicher Namespace, gleicher Sync-Batch ueber app-of-apps).
+  monitoring:
+    serviceMonitor:
+      enabled: true
+
+  # Zero out der Replica-Counts anderer Deployment-Modi - siehe Upstream-Referenz
+  # single-binary-values.yaml.
+  backend:
+    replicas: 0
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  ingester:
+    replicas: 0
+  querier:
+    replicas: 0
+  queryFrontend:
+    replicas: 0
+  queryScheduler:
+    replicas: 0
+  distributor:
+    replicas: 0
+  compactor:
+    replicas: 0
+  indexGateway:
+    replicas: 0
+  bloomCompactor:
+    replicas: 0
+  bloomGateway:
+    replicas: 0

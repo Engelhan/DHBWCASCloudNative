@@ -1,0 +1,9 @@
+apiVersion: v2
+name: loki
+description: Wrapper-Chart um den Upstream-Loki-Chart mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: loki
+    version: "7.1.0"
+    repository: "https://grafana.github.io/helm-charts"

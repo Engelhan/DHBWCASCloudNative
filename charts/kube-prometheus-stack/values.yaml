@@ -1,0 +1,64 @@
+# Muss unter dem Dependency-Alias "kube-prometheus-stack" verschachtelt sein (siehe Chart.yaml),
+# damit Helm die Werte an das gewrappte Upstream-Chart durchreicht. Persistenz ueberall via
+# Longhorn (bereits Default-StorageClass, siehe charts/longhorn/values.yaml
+# persistence.defaultClass) - storageClassName trotzdem explizit gesetzt statt implizit auf den
+# Default zu vertrauen. Werte-Groessen bewusst klein gehalten fuer die kleinen Lab-VMs, nicht
+# fuer echtes Produktions-Metrikvolumen.
+kube-prometheus-stack:
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: longhorn
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: longhorn
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+
+  grafana:
+    persistence:
+      enabled: true
+      storageClassName: longhorn
+      size: 5Gi
+    # Loki/Tempo als zusaetzliche Datasources neben dem vom Chart selbst angelegten
+    # Prometheus/Alertmanager-Datasource (siehe grafana.sidecar.datasources, Chart-Default) -
+    # zusammen ergibt das den vollen LGTM-Stack (Logs/Grafana/Tempo/Metrics) in EINEM Grafana.
+    # Service-Namen ergeben sich aus fullnameOverride in charts/loki bzw. charts/tempo.
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki-gateway.monitoring.svc.cluster.local
+        isDefault: false
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.monitoring.svc.cluster.local:3200
+        isDefault: false
+        jsonData:
+          # Traces->Logs-Verknuepfung im Grafana-UI (Tempo-Trace-View kann direkt zu
+          # passenden Loki-Log-Zeilen springen).
+          tracesToLogsV2:
+            datasourceUid: loki
+          # Service-Graph aus Tempo-Spans gegen Prometheus-Metriken.
+          serviceMap:
+            datasourceUid: prometheus

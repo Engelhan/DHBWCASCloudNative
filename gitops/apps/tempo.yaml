@@ -1,0 +1,26 @@
+---
+# Trace-Aggregation (Grafana Tempo), lokales Storage-Backend auf einer Longhorn-PVC
+# persistiert. Wrapper-Chart ../../charts/tempo (Dependency auf den Upstream-Chart, Werte in
+# dessen values.yaml) - einheitliches Muster fuer alle Addon-Charts, siehe charts/README.md.
+# Als Datasource in kube-prometheus-stack/values.yaml (Grafana) eingebunden - derselbe
+# Namespace wie dort.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/tempo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

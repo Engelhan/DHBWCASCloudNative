@@ -1,0 +1,33 @@
+---
+# Prometheus + Alertmanager + Grafana + Prometheus-Operator-CRDs (ServiceMonitor/PodMonitor/
+# PrometheusRule). Wrapper-Chart ../../charts/kube-prometheus-stack (Dependency auf den
+# Upstream-Chart, Werte in dessen values.yaml) - einheitliches Muster fuer alle Addon-Charts,
+# siehe charts/README.md. Grafana bekommt Loki/Tempo als zusaetzliche Datasources (siehe dortige
+# values.yaml) - zusammen der volle LGTM-Observability-Stack in einem Grafana.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/kube-prometheus-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Der Upstream-Chart buendelt mehrere sehr grosse CRDs (die Prometheus-CRD allein ueber
+      # 800 KB) - Client-Side-Apply wuerde die komplette Ressource zusaetzlich als
+      # last-applied-configuration-Annotation speichern und damit das harte 262144-Byte-Limit
+      # der Kubernetes-API sprengen ("Too long"). Server-Side Apply schreibt diese Annotation
+      # gar nicht erst - exakt dasselbe Problem/derselbe Fix wie beim ArgoCD-Install selbst und
+      # bei cnpg-operator/strimzi-operator, siehe CLAUDE.md ## Infra layering.
+      - ServerSideApply=true
