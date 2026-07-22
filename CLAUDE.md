@@ -62,9 +62,14 @@ Four layers, each owning a distinct concern — don't blur them:
    Nothing beyond that.
 3. **`gitops/`** (ArgoCD Applications) — everything Kubernetes-level from here on: operators
    (CNPG, Strimzi, KEDA, kube-prometheus-stack), cluster addons (Longhorn, cert-manager,
-   external-dns), and the app chart itself, as GitOps-synced `Application` resources.
-   `app-of-apps.yaml` + Longhorn/cert-manager/cert-manager-issuer/external-dns are written; CNPG,
-   Strimzi, KEDA, kube-prometheus-stack, and `ticketflow.yaml` are still **not implemented**. See
+   external-dns), and the app chart itself, as GitOps-synced `Application` resources. Every
+   `Application` points at a chart under `charts/` in this repo (never directly at an upstream
+   Helm repo) — for addons that exist upstream as a chart, that's a small wrapper chart whose
+   `Chart.yaml` declares the upstream chart as a `dependencies` entry, with our values in its own
+   `values.yaml` (see `charts/README.md`); ArgoCD resolves the dependency via `helm dependency
+   build` at sync time. `app-of-apps.yaml` + Longhorn/cert-manager/cert-manager-issuer/
+   external-dns/argocd-ingress are written; CNPG, Strimzi, KEDA, kube-prometheus-stack, and
+   `ticketflow.yaml` are still **not implemented** (build them the same wrapper-chart way). See
    `gitops/README.md` for the DNS/ACME activation flow.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
    `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). Currently only a
@@ -169,11 +174,12 @@ if needed rather than reviving the Ansible role.
   (see gitops layer above), so this actually runs; the `stat` guard stays as a safety net for
   older checkouts/tags without it.
 - `gitops_secrets` (new role) creates two things GitOps structurally can't provide itself: the
-  ArgoCD repository credential for this repo (**this repo is private** — `app-of-apps.yaml` and
-  `cert-manager-issuer.yaml` use `repoURL: git@github.com:...` SSH, not `https://`, specifically
-  so a deploy key can authenticate; the Helm-chart Applications for Longhorn/cert-manager/
-  external-dns are unaffected, their `repoURL` points at public upstream chart repos) and the
-  RFC2136-TSIG `Secret`s that `cert-manager-issuer.yaml`/`external-dns.yaml` reference via
+  ArgoCD repository credential for this repo (**this repo is private** — every `Application` in
+  `gitops/apps/` uses `repoURL: git@github.com:...` SSH, not `https://`, since every one of them
+  points at a chart under `charts/` in this repo, not directly at an upstream Helm repo — see
+  Infra layering above; only the upstream Helm repos referenced from within each wrapper chart's
+  `Chart.yaml.dependencies` need no credential, ArgoCD builds those via `helm dependency build`)
+  and the RFC2136-TSIG `Secret`s that `cert-manager-issuer.yaml`/`external-dns.yaml` reference via
   `secretKeyRef`. This is a narrow, deliberate exception to "Ansible does nothing beyond
   k3s/labels/ArgoCD", **not** a repeat of the reverted `ansible-bootstrap` approach: it creates
   zero Helm releases/operators (those stay 100% ArgoCD-owned), only `Secret` objects containing
@@ -253,14 +259,18 @@ of leaving this section stale.
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
 - **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/apps/app-of-apps.yaml`,
-  `longhorn.yaml`, `cert-manager.yaml`, `cert-manager-issuer.yaml` + its chart
-  `charts/cert-manager-config/`, `external-dns.yaml`, and `argocd-ingress.yaml` + its chart
-  `charts/argocd-ingress/` — cluster addons ported from k3s-dhbw-cloud-role, deployed via
-  ArgoCD/Helm instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering
-  above), plus a public, TLS-passthrough ArgoCD ingress (see `gitops/README.md` ## ArgoCD-UI
-  öffentlich erreichbar). All use the real DHBW DNS zone
-  (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
-  secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
+  `longhorn.yaml`, `cert-manager.yaml`, `cert-manager-issuer.yaml`, `external-dns.yaml`, and
+  `argocd-ingress.yaml` — cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm
+  instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering above), plus a
+  public, TLS-passthrough ArgoCD ingress (see `gitops/README.md` ## ArgoCD-UI öffentlich
+  erreichbar). Every `Application` points at its own chart under `charts/`: wrapper charts
+  (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
+  `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the
+  `ClusterIssuer`) and `charts/argocd-ingress/` — **the wrapper-chart restructure itself is
+  committed but not yet re-verified live** (was mid-verification when this doc was last updated;
+  check `kubectl -n argocd get applications` before assuming it's synced clean). All use the real
+  DHBW DNS zone (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The
+  RFC2136 TSIG secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
   Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). `app-of-apps.yaml`

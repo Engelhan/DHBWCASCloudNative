@@ -4,21 +4,37 @@ Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/), der die gesamt
 bündelt: die drei eigenen Services, die CNPG-`Cluster`-Ressource und die Strimzi-`Kafka`-Ressource
 sowie zugehörige ConfigMaps/Secrets/ServiceMonitors/HPA-KEDA-Objekte.
 
-Die Cluster-weiten Operatoren selbst (CNPG-Operator, Strimzi-Operator, KEDA,
-kube-prometheus-stack, sowie die Addons Longhorn/cert-manager/external-dns) sind **nicht** Teil
-dieses Ordners, sondern eigene ArgoCD-`Application`s in [`../gitops/apps/`](../gitops/apps/), die
-direkt auf den jeweiligen Upstream-Helm-Repo zeigen – ein Operator/Addon ist Cluster-
-Infrastruktur, keine Anwendungs-Konfiguration, und soll unabhängig vom App-Chart aktualisierbar
-sein.
+## Addon-Charts
 
-Zwei Ausnahmen davon, aus demselben Grund: kein Operator-Wrapper, sondern unsere **eigenen**
-Custom Resources, die es upstream nicht als Chart gibt – analog zur CNPG-`Cluster`-CR in
-`ticketflow/`, nur eben nicht Teil des ticketflow-Charts, weil sie zum Addon-Layer statt zur
-TicketFlow-Anwendung gehören:
+Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns; künftig CNPG-
+Operator, Strimzi-Operator, KEDA, kube-prometheus-stack) liegen als **eigene, kleine
+Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
+[`../gitops/apps/`](../gitops/apps/), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
+auf den Upstream-Helm-Repo) – ein einheitliches Muster für alle Charts in diesem Repo statt zwei
+verschiedener (Application-inline-Values vs. lokaler Chart), und alle Werte landen sichtbar
+versioniert in einer eigenen `values.yaml` statt in der Application eingebettet.
 
-- [`cert-manager-config/`](cert-manager-config/): `ClusterIssuer` fürs ACME/DNS-01-Setup. Siehe
-  [`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die noetige
-  TSIG-Secret-Voraussetzung (das Secret selbst steht bewusst nicht im Repo).
-- [`argocd-ingress/`](argocd-ingress/): `Certificate` + Traefik `IngressRouteTCP`, macht die
-  ArgoCD-UI über die echte DHBW-DNS-Zone erreichbar. Siehe
-  [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
+Zwei Varianten:
+
+- **Wrapper um einen Upstream-Chart** ([`longhorn/`](longhorn/), [`cert-manager/`](cert-manager/),
+  [`external-dns/`](external-dns/)): `Chart.yaml` deklariert den Upstream-Chart als
+  `dependencies`-Eintrag (Name/Version/Repository), `values.yaml` reicht unsere Werte unter dem
+  Dependency-Alias (z.B. `longhorn:`) durch. ArgoCD baut die Dependency beim Sync automatisch
+  (`helm dependency build`) – kein `Chart.lock`/`charts/*.tgz` im Repo (gitignored, siehe
+  `.gitignore`), damit sich Dependency-Version-Bumps auf den `Chart.yaml`-Eintrag beschränken.
+- **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – analog zur
+  CNPG-`Cluster`-CR in `ticketflow/`, nur eben nicht Teil des ticketflow-Charts, weil sie zum
+  Addon-Layer statt zur TicketFlow-Anwendung gehören:
+  - [`cert-manager-config/`](cert-manager-config/): `ClusterIssuer` fürs ACME/DNS-01-Setup.
+    Siehe [`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die nötige
+    TSIG-Secret-Voraussetzung (das Secret selbst steht bewusst nicht im Repo).
+  - [`argocd-ingress/`](argocd-ingress/): `Certificate` + Traefik `IngressRouteTCP`, macht die
+    ArgoCD-UI über die echte DHBW-DNS-Zone erreichbar. Siehe
+    [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
+
+Lokal nachvollziehen/testen (kein Cluster nötig):
+
+```bash
+helm dependency update charts/longhorn   # zieht den Upstream-Chart nach charts/longhorn/charts/
+helm template charts/longhorn
+```

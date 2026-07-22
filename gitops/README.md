@@ -14,17 +14,24 @@ gitops/
 │   └── ticketflow-project.yaml # ArgoCD AppProject: erlaubte Repos/Namespaces/Ressourcen (TODO)
 └── apps/
     ├── app-of-apps.yaml        # Root-Application, zeigt (nicht-rekursiv) auf diesen Ordner
-    ├── longhorn.yaml           # verteilter Block-Storage (Helm-Chart, upstream)
-    ├── cert-manager.yaml       # cert-manager-Operator (Helm-Chart, upstream)
-    ├── cert-manager-issuer.yaml # ClusterIssuer, unser eigener Chart ../charts/cert-manager-config
-    ├── external-dns.yaml       # external-dns (Helm-Chart, upstream)
-    ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, unser eigener Chart ../charts/argocd-ingress
-    ├── cnpg-operator.yaml      # CloudNativePG-Operator (Helm-Chart, upstream) — TODO
-    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator (Helm-Chart, upstream) — TODO
-    ├── keda.yaml               # KEDA (Helm-Chart, upstream) — TODO
-    ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager (Helm-Chart, upstream) — TODO
+    ├── longhorn.yaml           # verteilter Block-Storage, Wrapper-Chart ../charts/longhorn
+    ├── cert-manager.yaml       # cert-manager-Operator, Wrapper-Chart ../charts/cert-manager
+    ├── cert-manager-issuer.yaml # ClusterIssuer, eigener Chart ../charts/cert-manager-config
+    ├── external-dns.yaml       # external-dns, Wrapper-Chart ../charts/external-dns
+    ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, eigener Chart ../charts/argocd-ingress
+    ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator — TODO
+    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator — TODO
+    ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
+    ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager, Wrapper-Chart ../charts/kube-prometheus-stack — TODO
     └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow — TODO
 ```
+
+Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
+diesem Repo — nie direkt auf einen Upstream-Helm-Repo. Für Addons, die es upstream als Chart
+gibt (Longhorn, cert-manager, external-dns, künftig CNPG/Strimzi/KEDA/kube-prometheus-stack),
+ist das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den Upstream-Chart, eigene
+`values.yaml`) statt Application-inline-`helm.valuesObject` — ein einheitliches Muster für alle
+Charts in diesem Repo, siehe `charts/README.md`.
 
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
@@ -54,15 +61,17 @@ IPv6-Adressen aller Nodes als externe IPs, die IPv4-Adressen werden über
 
 ## Privates Repo — ArgoCD braucht ein Credential
 
-Dieses Repo ist **nicht öffentlich**. Ohne registriertes Credential kann ArgoCDs repo-server
-weder `app-of-apps.yaml` noch `cert-manager-issuer.yaml` klonen (beide `Application`s, deren
-`repoURL` auf dieses Repo zeigt) — sie bleiben dauerhaft in `Unknown`/`ErrorSyncStatus` hängen.
-Deshalb nutzen genau diese beiden `repoURL: git@github.com:...` (SSH), nicht `https://...`, und
+Dieses Repo ist **nicht öffentlich**. Da jede `Application` auf einen Chart in *diesem* Repo
+zeigt (siehe oben), kann ArgoCDs repo-server ohne registriertes Credential gar nichts klonen —
+alle Applications blieben dauerhaft in `Unknown`/`ErrorSyncStatus` hängen. Deshalb nutzen alle
+`repoURL: git@github.com:...` (SSH), nicht `https://...`, und
 `infra/ansible/roles/gitops_secrets` legt dafür einen ArgoCD-Repository-Credential-Secret
 (`repo-ticketflow`, Namespace `argocd`) aus einem lokalen, git-ignorierten SSH-Deploy-Key an —
-siehe `infra/ansible/README.md` ## GitOps-Secrets für die Erzeugung/Aktivierung. Die Applications
-für Upstream-Helm-Charts (Longhorn, cert-manager, external-dns) brauchen das nicht, deren
-`repoURL` zeigt auf öffentliche Helm-Repos.
+siehe `infra/ansible/README.md` ## GitOps-Secrets für die Erzeugung/Aktivierung. Die
+Upstream-Helm-Repos selbst (`charts.longhorn.io`, `charts.jetstack.io`,
+`kubernetes-sigs.github.io`) sind weiterhin öffentlich — dafür braucht nur der jeweilige
+Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim Sync per
+`helm dependency build` automatisch.
 
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
@@ -71,14 +80,6 @@ k3s-dhbw-cloud-role, Branch `ansible-bootstrap`, Commit `938a66f`), jetzt stattd
 ArgoCD/Helm, um die in `CLAUDE.md` ## Infra layering dokumentierte Grenze einzuhalten ("Ansible
 macht nichts über k3s/Labels/ArgoCD hinaus"). Die Ansible-Addon-Rollen auf `ansible-bootstrap`
 werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
-
-Für `longhorn` und `cert-manager` (Operator) zeigt die `Application` direkt auf den
-Upstream-Helm-Repo, Werte inline über `helm.valuesObject` — kein lokaler Chart nötig (siehe
-`charts/README.md`: ein Operator ist Cluster-Infrastruktur, keine Anwendungs-Konfiguration).
-`cert-manager-issuer.yaml` ist die eine Ausnahme: der `ClusterIssuer` ist unsere **eigene**
-Custom Resource (kein Operator), braucht aber Templating (dns01/http01-Switch, optionales
-Wildcard-Zertifikat) — dafür liegt in `../charts/cert-manager-config/` ein winziger lokaler
-Chart, analog zur CNPG-`Cluster`-CR in `charts/ticketflow`.
 
 ## DNS/ACME (cert-manager-issuer, external-dns)
 
@@ -123,6 +124,7 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
-`TODO`: `cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`, `kube-prometheus-stack.yaml`,
-`ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen, sobald die
-jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.
+`TODO`: `cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`, `kube-prometheus-stack.yaml`
+(je mit eigenem Wrapper-Chart unter `../charts/`, analog zu `longhorn`/`cert-manager`/
+`external-dns`), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
+sobald die jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.
