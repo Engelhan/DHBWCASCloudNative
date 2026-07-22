@@ -4,19 +4,22 @@
     path: /usr/local/bin/k3s
   register: k3s_bin
 
-# DHBWV6 ist IPv6-only: --node-ip/--tls-san auf die eigene Adresse, --cluster-cidr/--service-cidr
-# als IPv6-Bloecke (siehe inventory/group_vars/all.yml), --flannel-ipv6-masq fuer Pod-Egress-NAT,
-# da die Pod-/Service-CIDRs (ULA fd00::/8) selbst nicht global routbar sind.
+# DHBWV6 ist dual-stack: --node-ip/--cluster-cidr/--service-cidr bekommen je einen
+# IPv6-Wert (primaer, siehe inventory/group_vars/all.yml) UND einen IPv4-Wert (zusaetzlich,
+# damit Pods IPv4-only-Ziele wie github.com erreichen koennen - siehe CLAUDE.md ##
+# Infra layering). --flannel-ipv6-masq bleibt fuer IPv6-Pod-Egress noetig (ULA-Bereich
+# fd00::/8 ist nicht global routbar); IPv4-Pod-Egress maskiert k3s/Flannel standardmaessig.
 - name: k3s-Server installieren
   shell: |
     set -o pipefail
     curl -sfL https://get.k3s.io | \
     INSTALL_K3S_VERSION={{ k3s_version }} \
     sh -s - server \
-      --node-ip {{ ansible_host }} \
+      --node-ip {{ ansible_host }},{{ node_ip_v4 }} \
       --tls-san {{ ansible_host }} \
-      --cluster-cidr {{ k3s_cluster_cidr }} \
-      --service-cidr {{ k3s_service_cidr }} \
+      --tls-san {{ node_ip_v4 }} \
+      --cluster-cidr {{ k3s_cluster_cidr }},{{ k3s_cluster_cidr_v4 }} \
+      --service-cidr {{ k3s_service_cidr }},{{ k3s_service_cidr_v4 }} \
       --flannel-ipv6-masq \
       --write-kubeconfig-mode 644
   args:
@@ -47,10 +50,11 @@
     flat: true
 
 # Die kubeconfig von k3s zeigt standardmaessig auf ein Loopback (fuer lokale Nutzung auf der
-# Control-Plane selbst) - auf diesem IPv6-only-Host schreibt k3s dafuer "[::1]", nicht das aus
-# IPv4-Setups gewohnte "127.0.0.1" (beide Formen werden hier abgedeckt, da sich das je nach
-# k3s-/OS-Verhalten unterscheiden kann und ein nicht matchender Regex den replace-Task sonst
-# stillschweigend zum No-Op macht). Fuer Zugriff von aussen auf die tatsaechliche IPv6-Adresse
+# Control-Plane selbst) - da --node-ip IPv6 zuerst listet (IPv6 bleibt primaer, siehe oben),
+# schreibt k3s dafuer "[::1]", nicht das aus IPv4-Setups gewohnte "127.0.0.1" (beide Formen
+# werden hier abgedeckt, da sich das je nach k3s-/OS-Verhalten unterscheiden kann und ein nicht
+# matchender Regex den replace-Task sonst stillschweigend zum No-Op macht). Fuer Zugriff von
+# aussen auf die tatsaechliche IPv6-Adresse
 # umbiegen - Klammer-Syntax, da sonst der Doppelpunkt vor dem Port mit den Adress-Doppelpunkten
 # kollidiert.
 - name: Server-URL in der lokal abgeholten kubeconfig auf die echte Adresse setzen

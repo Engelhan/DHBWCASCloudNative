@@ -4,6 +4,9 @@
     path: /usr/local/bin/k3s
   register: k3s_bin
 
+# --node-ip dual-stack (IPv6 primaer + IPv4), analog zu roles/k3s_server - siehe dortiger
+# Kommentar/CLAUDE.md ## Infra layering fuer den Grund (Pods brauchen IPv4-Egress zu
+# IPv4-only-Zielen wie github.com).
 - name: k3s-Agent installieren und mit der Control-Plane verbinden
   shell: |
     set -o pipefail
@@ -12,7 +15,7 @@
     K3S_URL=https://[{{ hostvars[groups['control_plane'][0]].ansible_host }}]:6443 \
     K3S_TOKEN={{ hostvars[groups['control_plane'][0]].k3s_node_token }} \
     sh -s - agent \
-      --node-ip {{ ansible_host }}
+      --node-ip {{ ansible_host }},{{ node_ip_v4 }}
   args:
     executable: /bin/bash
   when: not k3s_bin.stat.exists

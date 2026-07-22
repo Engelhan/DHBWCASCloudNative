@@ -5,8 +5,18 @@
 k3s_version: "v1.36.2+k3s1"
 argocd_version: "v3.4.4"
 
-# DHBWV6 ist ein reines IPv6-Netz (siehe infra/terraform). Pod-/Service-CIDR liegen bewusst im
-# ULA-Bereich (fd00::/8, RFC 4193) statt in einem global routbaren Block - sie müssen nicht von
-# außen erreichbar sein, --flannel-ipv6-masq übernimmt die Adressumsetzung für Pod-Egress-Traffic.
+# DHBWV6 ist entgegen dem Namen dual-stack (jede VM bekommt zusaetzlich zur IPv6-Adresse per
+# DHCP eine private, aber tatsaechlich Internet-geroutete IPv4-Adresse - siehe
+# infra/terraform/modules/compute/outputs.tf). k3s laeuft deshalb im Dual-Stack-Modus: IPv6
+# bleibt primaer (--node-ip/--tls-san/kubeconfig-Server-URL zuerst IPv6, ULA-Bereich fd00::/8
+# fuer Cluster-/Service-CIDR, da nicht von aussen erreichbar sein muss - RFC 4193), IPv4 kommt
+# als zweite Familie dazu, ausschliesslich damit Pods (z.B. ArgoCD, external-dns) IPv4-only-
+# Ziele wie github.com erreichen koennen, das keinen AAAA-Eintrag hat. IPv4-CIDRs sind die
+# k3s-Standardwerte (10.42.0.0/16 / 10.43.0.0/16) - kollidieren nicht mit dem
+# DHCP-Adressraum 10.200.0.0/19 der VMs selbst. --flannel-ipv6-masq bleibt fuer IPv6-Pod-Egress
+# noetig (ULA ist nicht global routbar); IPv4-Pod-Egress wird von k3s/Flannel standardmaessig
+# maskiert, kein aequivalentes explizites Flag noetig.
 k3s_cluster_cidr: "fd00:42::/56"
 k3s_service_cidr: "fd00:43::/112"
+k3s_cluster_cidr_v4: "10.42.0.0/16"
+k3s_service_cidr_v4: "10.43.0.0/16"
