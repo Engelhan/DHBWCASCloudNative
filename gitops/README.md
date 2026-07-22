@@ -89,10 +89,20 @@ DHBW-DNS-Zone erreichbar (`argocd.cas438007-at-cas-dhbw-de.users.dhbw.site` per 
 TLS-Passthrough: ein `Certificate` erzeugt das Secret `argocd-server-tls`, das ArgoCDs
 API-Server automatisch selbst für sein TLS verwendet (offiziell dokumentiertes Verhalten), eine
 Traefik `IngressRouteTCP` mit `tls.passthrough: true` routet nur anhand der SNI zum
-`argocd-server`-Service durch, ohne den Traffic zu entschlüsseln. `external-dns` veröffentlicht
-den passenden `AAAA`-Record automatisch (Traefiks `LoadBalancer`-Service hat die
-IPv6-Adressen aller Nodes als externe IPs, die IPv4-Adressen werden über
-`--exclude-target-net=10.0.0.0/8` herausgefiltert, siehe `gitops/apps/external-dns.yaml`).
+`argocd-server`-Service durch, ohne den Traffic zu entschlüsseln.
+
+**`external-dns` veröffentlicht hier KEINEN Record automatisch** — anders als bei normalen
+`Ingress`-Objekten liest external-dns' `traefik-proxy`-Source für `IngressRoute`/
+`IngressRouteTCP`/`-UDP` das Ziel niemals aus dem Status des Traefik-`LoadBalancer`-Service,
+sondern ausschließlich aus der Annotation `external-dns.alpha.kubernetes.io/target`
+(`source/traefik_proxy.go` im external-dns-Repo) — ohne sie: "No endpoints could be generated",
+kein DNS-Record, live so beobachtet. `charts/argocd-ingress/templates/ingressroute-tcp.yaml`
+setzt diese Annotation deshalb explizit auf die aktuellen IPv6-VIPs des
+Traefik-`LoadBalancer`-Service (`charts/argocd-ingress/values.yaml` → `externalDnsTargets`,
+IPv4-VIPs bewusst weggelassen, analog zu `--exclude-target-net=10.0.0.0/8` bei den
+Ingress-basierten Records). Das ist ein statischer Wert, kein dynamisch nachgeführter — **nach
+einem Cluster-Rebuild (neue VIPs) muss `externalDnsTargets` von Hand aktualisiert werden**:
+`kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[*].ip}'`.
 
 ## Privates Repo — ArgoCD braucht ein Credential
 

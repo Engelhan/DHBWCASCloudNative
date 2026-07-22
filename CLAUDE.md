@@ -284,7 +284,14 @@ of leaving this section stale.
   `argocd-ingress.yaml` — cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm
   instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering above), plus a
   public, TLS-passthrough ArgoCD ingress (see `gitops/README.md` ## ArgoCD-UI öffentlich
-  erreichbar). Every `Application` points at its own chart under `charts/`: wrapper charts
+  erreichbar). **external-dns does not auto-publish a record for `IngressRoute`/
+  `IngressRouteTCP`/`-UDP`** — unlike plain `Ingress`, its `traefik-proxy` source reads the
+  target *only* from the `external-dns.alpha.kubernetes.io/target` annotation, never from the
+  Traefik `Service`'s `LoadBalancer` status (confirmed against `source/traefik_proxy.go`
+  upstream); `charts/argocd-ingress/templates/ingressroute-tcp.yaml` sets that annotation
+  explicitly from `values.yaml` → `externalDnsTargets` (Traefik's current IPv6 VIPs) — a static
+  value that needs manually refreshing after a cluster rebuild changes the VIPs. Every
+  `Application` points at its own chart under `charts/`: wrapper charts
   (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
   `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the
   `ClusterIssuer`) and `charts/argocd-ingress/`. All use the real DHBW DNS zone
