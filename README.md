@@ -3,6 +3,24 @@
 Cloud-native Ticketverkaufsplattform für Live-Events. Prüfungsleistung "Cloud Infrastructures and
 Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Bericht vollständig.
 
+## ToDo
+
+- Application
+   - Frontend
+   - API + Kafka Producer
+   - Kafka Consumer
+   - Message service
+- Kafka Cluster
+- Postgres Cluster
+- Observability mit OpenTelemetry
+   - Logging
+   - Metriken
+   - evtl. Traces
+- Autoscaler
+- Scheduling und Platzierung der Pods
+- Resilienz der deployments
+- Requests und Limits checken
+
 > **Status:** Repository-Grundgerüst. Diese README beschreibt die geplante und im Aufbau
 > befindliche Architektur; Abschnitte, die noch nicht final implementiert sind, sind mit `TODO`
 > markiert. Jeder Ordner enthält eine eigene README mit Detailplanung.
