@@ -8,6 +8,10 @@ kind: IngressRouteTCP
 metadata:
   name: argocd-server
   namespace: {{ .Values.argocdServer.namespace }}
+  annotations:
+    # Erforderlich, damit external-dns' traefik-proxy-Source ueberhaupt einen Record erzeugt -
+    # siehe Kommentar bei externalDnsTargets in values.yaml.
+    external-dns.alpha.kubernetes.io/target: {{ .Values.externalDnsTargets | join "," | quote }}
 spec:
   entryPoints:
     - {{ .Values.traefikEntryPoint }}
