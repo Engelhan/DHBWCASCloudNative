@@ -13,7 +13,15 @@ privateKeySecretName: cert-manager-private-key-secret
 
 # dns01 ist die einzige Challenge, die Wildcard-Zertifikate ausstellen kann; http01 braucht
 # keine DNS-Zone/TSIG-Key, kann aber kein "*.zone"-Zertifikat ausstellen.
-challenge: dns01 # dns01 | http01
+#
+# Voruebergehend auf http01 umgestellt: das erste dns01-Zertifikat (argocd-server-tls) blieb im
+# ACME-Order-Status "ready" haengen (Challenge validierte erfolgreich, aber cert-manager hat nie
+# den Finalize-Call ausgeloest - reproduzierbar ueber mehrere frische CertificateRequests und
+# einen Controller-Neustart hinweg, keine Fehler im Log). Da dns01/http01 denselben ClusterIssuer
+# nutzen, betrifft das alle zukuenftigen Zertifikate ueber diesen Issuer, bis geklaert ist, ob es
+# ein cert-manager-v1.19.6- oder ein DHBW-ACME-Server-spezifisches Problem ist. Wildcards
+# (wildcardCertificate.enabled) brauchen zwingend dns01 - vor Aktivierung wieder zurueckstellen.
+challenge: http01 # dns01 | http01
 
 rfc2136:
   # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname.
