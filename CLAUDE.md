@@ -61,19 +61,26 @@ Four layers, each owning a distinct concern — don't blur them:
 2. **`infra/ansible/`** — configures the VMs, installs k3s, labels nodes, bootstraps ArgoCD.
    Nothing beyond that.
 3. **`gitops/`** (ArgoCD Applications) — everything Kubernetes-level from here on: operators
-   (CNPG, Strimzi, KEDA, kube-prometheus-stack), cluster addons (Longhorn, cert-manager,
-   external-dns), and the app chart itself, as GitOps-synced `Application` resources. Every
-   `Application` points at a chart under `charts/` in this repo (never directly at an upstream
-   Helm repo) — for addons that exist upstream as a chart, that's a small wrapper chart whose
-   `Chart.yaml` declares the upstream chart as a `dependencies` entry, with our values in its own
-   `values.yaml` (see `charts/README.md`); ArgoCD resolves the dependency via `helm dependency
-   build` at sync time. `app-of-apps.yaml` + Longhorn/cert-manager/cert-manager-issuer/
-   external-dns/argocd-ingress/cnpg-operator/strimzi-operator are written; KEDA,
-   kube-prometheus-stack, and `ticketflow.yaml` are still **not implemented** (build them the
-   same wrapper-chart way). CNPG/Strimzi both bundle CRDs over the 262144-byte annotation limit
-   (CNPG's `poolers` CRD >650KB, Strimzi's `Kafka` CRD >330KB) — their Applications need
-   `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install itself (see Ansible
-   specifics below); apply this to KEDA/kube-prometheus-stack too if their CRDs turn out large.
+   (CNPG, Strimzi, KEDA), the observability stack (kube-prometheus-stack, Loki, Tempo), cluster
+   addons (Longhorn, cert-manager, external-dns), and the app chart itself, as GitOps-synced
+   `Application` resources. Every `Application` points at a chart under `charts/` in this repo
+   (never directly at an upstream Helm repo) — for addons that exist upstream as a chart, that's
+   a small wrapper chart whose `Chart.yaml` declares the upstream chart as a `dependencies`
+   entry, with our values in its own `values.yaml` (see `charts/README.md`); ArgoCD resolves the
+   dependency via `helm dependency build` at sync time. `app-of-apps.yaml` +
+   Longhorn/cert-manager/cert-manager-issuer/external-dns/argocd-ingress/cnpg-operator/
+   strimzi-operator/kube-prometheus-stack/loki/tempo are written; KEDA and `ticketflow.yaml` are
+   still **not implemented** (build them the same wrapper-chart way). CNPG/Strimzi/
+   kube-prometheus-stack all bundle CRDs over the 262144-byte annotation limit (CNPG's `poolers`
+   CRD >650KB, Strimzi's `Kafka` CRD >330KB, kube-prometheus-stack's `Prometheus` CRD >800KB) —
+   their Applications need `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install
+   itself (see Ansible specifics below); apply this to KEDA too if its CRDs turn out large. Loki/
+   Tempo ship no CRDs, don't need it. Observability persistence goes through Longhorn
+   throughout (already the default StorageClass); Loki runs `SingleBinary` mode with a bundled
+   MinIO as its S3-compatible chunk store, Tempo uses its local filesystem backend — both are
+   PVC-backed. Grafana (from kube-prometheus-stack) gets Loki + Tempo wired in as
+   `additionalDataSources`, one Grafana for the full LGTM stack. See `gitops/README.md` ##
+   Observability-Stack.
    See
    `gitops/README.md` for the DNS/ACME activation flow.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
@@ -299,14 +306,23 @@ of leaving this section stale.
 - **Committed but not yet re-verified live** (check `kubectl -n argocd get applications` before
   assuming any of this is synced clean — several commits landed after the last confirmed-live
   check): the Longhorn/cert-manager/external-dns wrapper-chart restructure, the ArgoCD/Longhorn/
-  cert-manager/external-dns version bumps (latest stable as of this writing), and two new
-  wrapper charts + Applications — `gitops/apps/cnpg-operator.yaml`
-  (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart `0.29.0`, cluster-wide, namespace
-  `cnpg-system`) and `strimzi-operator.yaml` (`charts/strimzi-operator/`, Strimzi `1.1.0`,
-  `watchAnyNamespace: true`, namespace `kafka`). Both new operators need
-  `syncOptions: [ServerSideApply=true]` (see Infra layering above) — already set on both
-  Applications.
-- **Not started:** `gitops/apps/keda.yaml`, `kube-prometheus-stack.yaml`, `ticketflow.yaml`,
+  cert-manager/external-dns version bumps (latest stable as of this writing), and five new
+  wrapper charts + Applications:
+  - `gitops/apps/cnpg-operator.yaml` (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart
+    `0.29.0`, cluster-wide, namespace `cnpg-system`)
+  - `strimzi-operator.yaml` (`charts/strimzi-operator/`, Strimzi `1.1.0`,
+    `watchAnyNamespace: true`, namespace `kafka`)
+  - `kube-prometheus-stack.yaml` (`charts/kube-prometheus-stack/`, chart `87.19.0`, namespace
+    `monitoring`; Grafana service ends up named `kube-prometheus-stack-grafana` — matches what
+    root `README.md` ## Betrieb already assumed)
+  - `loki.yaml` (`charts/loki/`, chart `7.1.0`, `SingleBinary` mode + bundled MinIO, namespace
+    `monitoring`)
+  - `tempo.yaml` (`charts/tempo/`, chart `1.24.4`, local storage backend, namespace `monitoring`)
+
+  cnpg-operator/strimzi-operator/kube-prometheus-stack need `syncOptions: [ServerSideApply=true]`
+  (see Infra layering above) — already set on all three; Loki/Tempo don't ship CRDs, don't need
+  it.
+- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
   `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, all `src/*`
   application code, `observability/dashboards/` + `observability/alerts/` content.
 - Commit history currently has a single large commit — the assignment explicitly penalizes

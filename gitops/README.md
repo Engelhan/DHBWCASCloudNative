@@ -21,25 +21,52 @@ gitops/
     ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, eigener Chart ../charts/argocd-ingress
     ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator
     ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator
+    ├── kube-prometheus-stack.yaml # Prometheus/Alertmanager/Grafana, Wrapper-Chart ../charts/kube-prometheus-stack
+    ├── loki.yaml               # Log-Aggregation, Wrapper-Chart ../charts/loki
+    ├── tempo.yaml              # Trace-Aggregation, Wrapper-Chart ../charts/tempo
     ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
-    ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager, Wrapper-Chart ../charts/kube-prometheus-stack — TODO
     └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow — TODO
 ```
 
 Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
 diesem Repo — nie direkt auf einen Upstream-Helm-Repo. Für Addons, die es upstream als Chart
-gibt (Longhorn, cert-manager, external-dns, CNPG, Strimzi, künftig KEDA/kube-prometheus-stack),
-ist das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den Upstream-Chart, eigene
-`values.yaml`) statt Application-inline-`helm.valuesObject` — ein einheitliches Muster für alle
-Charts in diesem Repo, siehe `charts/README.md`.
+gibt (Longhorn, cert-manager, external-dns, CNPG, Strimzi, kube-prometheus-stack, Loki, Tempo,
+künftig KEDA), ist das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den
+Upstream-Chart, eigene `values.yaml`) statt Application-inline-`helm.valuesObject` — ein
+einheitliches Muster für alle Charts in diesem Repo, siehe `charts/README.md`.
 
-`cnpg-operator`/`strimzi-operator` brauchen zusätzlich `syncOptions: [ServerSideApply=true]`:
-beide Upstream-Charts bündeln einzelne CRDs deutlich über 262144 Byte (CNPGs `poolers`-CRD über
-650 KB, Strimzis `Kafka`-CRD über 330 KB) — Client-Side-Apply würde die komplette Ressource
-zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
+`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack` brauchen zusätzlich
+`syncOptions: [ServerSideApply=true]`: alle drei Upstream-Charts bündeln einzelne CRDs deutlich
+über 262144 Byte (CNPGs `poolers`-CRD über 650 KB, Strimzis `Kafka`-CRD über 330 KB,
+kube-prometheus-stacks `Prometheus`-CRD über 800 KB) — Client-Side-Apply würde die komplette
+Ressource zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
 Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler wie beim
 ArgoCD-Install selbst, siehe `CLAUDE.md` ## Infra layering (Ansible specifics) —
-Server-Side-Apply schreibt diese Annotation gar nicht erst.
+Server-Side-Apply schreibt diese Annotation gar nicht erst. Loki/Tempo bringen selbst keine CRDs
+mit, brauchen das nicht.
+
+## Observability-Stack (kube-prometheus-stack, Loki, Tempo)
+
+Voller LGTM-Stack (Logs/Grafana/Tempo/Metrics) in **einem** Grafana, alle drei Applications im
+Namespace `monitoring`, Persistenz durchgehend über Longhorn (bereits Default-StorageClass):
+
+- **kube-prometheus-stack**: Prometheus (7 Tage Retention, 20Gi), Alertmanager (2Gi), Grafana
+  (5Gi, Service `kube-prometheus-stack-grafana`) sowie die Prometheus-Operator-CRDs
+  (ServiceMonitor/PodMonitor/PrometheusRule), die Longhorn/CNPG/Strimzi/Loki/Tempo für eigenes
+  Metrics-Scraping brauchen.
+- **Loki**: `SingleBinary`-Deployment-Modus (keine getrennten Read-/Write-/Backend-Komponenten -
+  reicht für die Lab-Größe) mit eingebautem MinIO als S3-kompatiblem Objektspeicher (offiziell
+  empfohlener Weg ohne echtes Cloud-Object-Storage), beides auf je einer Longhorn-PVC. Standard-
+  Entrypoint ist der Gateway-Service `loki-gateway`.
+- **Tempo**: einfacher Single-Instance-Chart, lokales Storage-Backend auf einer Longhorn-PVC,
+  Service `tempo` auf Port 3200.
+- Grafana bekommt Loki (`uid: loki`) und Tempo (`uid: tempo`) als `additionalDataSources` (siehe
+  `charts/kube-prometheus-stack/values.yaml`) — inklusive Traces→Logs-Verknüpfung
+  (`tracesToLogsV2`) und Service-Graph aus Tempo-Spans gegen Prometheus (`serviceMap`).
+- Kein Sync-Wave zwischen den drei Applications: Lokis/Tempos `ServiceMonitor`-Ressourcen
+  brauchen die von kube-prometheus-stack bereitgestellte CRD, aber falls die beim ersten Sync
+  noch fehlt, holt `selfHeal` das im nächsten Reconcile automatisch nach (dieselbe lose Kopplung
+  wie zwischen `cert-manager-issuer` und `argocd-ingress`).
 
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
@@ -138,7 +165,6 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
-`TODO`: `keda.yaml`, `kube-prometheus-stack.yaml` (je mit eigenem Wrapper-Chart unter
-`../charts/`, analog zu `longhorn`/`cert-manager`/`external-dns`/`cnpg-operator`/
-`strimzi-operator`), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
+`TODO`: `keda.yaml` (mit eigenem Wrapper-Chart unter `../charts/`, analog zu allen anderen
+Addons), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
 sobald die jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.
