@@ -19,8 +19,8 @@ gitops/
     ├── cert-manager-issuer.yaml # ClusterIssuer, eigener Chart ../charts/cert-manager-config
     ├── external-dns.yaml       # external-dns, Wrapper-Chart ../charts/external-dns
     ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, eigener Chart ../charts/argocd-ingress
-    ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator — TODO
-    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator — TODO
+    ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator
+    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator
     ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
     ├── kube-prometheus-stack.yaml # Prometheus/Grafana/Alertmanager, Wrapper-Chart ../charts/kube-prometheus-stack — TODO
     └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow — TODO
@@ -28,10 +28,18 @@ gitops/
 
 Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
 diesem Repo — nie direkt auf einen Upstream-Helm-Repo. Für Addons, die es upstream als Chart
-gibt (Longhorn, cert-manager, external-dns, künftig CNPG/Strimzi/KEDA/kube-prometheus-stack),
+gibt (Longhorn, cert-manager, external-dns, CNPG, Strimzi, künftig KEDA/kube-prometheus-stack),
 ist das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den Upstream-Chart, eigene
 `values.yaml`) statt Application-inline-`helm.valuesObject` — ein einheitliches Muster für alle
 Charts in diesem Repo, siehe `charts/README.md`.
+
+`cnpg-operator`/`strimzi-operator` brauchen zusätzlich `syncOptions: [ServerSideApply=true]`:
+beide Upstream-Charts bündeln einzelne CRDs deutlich über 262144 Byte (CNPGs `poolers`-CRD über
+650 KB, Strimzis `Kafka`-CRD über 330 KB) — Client-Side-Apply würde die komplette Ressource
+zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
+Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler wie beim
+ArgoCD-Install selbst, siehe `CLAUDE.md` ## Infra layering (Ansible specifics) —
+Server-Side-Apply schreibt diese Annotation gar nicht erst.
 
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
@@ -130,7 +138,7 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
-`TODO`: `cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`, `kube-prometheus-stack.yaml`
-(je mit eigenem Wrapper-Chart unter `../charts/`, analog zu `longhorn`/`cert-manager`/
-`external-dns`), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
+`TODO`: `keda.yaml`, `kube-prometheus-stack.yaml` (je mit eigenem Wrapper-Chart unter
+`../charts/`, analog zu `longhorn`/`cert-manager`/`external-dns`/`cnpg-operator`/
+`strimzi-operator`), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
 sobald die jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.

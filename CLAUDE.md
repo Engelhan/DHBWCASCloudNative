@@ -68,8 +68,13 @@ Four layers, each owning a distinct concern — don't blur them:
    `Chart.yaml` declares the upstream chart as a `dependencies` entry, with our values in its own
    `values.yaml` (see `charts/README.md`); ArgoCD resolves the dependency via `helm dependency
    build` at sync time. `app-of-apps.yaml` + Longhorn/cert-manager/cert-manager-issuer/
-   external-dns/argocd-ingress are written; CNPG, Strimzi, KEDA, kube-prometheus-stack, and
-   `ticketflow.yaml` are still **not implemented** (build them the same wrapper-chart way). See
+   external-dns/argocd-ingress/cnpg-operator/strimzi-operator are written; KEDA,
+   kube-prometheus-stack, and `ticketflow.yaml` are still **not implemented** (build them the
+   same wrapper-chart way). CNPG/Strimzi both bundle CRDs over the 262144-byte annotation limit
+   (CNPG's `poolers` CRD >650KB, Strimzi's `Kafka` CRD >330KB) — their Applications need
+   `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install itself (see Ansible
+   specifics below); apply this to KEDA/kube-prometheus-stack too if their CRDs turn out large.
+   See
    `gitops/README.md` for the DNS/ACME activation flow.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
    `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). Currently only a
@@ -275,11 +280,9 @@ of leaving this section stale.
   erreichbar). Every `Application` points at its own chart under `charts/`: wrapper charts
   (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
   `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the
-  `ClusterIssuer`) and `charts/argocd-ingress/` — **the wrapper-chart restructure itself is
-  committed but not yet re-verified live** (was mid-verification when this doc was last updated;
-  check `kubectl -n argocd get applications` before assuming it's synced clean). All use the real
-  DHBW DNS zone (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The
-  RFC2136 TSIG secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
+  `ClusterIssuer`) and `charts/argocd-ingress/`. All use the real DHBW DNS zone
+  (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
+  secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
   Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). `app-of-apps.yaml`
@@ -289,12 +292,22 @@ of leaving this section stale.
 - **Done:** `scripts/personalize.py` + `deploy.env.example` — lets another student/the professor
   deploy their own fork by rewriting the git-tracked, non-secret identity values (fork repoURL,
   DNS zone, ACME email, TSIG keyname) across `gitops/**/*.yaml` + `charts/**/*.yaml` in one pass
-  instead of hand-editing ~9 files; supports env-var overrides too. Secrets are deliberately out
-  of scope for this script (stay in `terraform.tfvars`/`secrets.yml` as before). See root
+  instead of hand-editing ~9 files; supports env-var overrides too (values are read from the repo
+  itself at runtime via `CANONICAL_SOURCES`, never hardcoded as literals in the script). Secrets
+  are deliberately out of scope (stay in `terraform.tfvars`/`secrets.yml` as before). See root
   `README.md` ## Betrieb ### Eigenes Deployment.
-- **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
-  `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
-  `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +
-  `observability/alerts/` content.
+- **Committed but not yet re-verified live** (check `kubectl -n argocd get applications` before
+  assuming any of this is synced clean — several commits landed after the last confirmed-live
+  check): the Longhorn/cert-manager/external-dns wrapper-chart restructure, the ArgoCD/Longhorn/
+  cert-manager/external-dns version bumps (latest stable as of this writing), and two new
+  wrapper charts + Applications — `gitops/apps/cnpg-operator.yaml`
+  (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart `0.29.0`, cluster-wide, namespace
+  `cnpg-system`) and `strimzi-operator.yaml` (`charts/strimzi-operator/`, Strimzi `1.1.0`,
+  `watchAnyNamespace: true`, namespace `kafka`). Both new operators need
+  `syncOptions: [ServerSideApply=true]` (see Infra layering above) — already set on both
+  Applications.
+- **Not started:** `gitops/apps/keda.yaml`, `kube-prometheus-stack.yaml`, `ticketflow.yaml`,
+  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, all `src/*`
+  application code, `observability/dashboards/` + `observability/alerts/` content.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
