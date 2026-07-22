@@ -19,16 +19,10 @@ traefikEntryPoint: websecure
 # automatisch ein Target aus dem Traefik-Service-Status (anders als bei normalen Ingress-
 # Objekten) - Targets kommen laut externaldns/source/traefik_proxy.go ausschliesslich aus der
 # Annotation external-dns.alpha.kubernetes.io/target. Ohne sie: "No endpoints could be
-# generated", kein DNS-Record. Deshalb hier die aktuellen externen VIPs des
-# Traefik-LoadBalancer-Service (kube-system/traefik) - nur die IPv6-Adressen, die IPv4-VIPs
-# sind ohnehin ueber external-dns' --exclude-target-net=10.0.0.0/8 gefiltert (siehe
-# gitops/apps/external-dns.yaml). MUSS manuell nachgezogen werden, falls sich die VIPs aendern
-# (z.B. nach einem Cluster-Rebuild) - `kubectl -n kube-system get svc traefik
-# -o jsonpath='{.status.loadBalancer.ingress[*].ip}'`.
-externalDnsTargets:
-  - "2001:7c0:1b20:c913:1::237"
-  - "2001:7c0:1b20:c913:1::24c"
-  - "2001:7c0:1b20:c913:1::2b1"
-  - "2001:7c0:1b20:c913:1::435"
-  - "2001:7c0:1b20:c913:1::495"
-  - "2001:7c0:1b20:c913:1::4b3"
+# generated", kein DNS-Record. Statt hier rohe (nach einem Cluster-Rebuild ungueltige) VIPs zu
+# haerten: Ziel ist der stabile Hostname, den charts/traefik-config auf Traefiks eigenem
+# LoadBalancer-Service veroeffentlicht (external-dns' "service"-Source kann Targets DORT
+# problemlos automatisch aus dem Service-Status ableiten) - external-dns loest daraus ein
+# CNAME auf, das bei jedem VIP-Wechsel automatisch mitzieht. Muss mit
+# charts/traefik-config/values.yaml traefikHostname uebereinstimmen.
+externalDnsTarget: "traefik.cas438007-at-cas-dhbw-de.users.dhbw.site"

@@ -10,8 +10,8 @@ metadata:
   namespace: {{ .Values.argocdServer.namespace }}
   annotations:
     # Erforderlich, damit external-dns' traefik-proxy-Source ueberhaupt einen Record erzeugt -
-    # siehe Kommentar bei externalDnsTargets in values.yaml.
-    external-dns.alpha.kubernetes.io/target: {{ .Values.externalDnsTargets | join "," | quote }}
+    # siehe Kommentar bei externalDnsTarget in values.yaml.
+    external-dns.alpha.kubernetes.io/target: {{ .Values.externalDnsTarget | quote }}
 spec:
   entryPoints:
     - {{ .Values.traefikEntryPoint }}
