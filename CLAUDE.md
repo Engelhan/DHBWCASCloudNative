@@ -252,15 +252,21 @@ of leaving this section stale.
   scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
-- **Done:** `gitops/apps/app-of-apps.yaml`, `longhorn.yaml`, `cert-manager.yaml`,
-  `cert-manager-issuer.yaml` + its chart `charts/cert-manager-config/`, and `external-dns.yaml` —
-  cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm instead of the
-  Ansible roles on branch `ansible-bootstrap` (see Infra layering above). All four use the real
-  DHBW DNS zone (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The
-  RFC2136 TSIG secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
-  creates the two K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
+- **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/apps/app-of-apps.yaml`,
+  `longhorn.yaml`, `cert-manager.yaml`, `cert-manager-issuer.yaml` + its chart
+  `charts/cert-manager-config/`, `external-dns.yaml`, and `argocd-ingress.yaml` + its chart
+  `charts/argocd-ingress/` — cluster addons ported from k3s-dhbw-cloud-role, deployed via
+  ArgoCD/Helm instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering
+  above), plus a public, TLS-passthrough ArgoCD ingress (see `gitops/README.md` ## ArgoCD-UI
+  öffentlich erreichbar). All use the real DHBW DNS zone
+  (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
+  secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
+  creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
-  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets).
+  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). `app-of-apps.yaml`
+  excludes itself from its own directory source (`source.directory.exclude`) — without it,
+  self-tracking + `prune: true` risked ArgoCD deleting its own root Application (and cascading
+  through the `resources-finalizer` to every child app); see `gitops/README.md` ## Struktur.
 - **Not started:** `gitops/apps/cnpg-operator.yaml`, `strimzi-operator.yaml`, `keda.yaml`,
   `kube-prometheus-stack.yaml`, `ticketflow.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/*`, all `src/*` application code, `observability/dashboards/` +

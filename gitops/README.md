@@ -18,6 +18,7 @@ gitops/
     ├── cert-manager.yaml       # cert-manager-Operator (Helm-Chart, upstream)
     ├── cert-manager-issuer.yaml # ClusterIssuer, unser eigener Chart ../charts/cert-manager-config
     ├── external-dns.yaml       # external-dns (Helm-Chart, upstream)
+    ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, unser eigener Chart ../charts/argocd-ingress
     ├── cnpg-operator.yaml      # CloudNativePG-Operator (Helm-Chart, upstream) — TODO
     ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator (Helm-Chart, upstream) — TODO
     ├── keda.yaml               # KEDA (Helm-Chart, upstream) — TODO
@@ -27,6 +28,29 @@ gitops/
 
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
+
+**`app-of-apps.yaml` schließt sich per `source.directory.exclude` selbst aus** der Ressourcenliste
+aus, die es synct — es liegt im selben Ordner, den es (nicht-rekursiv) einliest. Ohne das
+`exclude` würde die Application sich selbst als verwaltete Ressource auffassen; mit
+`prune: true` + `selfHeal: true` hätte ein Sync dann versuchen können, die eigene
+`Application`-Ressource zu löschen (und über deren `resources-finalizer` kaskadierend alle
+Kind-Applications mit ihr) — auf einem laufenden Cluster beobachtet, bevor der Fix live war.
+Jede neue Datei in `apps/` ist automatisch sicher (sie referenziert sich nicht selbst); nur
+`app-of-apps.yaml` selbst braucht dieses `exclude`.
+
+## ArgoCD-UI öffentlich erreichbar (`argocd-ingress`)
+
+`gitops/apps/argocd-ingress.yaml` + `charts/argocd-ingress/` machen die ArgoCD-UI über die echte
+DHBW-DNS-Zone erreichbar (`argocd.cas438007-at-cas-dhbw-de.users.dhbw.site` per Default, siehe
+`charts/argocd-ingress/values.yaml`). Statt TLS an Traefik zu terminieren (bräuchte
+`server.insecure=true` + ConfigMap-Patch + Neustart von `argocd-server`) nutzt der Chart
+TLS-Passthrough: ein `Certificate` erzeugt das Secret `argocd-server-tls`, das ArgoCDs
+API-Server automatisch selbst für sein TLS verwendet (offiziell dokumentiertes Verhalten), eine
+Traefik `IngressRouteTCP` mit `tls.passthrough: true` routet nur anhand der SNI zum
+`argocd-server`-Service durch, ohne den Traffic zu entschlüsseln. `external-dns` veröffentlicht
+den passenden `AAAA`-Record automatisch (Traefiks `LoadBalancer`-Service hat die
+IPv6-Adressen aller Nodes als externe IPs, die IPv4-Adressen werden über
+`--exclude-target-net=10.0.0.0/8` herausgefiltert, siehe `gitops/apps/external-dns.yaml`).
 
 ## Privates Repo — ArgoCD braucht ein Credential
 

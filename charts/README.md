@@ -11,9 +11,14 @@ direkt auf den jeweiligen Upstream-Helm-Repo zeigen – ein Operator/Addon ist C
 Infrastruktur, keine Anwendungs-Konfiguration, und soll unabhängig vom App-Chart aktualisierbar
 sein.
 
-Die eine Ausnahme ist [`cert-manager-config/`](cert-manager-config/): kein Operator-Wrapper,
-sondern unsere **eigene** Custom Resource (ein `ClusterIssuer`, den es upstream nicht als Chart
-gibt) – analog zur CNPG-`Cluster`-CR in `ticketflow/`, nur eben nicht Teil des ticketflow-Charts,
-weil sie zum Addon-Layer statt zur TicketFlow-Anwendung gehört. Siehe
-[`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die noetige TSIG-Secret-Voraussetzung
-(das Secret selbst steht bewusst nicht im Repo).
+Zwei Ausnahmen davon, aus demselben Grund: kein Operator-Wrapper, sondern unsere **eigenen**
+Custom Resources, die es upstream nicht als Chart gibt – analog zur CNPG-`Cluster`-CR in
+`ticketflow/`, nur eben nicht Teil des ticketflow-Charts, weil sie zum Addon-Layer statt zur
+TicketFlow-Anwendung gehören:
+
+- [`cert-manager-config/`](cert-manager-config/): `ClusterIssuer` fürs ACME/DNS-01-Setup. Siehe
+  [`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die noetige
+  TSIG-Secret-Voraussetzung (das Secret selbst steht bewusst nicht im Repo).
+- [`argocd-ingress/`](argocd-ingress/): `Certificate` + Traefik `IngressRouteTCP`, macht die
+  ArgoCD-UI über die echte DHBW-DNS-Zone erreichbar. Siehe
+  [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
