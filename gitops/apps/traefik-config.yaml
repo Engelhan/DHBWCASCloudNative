@@ -1,0 +1,25 @@
+---
+# HelmChartConfig-Override fuers gebuendelte k3s-Traefik. Eigener Chart ../../charts/traefik-config
+# (kein Wrapper-Chart - k3s installiert/verwaltet Traefik selbst) - siehe charts/README.md.
+# Gibt Traefiks LoadBalancer-Service einen stabilen, per external-dns veroeffentlichten
+# Hostnamen (traefik.<zone>), auf den andere Applications (z.B. argocd-ingress) per CNAME statt
+# per hart codierter IP verweisen koennen - macht das VIP-Target rebuild-fest, siehe
+# gitops/README.md ## ArgoCD-UI oeffentlich erreichbar.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/traefik-config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

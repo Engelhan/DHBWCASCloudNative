@@ -1,0 +1,6 @@
+# Hostname, unter dem Traefiks LoadBalancer-Service selbst per external-dns veroeffentlicht
+# wird - dient als stabiles CNAME-Ziel fuer alles, was per IngressRoute/IngressRouteTCP/-UDP
+# routet (external-dns' traefik-proxy-Source kann Targets NICHT selbst aus dem
+# Service-Status ableiten, siehe charts/argocd-ingress/values.yaml). Muss innerhalb der
+# aktivierten RFC2136-Zone liegen (siehe charts/cert-manager-config/values.yaml rfc2136.zone).
+traefikHostname: "traefik.cas438007-at-cas-dhbw-de.users.dhbw.site"

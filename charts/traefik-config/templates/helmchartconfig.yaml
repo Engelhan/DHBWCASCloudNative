@@ -1,0 +1,17 @@
+# k3s installiert Traefik selbst ueber seinen eigenen helm-controller (HelmChart-CR
+# "traefik" im Namespace kube-system, aus dem k3s-Release gebuendelt) - eine HelmChartConfig
+# mit demselben Namen/Namespace ist der offiziell dokumentierte Weg, zusaetzliche Werte
+# hineinzumergen, OHNE mit k3s' eigener Verwaltung dieses HelmChart zu konkurrieren (ArgoCD
+# besitzt/verwaltet nur dieses HelmChartConfig-Objekt, nicht das HelmChart/den Helm-Release
+# selbst - kein Ownership-Konflikt). service.annotations ist eine reine Metadata-Aenderung am
+# bereits bestehenden Traefik-Service, kein Neuanlegen (VIPs bleiben stabil).
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      annotations:
+        external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname }}
