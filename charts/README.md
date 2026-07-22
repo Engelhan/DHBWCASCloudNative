@@ -67,6 +67,17 @@ neuen Chart erst den gerenderten NetworkPolicy-`podSelector` prüfen, bevor `ena
 gesetzt wird**, ein leerer/fehlender Selector auf einer geteilten Namespace ist der
 Symptomkiller.
 
+Ein zweiter, unabhängiger Fehler kam aus derselben Hardening-Runde: `grafana.persistence.enabled`
+plus der Chart-Default `deploymentStrategy.type: RollingUpdate` deadlockt live bei **jeder**
+künftigen Änderung am Grafana-Pod-Template (auch am `resources`-Block hier) – der neue Pod kann
+die einzelne `ReadWriteOnce`-PVC nicht attachen, solange der alte Pod sie noch hält
+("Multi-Attach error"), Kubernetes killt den alten Pod aber erst, wenn der neue `Ready` ist.
+Deshalb `charts/kube-prometheus-stack/values.yaml` → `grafana.deploymentStrategy.type: Recreate`
+– kurze Grafana-Downtime beim Rollout statt eines dauerhaften Deadlocks. Dieselbe Falle gilt für
+jeden künftigen Chart mit `persistence.enabled` + Deployment (nicht StatefulSet) + einem
+RWO-Volume: **immer `deploymentStrategy: Recreate` setzen, sobald persistente Einzel-Replica-PVC
++ `RollingUpdate`-Default zusammentreffen.**
+
 Bei `securityContext`/`podSecurityContext` gilt: **erst prüfen, dann setzen**. Die meisten
 dieser Charts (cert-manager, external-dns, CNPG, kube-prometheus-stack inkl. aller
 Subcharts, Loki) liefern bereits einen vollständig gehärteten Default (`runAsNonRoot`,
