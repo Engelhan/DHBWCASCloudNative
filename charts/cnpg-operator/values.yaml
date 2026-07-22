@@ -1,0 +1,13 @@
+# Chart-Defaults bewusst weitgehend uebernommen (kein Tuning noetig, solange
+# charts/ticketflow/templates/database/cnpg-cluster.yaml - die eigentliche Cluster-CR mit
+# Instanzanzahl/Topology-Spread ueber die simulierten Regionen (P4) - noch nicht existiert):
+# crds.create ist bereits Default true, der Operator ist bereits Default cluster-wide (nicht
+# auf einen Namespace beschraenkt). Muss unter dem Dependency-Alias "cloudnative-pg"
+# verschachtelt sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart
+# durchreicht.
+cloudnative-pg:
+  # PodMonitor braucht die Prometheus-Operator-CRDs (kube-prometheus-stack) - noch nicht
+  # deployt (siehe gitops/README.md TODO-Liste). Bei Aktivierung von kube-prometheus-stack
+  # hier mit aktivieren.
+  monitoring:
+    podMonitorEnabled: false
