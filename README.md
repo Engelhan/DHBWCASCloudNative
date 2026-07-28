@@ -8,6 +8,7 @@ Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Beri
 Pfisterer:
 - Application
    - Frontend -> Philipp
+      - Buchungsseite, Sitzplatzauswahl, Anzeige Bestätigung, Fehlermeldung, Datenbank Info welche PLätze belegt, Session ID Kundenunterscheidung
    - API + Kafka Producer -> Philipp
    - Kafka Consumer -> Carlos
       - DB Schema aufbauen und über applikation versionieren
@@ -31,6 +32,7 @@ Bonus:
 - Packaging von Helm Charts
 - Kafka Strimzi
 - Chaos Experiment
+
 
 Screen Cast:
 Alle Zusammen
