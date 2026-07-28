@@ -14,6 +14,9 @@ Pfisterer:
       - Event verarbeitung mit Reservierung des sitzplatzes, anschließend event ob successfull oder nicht
    - Message service -> Niklas
 - Kafka Cluster -> Carlos
+   - Schema Registry
+   - Kafka Cluster
+   - AKHQ als Oberfläche
 - Postgres Cluster -> Niklas
 
 
