@@ -5,21 +5,54 @@ Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Beri
 
 ## ToDo
 
+Pfisterer:
 - Application
-   - Frontend
-   - API + Kafka Producer
-   - Kafka Consumer
-   - Message service
-- Kafka Cluster
-- Postgres Cluster
+   - Frontend -> Philipp
+   - API + Kafka Producer -> Philipp
+   - Kafka Consumer -> Carlos
+      - DB Schema aufbauen und über applikation versionieren
+      - Event verarbeitung mit Reservierung des sitzplatzes, anschließend event ob successfull oder nicht
+   - Message service -> Niklas
+- Kafka Cluster -> Carlos
+- Postgres Cluster -> Niklas
+
+
+Für alle Applikationen:
+- Scheduling und Platzierung der Pods
+- Resilienz der deployments
+- Requests und Limits checken
+- Helm Chart mit Values Schema
+
+Bonus:
+- Helm Charts
+- Packaging von Helm Charts
+- Kafka Strimzi
+- Chaos Experiment
+
+Screen Cast:
+Alle Zusammen
+
+
 - Observability mit OpenTelemetry
    - Logging
    - Metriken
    - evtl. Traces
 - Autoscaler
-- Scheduling und Platzierung der Pods
-- Resilienz der deployments
-- Requests und Limits checken
+
+Sturm:
+Beleuchten Sie die ihnen zugeteilte Laborarbeit auf der Basis der in der Vorlesung
+vermittelten theoretischen Grundlagen:
+− Welche Vorteile und Nachteile ergeben sich für Ihre Anwendung aus der Realisierung
+als Cloud Native? Zeigen Sie dabei auch alternative Realisierungsmöglichkeiten auf,
+stellen Sie diese Ihrer Cloud Native Lösung gegenüber und erörtern Sie kritisch.
+Unterlegen sie ihrer Argumentation mit konkreten Beispielen.
+− Wie gewährleisten Sie die Datensicherheit? Bewerten Sie dabei auch die Relevanz der
+DSGVO für Ihre Anwendung.
+− Skizzieren und begründen Sie abschließend welche Cloud Native Pattern sich wo in
+ihrer Anwendungsarchitektur wiederfinden.
+
+Alea macht einen ersten Wurf
+ 
 
 > **Status:** Repository-Grundgerüst. Diese README beschreibt die geplante und im Aufbau
 > befindliche Architektur; Abschnitte, die noch nicht final implementiert sind, sind mit `TODO`
