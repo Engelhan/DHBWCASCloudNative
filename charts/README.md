@@ -1,8 +1,25 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/), der die gesamte Anwendungsebene
-bündelt: die drei eigenen Services, die CNPG-`Cluster`-Ressource und die Strimzi-`Kafka`-Ressource
-sowie zugehörige ConfigMaps/Secrets/ServiceMonitors/HPA-KEDA-Objekte.
+Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/), der `catalog-api` und
+`reservation-worker` (beide noch nicht implementiert) bündeln soll, dazu die
+CNPG-`Cluster`-Ressource und die Strimzi-`Kafka`-Ressource sowie zugehörige
+ConfigMaps/Secrets/ServiceMonitors/HPA-KEDA-Objekte. `notification-worker` ist bewusst **kein**
+Teil davon — es hat einen eigenen, standalone Chart, siehe unten.
+
+## `notification-worker` — eigenständiger Chart statt Teil des Umbrella-Charts
+
+[`notification-worker/`](notification-worker/) ist der erste vollständig implementierte Service
+im Repo und bekam deshalb, abweichend vom ursprünglichen Plan (alle drei Services im
+Umbrella-Chart), einen eigenen Chart nach Pattern (b) unten (volleigene Templates, keine
+Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-config/)/
+[`argocd-ingress/`](argocd-ingress/), aber mit `_helpers.tpl`, da er mit sechs Ressourcen
+(Deployment, Service, ConfigMap, Secret, PodDisruptionBudget, ServiceMonitor, optional
+NetworkPolicy) deutlich mehr rendert als die anderen Custom-Charts. Er hat außerdem als einziger
+Chart im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an das noch nicht
+begonnene `charts/ticketflow` gebunden, siehe root-README `## Entscheidungen` zu W1) sowie
+`replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
+`gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
+ArgoCD deployt.
 
 ## Addon-Charts
 
