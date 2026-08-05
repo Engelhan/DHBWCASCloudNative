@@ -274,8 +274,9 @@ umgesetzt ist.)*
 
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit; CNPG- und Kafka-Replikation
   sind daher klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
-- Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` loggt nur,
-  statt E-Mail/SMS wirklich zu versenden.
+- Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` kann
+  optional per SMTP echte E-Mails versenden, fällt aber standardmäßig (kein SMTP-Relay im
+  Demo-Betrieb konfiguriert) auf reine Log-Ausgabe statt echtem E-Mail/SMS-Versand zurück.
 - k3s statt eines vollwertigen Kubernetes verkleinert den Kontrollebenen-Fußabdruck, verhält sich
   aber nicht in jedem Detail wie ein Cloud-Provider-Kubernetes.
 - Der Lastgenerator bildet einen synthetischen "alle klicken gleichzeitig"-Fall nach; reales
