@@ -12,9 +12,12 @@ Teil davon — es hat einen eigenen, standalone Chart, siehe unten.
 im Repo und bekam deshalb, abweichend vom ursprünglichen Plan (alle drei Services im
 Umbrella-Chart), einen eigenen Chart nach Pattern (b) unten (volleigene Templates, keine
 Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-config/)/
-[`argocd-ingress/`](argocd-ingress/), aber mit `_helpers.tpl`, da er mit sechs Ressourcen
-(Deployment, Service, ConfigMap, Secret, PodDisruptionBudget, ServiceMonitor, optional
-NetworkPolicy) deutlich mehr rendert als die anderen Custom-Charts. Er hat außerdem als einziger
+[`argocd-ingress/`](argocd-ingress/), aber mit `_helpers.tpl`, da er mit fünf Ressourcen
+(Deployment, ConfigMap, Secret, PodDisruptionBudget, PodMonitor, optional NetworkPolicy)
+deutlich mehr rendert als die anderen Custom-Charts. Bewusst kein `Service` — es gibt keinen
+anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes gehen direkt an den
+Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
+Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als einziger
 Chart im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an das noch nicht
 begonnene `charts/ticketflow` gebunden, siehe root-README `## Entscheidungen` zu W1) sowie
 `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**

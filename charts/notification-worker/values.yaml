@@ -9,9 +9,6 @@ image:
 # selbst entsteht erst mit Strimzi/charts/ticketflow, ausserhalb des Scopes dieses Charts.
 replicaCount: 3
 
-service:
-  port: 8080
-
 resources:
   requests:
     cpu: 25m
@@ -66,13 +63,15 @@ secret:
   kafkaTlsClientCert: ""
   kafkaTlsClientKey: ""
 
-serviceMonitor:
+# PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (siehe
+# templates/podmonitor.yaml), daher auch keine eigene Service-Ressource in diesem Chart.
+podMonitor:
   enabled: true
   interval: 30s
   # Annahme, nicht live verifiziert: charts/kube-prometheus-stack/values.yaml hat keinen
-  # expliziten serviceMonitorSelector-Override, das deutet auf den Chart-Default
-  # "release: <helm-release-name>" hin. Falls falsch: nur dieses Label anpassen, kein
-  # Code-/Template-Aenderung noetig.
+  # expliziten podMonitorSelector-Override, das deutet auf den Chart-Default
+  # "release: <helm-release-name>" hin (symmetrisch zum serviceMonitorSelector-Default). Falls
+  # falsch: nur dieses Label anpassen, keine Code-/Template-Aenderung noetig.
   labels:
     release: kube-prometheus-stack
 

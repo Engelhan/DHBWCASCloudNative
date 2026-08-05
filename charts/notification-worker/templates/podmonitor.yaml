@@ -1,0 +1,23 @@
+{{- if .Values.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "notification-worker.fullname" . }}
+  labels:
+    {{- include "notification-worker.labels" . | nindent 4 }}
+    {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # PodMonitor statt ServiceMonitor: notification-worker hat keine anderen Konsumenten seiner
+  # HTTP-Endpunkte (reiner Kafka-Consumer, Probes gehen direkt vom Kubelet an den Pod) - eine
+  # eigene Service-Ressource nur fuers Prometheus-Scraping waere unnoetig, PodMonitor selektiert
+  # Pods direkt ueber Labels und referenziert den benannten Container-Port.
+  selector:
+    matchLabels:
+      {{- include "notification-worker.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.podMonitor.interval }}
+{{- end }}
