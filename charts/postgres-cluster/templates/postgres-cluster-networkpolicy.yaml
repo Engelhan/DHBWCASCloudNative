@@ -25,3 +25,12 @@ spec:
       ports:
         - port: 8000
           protocol: TCP
+    # allows postgres traffic (streaming replication, client connections) between
+    # the cluster's own pods (primary, replicas, join pods)
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ .Values.database.name }}-postgres-cluster
+      ports:
+        - port: 5432
+          protocol: TCP
