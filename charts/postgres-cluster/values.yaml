@@ -4,13 +4,13 @@ namespace: ""
 
 image:
   # Container image repository used by CloudNativePG.
-  repository: registry.sop.swiss/hekde/cloudnative-pg-database
+  repository: ghcr.io/cloudnative-pg/postgresql
   # Pull policy for the PostgreSQL image.
   pullPolicy: IfNotPresent
   # Optional pull secret name for private registries.
   pullSecret: docker-registry-secret
   # PostgreSQL image tag.
-  tag: ""
+  tag: "18.4-202608030910-standard-trixie@sha256:f0cc49632b5cc1e51f65ba03658c89bd31d64ea2672b14843a808a8d281417e1"
 
 database:
   # Logical database name used for the cluster and secrets.
