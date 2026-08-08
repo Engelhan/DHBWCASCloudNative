@@ -38,7 +38,7 @@ external-dns:
     - AAAA
     - CNAME
   domainFilters:
-    - cas438007-at-cas-dhbw-de.users.dhbw.site
+    - cas420134-at-cas-dhbw-de.users.dhbw.site
   env:
     - name: RFC2136_TSIG_SECRET
       valueFrom:
@@ -59,13 +59,13 @@ external-dns:
     # Nameserver fuer den cert-manager-dns01-Solver, siehe ../cert-manager-config/values.yaml.
     - --rfc2136-host=141.72.5.244
     - --rfc2136-port=53
-    - --rfc2136-zone=cas438007-at-cas-dhbw-de.users.dhbw.site
+    - --rfc2136-zone=cas420134-at-cas-dhbw-de.users.dhbw.site
     # $(VAR) wird von Kubernetes aus dem Container-Env aufgeloest (siehe env: oben) - das
     # eigentliche Secret steht NICHT hier im Repo, sondern in einem vorab angelegten K8s-Secret
     # (external-dns-rfc2136-tsig).
     - --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)
     - --rfc2136-tsig-secret-alg=hmac-sha512
-    - --rfc2136-tsig-keyname=user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
+    - --rfc2136-tsig-keyname=user-key-d520f739a55a9ff0c6e1504a62262aec755cd3af
     - --rfc2136-tsig-axfr
   # Kein rbac.additionalPermissions noetig: der Chart fuegt die traefik.io-RBAC-Regeln
   # (ingressroutes/-tcps/-udps) automatisch hinzu, sobald "traefik-proxy" in sources steht.

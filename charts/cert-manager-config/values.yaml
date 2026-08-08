@@ -5,7 +5,7 @@
 #   kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
 #     --from-literal=secret=<TSIG-Wert>
 
-email: "cas438007@cas.dhbw.de"
+email: "cas420134@cas.dhbw.de"
 # DHBW-internes ACME-Verzeichnis (nur aus dem DHBW-Netz/VPN erreichbar).
 acmeServer: "https://certificates.dhbw.cloud"
 clusterIssuerName: certificate-cluster-issuer
@@ -24,8 +24,8 @@ rfc2136:
   # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname.
   host: "141.72.5.244"
   port: 53
-  zone: "cas438007-at-cas-dhbw-de.users.dhbw.site"
-  tsigKeyName: "user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124"
+  zone: "cas420134-at-cas-dhbw-de.users.dhbw.site"
+  tsigKeyName: "user-key-d520f739a55a9ff0c6e1504a62262aec755cd3af"
   tsigAlgorithm: hmac-sha512
   # Verweist nur auf ein manuell/per External-Secret angelegtes Secret - der Wert selbst steht
   # bewusst NICHT im Repo (siehe Aktivierungs-Hinweis oben).
