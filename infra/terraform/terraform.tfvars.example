@@ -25,3 +25,8 @@ worker_flavor        = "CHANGE_ME" # gleiches Flavor für alle Worker
 # Ein Worker je Eintrag, mit virtuell simulierter Region als Label (DHBWCloud hat real nur
 # eine Region/AZ). Default sind 3 Worker/3 Regionen; Liste ggf. erweitern/kürzen.
 # worker_regions = ["region-a", "region-b", "region-c"]
+
+# Optionales Suffix fuer alle Ressourcennamen (z.B. "carlos" -> ticketflow-worker-1-carlos),
+# nuetzlich wenn mehrere Studierende auf demselben OpenStack-Projekt eigene, unterscheidbare
+# VMs anlegen. Default leer (kein Suffix).
+# name_suffix = "CHANGE_ME"

@@ -9,6 +9,7 @@ module "compute" {
   source = "./modules/compute"
 
   name_prefix           = var.name_prefix
+  name_suffix           = var.name_suffix
   network_id            = data.openstack_networking_network_v2.existing.id
   keypair_public_key    = file(pathexpand(var.ssh_public_key_path))
   image_name            = var.image_name

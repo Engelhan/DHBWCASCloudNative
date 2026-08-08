@@ -15,13 +15,21 @@
 # topology.ticketflow/region=<region>, gegen das Topology-Spread-Constraints/Anti-Affinity
 # fuer CNPG und Kafka planen - siehe infra/ansible/roles/node_labels.
 
+locals {
+  # Optionales Namens-Suffix (z.B. eigener Vorname), damit mehrere Studierende parallel auf
+  # demselben OpenStack-Projekt eigene, klar unterscheidbare VMs anlegen koennen, ohne den
+  # bestehenden name_prefix (Praefix, siehe var.name_prefix) zu veraendern. Default leer -> kein
+  # Verhaltensunterschied fuer alle, die die Variable nicht setzen.
+  name_suffix = var.name_suffix != "" ? "-${var.name_suffix}" : ""
+}
+
 resource "openstack_compute_keypair_v2" "this" {
-  name       = "${var.name_prefix}-key"
+  name       = "${var.name_prefix}-key${local.name_suffix}"
   public_key = var.keypair_public_key
 }
 
 resource "openstack_compute_instance_v2" "control_plane" {
-  name        = "${var.name_prefix}-control-plane"
+  name        = "${var.name_prefix}-control-plane${local.name_suffix}"
   image_name  = var.image_name
   flavor_name = var.control_plane_flavor
   key_pair    = openstack_compute_keypair_v2.this.name
@@ -37,7 +45,7 @@ resource "openstack_compute_instance_v2" "control_plane" {
 
 resource "openstack_compute_instance_v2" "worker" {
   count       = length(var.worker_regions)
-  name        = "${var.name_prefix}-worker-${count.index + 1}"
+  name        = "${var.name_prefix}-worker-${count.index + 1}${local.name_suffix}"
   image_name  = var.image_name
   flavor_name = var.worker_flavor
   key_pair    = openstack_compute_keypair_v2.this.name

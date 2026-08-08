@@ -37,6 +37,12 @@ variable "name_prefix" {
   default     = "ticketflow"
 }
 
+variable "name_suffix" {
+  description = "Optionales Suffix (ohne führenden Bindestrich, z.B. \"carlos\") für alle Ressourcennamen - nützlich, wenn mehrere Studierende auf demselben OpenStack-Projekt eigene, unterscheidbare VMs anlegen"
+  type        = string
+  default     = ""
+}
+
 variable "image_name" {
   description = "Name des Basis-Images in der DHBWCloud-Image-Registry (z.B. eine Ubuntu-LTS-Variante)"
   type        = string
