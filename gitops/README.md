@@ -26,7 +26,7 @@ gitops/
     ├── loki.yaml               # Log-Aggregation, Wrapper-Chart ../charts/loki
     ├── tempo.yaml              # Trace-Aggregation, Wrapper-Chart ../charts/tempo
     ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
-    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow — TODO
+    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow
 ```
 
 Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
@@ -183,6 +183,16 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
+## ticketflow (Kafka-Cluster)
+
+`gitops/apps/ticketflow.yaml` zeigt (wie `strimzi-operator.yaml`) bewusst auf
+`targetRevision: strimzi-setup`, nicht `main` — Iterieren am Kafka-Teil ohne Merge-Zwang, siehe
+`CLAUDE.md`-Memory `project-strimzi-branch-tracking`. `helm.valueFiles: [values-dev.yaml]` fährt
+auf dem Lab-Cluster bewusst die kleine Variante (1 Broker) statt `values-prod.yaml`. Destination-
+Namespace `ticketflow`, per `CreateNamespace=true` — getrennt vom Strimzi-Operator-Namespace
+`kafka`. Bisher nur der Kafka-Cluster (`charts/ticketflow/templates/messaging/`); `catalog-api`/
+`frontend`/`notification-worker`/CNPG-Cluster folgen als eigene Templates im selben Chart.
+
 `TODO`: `keda.yaml` (mit eigenem Wrapper-Chart unter `../charts/`, analog zu allen anderen
-Addons), `ticketflow.yaml` und `projects/ticketflow-project.yaml` fehlen noch — folgen,
-sobald die jeweiligen Chart-Versionen/CRDs feststehen bzw. `charts/ticketflow` Templates hat.
+Addons) und `projects/ticketflow-project.yaml` fehlen noch — `ticketflow.yaml` läuft bislang mit
+`project: default` wie alle anderen Applications.
