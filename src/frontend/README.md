@@ -13,10 +13,37 @@ zeigen.
 - Wird als statisches Build in einem eigenen, schlanken Container (z.B. `nginx` oder
   `caddy`) ausgeliefert.
 
-## Geplanter Stack
+## Stack
 
-`TODO`: einfaches SPA-Framework oder sogar reines HTML/JS, um den Umfang klein zu halten – die
-Bewertung honoriert keine zusätzliche Komplexität, die aus der Domäne nicht folgt.
+Reines HTML/CSS/JS (`index.html`, `style.css`, `app.js`), kein Build-Step, kein Framework – deckt
+den kompletten Screencast-Bedarf (Sitzplan, Buchungsformular, Live-Status) ohne zusätzliche
+Komplexität ab. `API_BASE_URL` wird per Inline-`<script>` in `index.html` gesetzt (kein
+Build-Step für Env-Injection vorhanden).
+
+## Ablauf
+
+1. `GET /events` – lädt das (einzige) Demo-Event, dann `GET /events/{id}/seats` – zeigt den
+   Sitzplan als Reihen unterhalb einer „Bühne“, gruppiert nach Kategorie (`premium`/`parkett`/
+   `balkon`, je mit eigenem Preis aus `price_cents`), plus einer Verfügbarkeits-Zusammenfassung
+   ("x von 30 Plätzen frei").
+2. Klick auf freien Sitzplatz → nativer `<dialog>` mit Sitzplatz/Kategorie/Preis-Zusammenfassung
+   und Buchungsformular (Vorname/Nachname/E-Mail). Eine Session-ID (`crypto.randomUUID()`) wird
+   pro Browser in `localStorage` erzeugt und bei jeder Buchung mitgeschickt, um Kunden zu
+   unterscheiden.
+3. `POST /events/{id}/reservations` → Statuskarte „in Bearbeitung“ (mit Spinner), danach Polling
+   von `GET /reservations/{id}` alle 2s bis `confirmed` („bestätigt“, ✓) oder `rejected`
+   („ausgebucht“, ✕) – oder Timeout nach 60s (z.B. wenn `reservation-worker` lokal nicht läuft).
+
+## Lokal starten
+
+Über das repo-weite `docker-compose.yml` (siehe Root-README `## Betrieb`):
+
+```bash
+docker compose up catalog-api frontend
+```
+
+Frontend läuft dann auf `http://localhost:8081`, catalog-api auf `http://localhost:8080` (in
+`index.html` als `API_BASE_URL` hinterlegt).
 
 ## Image bauen
 
