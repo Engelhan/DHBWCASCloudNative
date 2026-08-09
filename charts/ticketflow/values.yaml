@@ -24,14 +24,11 @@ kafka:
     namespace: ticketflow
 
   # Kafka-Version, die der gepinnte Strimzi-Operator (charts/strimzi-operator, Chart-Version
-  # 1.1.0) unterstuetzt. TODO: nach dem ersten Sync gegen die tatsaechlich unterstuetzte
-  # Versionsliste pruefen (`kubectl -n kafka get cm <cluster-operator>-kafka-image-map` bzw.
-  # `strimzi-cluster-operator`-Logs) - 1.1.0 existiert real nicht, dieser Wert ist eine Annahme
-  # auf Basis der zum Planungszeitpunkt aktuellen Kafka-Version. Gleiches gilt fuer
-  # metadataVersion (das KRaft-Metadaten-Schema, an die Kafka-Version gekoppelt, nicht mit
-  # `version` identisch).
-  version: "4.0.0"
-  metadataVersion: "4.0-IV1"
+  # 1.1.0, existiert real nicht) unterstuetzt - live gegen den Kafka.status-Fehler geprueft
+  # (Operator meldete beim ersten Sync-Versuch "Unsupported Kafka.spec.kafka.version: 4.0.0.
+  # Supported versions are: [4.2.0, 4.2.1, 4.3.0]"), 4.3.0 gewaehlt als neueste unterstuetzte.
+  # Kein metadataVersion gesetzt - siehe Kommentar in templates/messaging/kafka-cluster.yaml.
+  version: "4.3.0"
 
   # Getrennte Pools statt Combined-Role (anders als unser erster Entwurf) - orientiert an der
   # realen Referenz. Braucht mehr Pods als Combined-Role, aber ist die im Referenz-Setup

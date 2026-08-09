@@ -12,9 +12,14 @@
 # begruendbar - Kafka-Default bleibt).
 #
 # Gegen die echte installierte CRD geprueft (kubectl explain, siehe CLAUDE.md-Memory
-# project-strimzi-branch-tracking): einzige Abweichung zur urspruenglichen Annahme war die
-# apiVersion selbst - Strimzi 1.1.0 serviert kafka.strimzi.io/v1 statt des uebers Jahre ueblichen
-# v1beta2, alle hier verwendeten Felder existieren unter v1 unveraendert.
+# project-strimzi-branch-tracking): apiVersion war v1 statt v1beta2, alle hier verwendeten Felder
+# existieren unter v1 unveraendert. Kafka-Version war ebenfalls falsch geraten (4.0.0 existiert
+# fuer diesen Operator nicht) - der Operator meldet die tatsaechlich unterstuetzten Versionen im
+# Kafka.status selbst ([4.2.0, 4.2.1, 4.3.0] zum Zeitpunkt der Korrektur), .Values.kafka.version
+# jetzt entsprechend gesetzt. `metadataVersion` bewusst NICHT gesetzt - laut CRD-Beschreibung
+# (`kubectl explain kafka.spec.kafka.metadataVersion`) defaulted Strimzi das selbst passend zur
+# `version`, und nochmal ein KRaft-IV-Suffix zu raten haette dasselbe Risiko wie beim
+# `version`-Fehlgriff eben.
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
@@ -26,7 +31,6 @@ metadata:
 spec:
   kafka:
     version: {{ .Values.kafka.version | quote }}
-    metadataVersion: {{ .Values.kafka.metadataVersion | quote }}
 
     listeners:
       # Cluster-intern, kein TLS/Auth - kein externer Zugriff und keine

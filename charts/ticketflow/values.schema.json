@@ -11,7 +11,7 @@
     },
     "kafka": {
       "type": "object",
-      "required": ["metadata", "version", "metadataVersion", "controller", "broker", "config", "topics"],
+      "required": ["metadata", "version", "controller", "broker", "config", "topics"],
       "properties": {
         "metadata": {
           "type": "object",
@@ -22,7 +22,6 @@
           }
         },
         "version": { "type": "string", "minLength": 1 },
-        "metadataVersion": { "type": "string", "minLength": 1 },
         "controller": { "$ref": "#/definitions/nodePool" },
         "broker": { "$ref": "#/definitions/nodePool" },
         "config": {
