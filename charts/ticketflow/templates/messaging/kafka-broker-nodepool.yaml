@@ -1,7 +1,7 @@
 # Broker-Pool, getrennt vom Controller-Pool (kafka-controller-nodepool.yaml) - anders als unser
 # erster Entwurf (Combined-Role), orientiert an einer realen Strimzi-Referenz aus dem
 # Arbeitsumfeld des Nutzers.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: broker

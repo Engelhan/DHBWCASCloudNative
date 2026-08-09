@@ -11,11 +11,11 @@
 # ohne Wirkung), `message.max.bytes: 200MB` (fuer unsere kleinen JSON-Reservierungs-Events nicht
 # begruendbar - Kafka-Default bleibt).
 #
-# TODO nach dem ersten Sync gegenpruefen (`kubectl explain kafka.spec --api-version=
-# kafka.strimzi.io/v1beta2` gegen die echte installierte CRD): der gepinnte Strimzi-Chart
-# (1.1.0, siehe charts/strimzi-operator/Chart.yaml) existiert real nicht, dieses Manifest baut
-# auf dem zum Planungszeitpunkt aktuellen KRaft+KafkaNodePool-API-Schema auf.
-apiVersion: kafka.strimzi.io/v1beta2
+# Gegen die echte installierte CRD geprueft (kubectl explain, siehe CLAUDE.md-Memory
+# project-strimzi-branch-tracking): einzige Abweichung zur urspruenglichen Annahme war die
+# apiVersion selbst - Strimzi 1.1.0 serviert kafka.strimzi.io/v1 statt des uebers Jahre ueblichen
+# v1beta2, alle hier verwendeten Felder existieren unter v1 unveraendert.
+apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
   name: {{ .Values.kafka.metadata.name }}

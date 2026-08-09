@@ -1,6 +1,6 @@
 # Controller-Pool, getrennt vom Broker-Pool (kafka-broker-nodepool.yaml) - siehe dortigen
 # Kommentar zur Begruendung.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: controller
