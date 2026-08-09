@@ -84,8 +84,12 @@ Four layers, each owning a distinct concern — don't blur them:
    See
    `gitops/README.md` for the DNS/ACME activation flow.
 4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
-   `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). Currently only a
-   README — **no templates written yet**.
+   `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). `templates/messaging/`
+   (Strimzi `Kafka` CR in KRaft mode plus separate `broker`/`controller` `KafkaNodePool`s — not
+   combined-role, matching a real Strimzi setup the user provided as reference — two
+   `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) is
+   written and deployed via `gitops/apps/ticketflow.yaml`, currently on branch `strimzi-setup` —
+   the rest (services, `database/`, `config/`, `monitoring/`) is still template-less.
 
 Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
 add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
@@ -356,8 +360,36 @@ of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
-- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, all `src/*`
-  application code, `observability/dashboards/` + `observability/alerts/` content.
+- **Done, on branch `strimzi-setup` (not yet merged to `main`):** `charts/ticketflow` Kafka
+  cluster — `Chart.yaml`/`values.yaml`/`values-dev.yaml`/`values-prod.yaml`/`values.schema.json`
+  (schema currently only validates the `kafka.*` section; extensible for later sections) +
+  `templates/messaging/`: `Kafka` CR in KRaft mode (no ZooKeeper, `strimzi.io/kraft: enabled`,
+  `metadataVersion` set) with **separate `broker`/`controller` `KafkaNodePool`s** (not
+  combined-role — restructured to match a real Strimzi setup the user provided as a reference
+  from their workplace), each with a soft cross-host `podAntiAffinity` (from that reference) plus
+  a hard `topologySpreadConstraint` on `topology.ticketflow/region` for P4 (only once that pool's
+  `replicas > 1`, i.e. with `values-prod.yaml` — dev intentionally runs one broker + one
+  controller); a `kafka-metrics` `ConfigMap` (JMX Prometheus Exporter rules, KRaft-specific rules
+  enabled since KRaft is our only mode) wired in via `spec.kafka.metricsConfig`, plus
+  `spec.kafkaExporter` for consumer-lag metrics (P7); two `KafkaTopic`s,
+  `reservation-requested`/`reservation-result`, matching `RESERVATION_TOPIC`/`RESULT_TOPIC` from
+  the service READMEs, each with `retention.ms`/`cleanup.policy` (prod also `min.insync.replicas:
+  2`). Deliberately **not** copied from the reference: external listener/TLS/SCRAM auth (no
+  external access needed), `authorization: type: simple` (no `KafkaUser`s exist yet — natural
+  follow-up once `catalog-api`/`reservation-worker`/`notification-worker` exist),
+  `inter.broker.protocol.version` (ZK-era field, meaningless under pure KRaft),
+  `message.max.bytes: 200MB` (no justification for our small JSON events, left at the Kafka
+  default). `gitops/apps/ticketflow.yaml` (`targetRevision: strimzi-setup`, namespace
+  `ticketflow`, syncs `values-dev.yaml`). Strimzi chart version is pinned as `1.1.0`, which
+  doesn't exist in reality (this project's timeline is deliberately forward-dated) — the CR
+  fields follow the most recent real Strimzi KRaft+KafkaNodePool API as a best guess and should
+  be re-checked against the live-installed CRD (`kubectl explain kafka.spec --api-version=
+  kafka.strimzi.io/v1beta2`) if the operator rejects anything. AKHQ and a schema registry (also
+  Carlos' scope per the team's task split) are deliberately **not** part of this yet — separate
+  follow-up, registry implementation undecided.
+- **Not started:** `gitops/apps/keda.yaml`, `gitops/projects/ticketflow-project.yaml`,
+  `charts/ticketflow/templates/{catalog-api,reservation-worker,notification-worker,frontend,
+  database,config,monitoring}/`, AKHQ, schema registry, all `src/*` application code,
+  `observability/dashboards/` + `observability/alerts/` content.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
