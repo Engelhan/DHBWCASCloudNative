@@ -1,0 +1,55 @@
+# Controller-Pool, getrennt vom Broker-Pool (kafka-broker-nodepool.yaml) - siehe dortigen
+# Kommentar zur Begruendung.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: controller
+  namespace: {{ .Values.kafka.metadata.namespace }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+spec:
+  replicas: {{ .Values.kafka.controller.replicas }}
+
+  roles:
+    - controller
+
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: {{ .Values.kafka.controller.storage.type }}
+        size: {{ .Values.kafka.controller.storage.size }}
+        deleteClaim: false
+
+  resources:
+    requests:
+      memory: {{ .Values.kafka.controller.resources.requests.memory }}
+    limits:
+      memory: {{ .Values.kafka.controller.resources.limits.memory }}
+
+  template:
+    pod:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: strimzi.io/name
+                      operator: In
+                      values:
+                        - {{ .Values.kafka.metadata.name }}-kafka
+                topologyKey: kubernetes.io/hostname
+      {{- if gt (int .Values.kafka.controller.replicas) 1 }}
+      # P4, siehe kafka-broker-nodepool.yaml - fuer den Controller-Quorum genauso relevant
+      # (Verlust einer Region darf nicht die Mehrheit des Controller-Quorums mitreissen).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.ticketflow/region
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+              strimzi.io/pool-name: controller
+      {{- end }}
