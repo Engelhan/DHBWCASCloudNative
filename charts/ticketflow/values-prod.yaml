@@ -29,13 +29,13 @@ kafka:
       partitions: 8
       replicationFactor: 3
       config:
-        retention.ms: 604800000
+        retention.ms: "604800000"
         cleanup.policy: delete
-        min.insync.replicas: 2
+        min.insync.replicas: "2"
     - name: reservation-result
       partitions: 8
       replicationFactor: 3
       config:
-        retention.ms: 604800000
+        retention.ms: "604800000"
         cleanup.policy: delete
-        min.insync.replicas: 2
+        min.insync.replicas: "2"
