@@ -381,12 +381,12 @@ of leaving this section stale.
   `message.max.bytes: 200MB` (no justification for our small JSON events, left at the Kafka
   default). `gitops/apps/ticketflow.yaml` (`targetRevision: strimzi-setup`, namespace
   `ticketflow`, syncs `values-dev.yaml`). Strimzi chart version is pinned as `1.1.0`, which
-  doesn't exist in reality (this project's timeline is deliberately forward-dated) — the CR
-  fields follow the most recent real Strimzi KRaft+KafkaNodePool API as a best guess and should
-  be re-checked against the live-installed CRD (`kubectl explain kafka.spec --api-version=
-  kafka.strimzi.io/v1beta2`) if the operator rejects anything. AKHQ and a schema registry (also
-  Carlos' scope per the team's task split) are deliberately **not** part of this yet — separate
-  follow-up, registry implementation undecided.
+  doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
+  sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
+  originally written against — fixed (all other fields matched `kubectl explain` against the
+  real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ and a schema registry
+  (also Carlos' scope per the team's task split) are deliberately **not** part of this yet —
+  separate follow-up, registry implementation undecided.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/projects/ticketflow-project.yaml`,
   `charts/ticketflow/templates/{catalog-api,reservation-worker,notification-worker,frontend,
   database,config,monitoring}/`, AKHQ, schema registry, all `src/*` application code,
