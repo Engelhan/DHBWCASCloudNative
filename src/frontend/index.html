@@ -5,13 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TicketFlow</title>
   <link rel="stylesheet" href="style.css" />
-  <script>
-    // Basis-URL der catalog-api. Kein Build-Step im Frontend (bewusst reines HTML/CSS/JS) -
-    // fuer lokale Entwicklung per docker-compose reicht ein fester Wert; im Cluster wuerde das
-    // ueber ein Ingress-Routing (Frontend + /api auf derselben Origin) geloest, das gehoert aber
-    // in charts/ticketflow und ist dort noch nicht gebaut.
-    window.API_BASE_URL = "http://localhost:8080";
-  </script>
+  <script src="config.js"></script>
 </head>
 <body>
   <header class="hero">
