@@ -48,9 +48,10 @@ a small, fixed seat count. This is the load path the whole architecture exists t
 - `frontend`, `load-generator` — demo UI and the k6 flash-sale load script.
 - Stateful services: **CNPG** (PostgreSQL operator) and **Strimzi** (Kafka).
 
-None of `src/*` has code yet — only per-service `README.md` files describing the planned
-interface/config. When implementing a service, keep it consistent with its README (env vars via
-ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
+`catalog-api` and `frontend` now have working code (see Current implementation status below);
+`reservation-worker`, `notification-worker`, `load-generator` still only have per-service
+`README.md` files describing the planned interface/config. When implementing a service, keep it
+consistent with its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
 
 ## Infra layering (read this before touching infra/)
 
@@ -265,11 +266,20 @@ kubectl -n argocd get pods
 cd infra/ansible
 ansible-playbook playbooks/site.yml --syntax-check
 ansible-lint
+
+# catalog-api + frontend local dev stack (docker-compose, repo root — no Go/Node install needed
+# locally, everything builds inside containers)
+docker compose up -d --build
+docker compose down -v
+
+# catalog-api build/vet without a local Go toolchain
+cd src/catalog-api
+docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... && go build -o /tmp/catalog-api-bin ."
 ```
 
-No app build/lint/test commands exist yet — `src/*` has no code, and `charts/ticketflow` has no
-templates to `helm lint`/`helm template` against. Add real commands here once those exist instead
-of leaving this section stale.
+`charts/ticketflow` still has no templates to `helm lint`/`helm template` against;
+`reservation-worker`/`notification-worker`/`load-generator` still have no code. Add real commands
+here once those exist instead of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
@@ -356,6 +366,27 @@ of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
+- **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
+  Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
+  single-node) and a headless-Chromium click-through:** `src/catalog-api/` (Go 1.25 + `chi`,
+  `pgx/v5` read-only DB access, `segmentio/kafka-go` producer, routes `GET /events`,
+  `GET /events/{id}/seats`, `POST /events/{id}/reservations`, `GET /reservations/{id}`,
+  `/healthz`/`/readyz`/`/metrics`, multi-stage Dockerfile → `distroless/static-debian12:nonroot`)
+  and `src/frontend/` (plain HTML/CSS/JS, no build step, seat grid + booking form + status
+  polling, `nginx:1.27-alpine` Dockerfile). `local/postgres/init.sql` seeds one demo event
+  (`demo-konzert`, 30 seats) for both. catalog-api deliberately never writes to `reservations` —
+  only the (not-yet-built) `reservation-worker` will; `GET /reservations/{id}` reports `pending`
+  from an in-memory cache until that row exists, so the full `pending`→`confirmed`/`rejected`
+  transition can't complete locally yet (confirmed as expected during testing, not a bug). The
+  `ReservationRequested` Kafka payload (see `src/catalog-api/README.md` ## Kafka-Event-Schema) is
+  a **draft**, not yet aligned with whoever builds `reservation-worker`. `docker-compose.yml`
+  includes a `kafka-init` one-shot job that pre-creates the topic — without it, the *first*
+  request after a fresh stack start fails (`Unknown Topic Or Partition`) because Kafka's
+  auto-topic-creation-on-first-produce is asynchronous to that same produce call; found live
+  during E2E testing.
+- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
+  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`,
+  `reservation-worker`, `notification-worker`, `load-generator` application code,
 - **Done:** `src/notification-worker/` — first implemented service in the repo (Go), the second,
   independent Kafka consumer group off `RESULT_TOPIC`. `github.com/segmentio/kafka-go`
   (pure-Go, no cgo, needed for the distroless build). Config entirely via env vars

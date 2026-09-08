@@ -190,24 +190,40 @@ kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
 Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten (ohne manuelle
 Portal-Klicks) zum laufenden Stack führen.
 
+### Lokale Entwicklung (catalog-api + frontend)
+
+Rein für die Entwicklung von `catalog-api`/`frontend`, kein Teil des obigen Cluster-Pfads:
+
+```bash
+docker compose up -d --build
+# frontend: http://localhost:8081, catalog-api: http://localhost:8080
+docker compose down -v
+```
+
+Postgres/Kafka laufen dabei als lokale Stand-ins für CNPG/Strimzi (Seed-Daten aus
+`local/postgres/init.sql`). `reservation-worker` existiert noch nicht, daher bleibt jede Buchung
+lokal auf Status `pending` stehen (`GET /reservations/{id}`) — die Kafka-Message
+(`ReservationRequested`) wird trotzdem korrekt publiziert und lässt sich prüfen:
+
+```bash
+docker exec $(docker compose ps -q kafka) /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:29092 --topic reservation-requested --from-beginning
+```
+
 ## Entscheidungen
 
-Je Pflicht- und Wahlthema: Wahl, Alternative, Begründung. Referenzen auf konkrete Dateien sind
-angegeben, wo bereits Code existiert; alles andere ist Planungsstand (siehe `TODO`-Markierungen
-oben) und wird ergänzt, sobald es implementiert ist.
+Je Pflicht- und Wahlthema: Wahl, Alternative, Begründung.
 
-**P1 – Anwendung und Domäne.** *Wahl:* drei eigene, über das Netzwerk kommunizierende Services
-(`catalog-api` per REST, `reservation-worker`/`notification-worker` per Kafka) plus zwei
-zustandsbehaftete Dienste (CNPG-Postgres, Strimzi-Kafka); Container-Images werden aus je einem
-Dockerfile pro Service in `src/*/` gebaut (umgesetzt für `notification-worker`, siehe
-[`src/notification-worker/`](src/notification-worker/)). *Alternative:* ein Monolith mit
-synchronem DB-Zugriff, oder nur die geforderten zwei Services ohne eigenen
-Notification-Consumer. *Begründung:* Ein Monolith wäre schneller gebaut, würde die
-Sitzplatzreservierung aber pro Request synchron in der DB verriegeln — genau der Engpass, den der
-Flash-Sale-Lastpfad vermeiden soll. Der dritte Service ist kein Selbstzweck: erst eine zweite,
-unabhängige Konsumentengruppe auf demselben Ergebnis-Topic beweist, dass Kafka hier als Bus mit
-Fan-out genutzt wird und nicht nur als Punkt-zu-Punkt-Queue zwischen zwei Services — sonst wäre der
-"zustandsbehaftete Dienst" nur eine Queue vor einer DB-Kopie.
+**P1 – Anwendung und Domäne.** *Wahl:* drei eigene Services (`catalog-api`,
+`reservation-worker`, `notification-worker`) plus CNPG-Postgres und Strimzi-Kafka als
+zustandsbehaftete Dienste. *Alternative:* ein einzelner Monolith mit synchronem DB-Zugriff.
+*Begründung:* Erst die Trennung von Annahme (API) und Verarbeitung (Worker) über eine Queue macht
+den Lastpfad des Flash-Sales beherrschbar und erlaubt, genau den Engpass-Service unabhängig zu
+skalieren. `catalog-api` selbst ist in Go + `chi` umgesetzt (schreibt bewusst nie synchron in
+Postgres, nur lesend + Kafka-Producer, siehe `src/catalog-api/README.md`), damit dieselbe
+Toolchain wie im geplanten `reservation-worker` zum Einsatz kommt und das Image im Flash-Sale-Pfad
+klein/schnell startend bleibt. *Alternative:* Python + FastAPI (schnelleres Prototyping, aber
+größeres Image und eine zweite Toolchain neben Go).
 
 **P2 – Infrastruktur als Code.** *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap — ein `terraform apply` gefolgt von einem
