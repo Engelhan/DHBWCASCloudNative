@@ -77,40 +77,28 @@ nicht nur vorgeführt.
 
 ```mermaid
 flowchart TB
-    subgraph OpenStack["DHBWCloud / OpenStack"]
-        subgraph VMs["VMs (Terraform + Ansible, k3s)"]
-            CP["control-plane VM"]
-            W1["worker VM 1 (Label: region-a)"]
-            W2["worker VM 2 (Label: region-b)"]
-            W3["worker VM 3 (Label: region-c)"]
-        end
+    LOADGEN["🌐 load-generator (k6)<br/>künstliche Lastspitze"] --> FRONTEND
+
+    subgraph FEPLANE["Frontend-Plane"]
+        FRONTEND["⬡ Frontend<br/>(UI-Pod + catalog-api REST, HPA)"]
     end
 
-    subgraph Cluster["k3s-Cluster"]
-        FE["frontend (Pod)"] -->|"REST"| API["catalog-api (Pods, HPA)"]
-        API -->|"produce ReservationRequested"| KAFKA[("Kafka - Strimzi<br/>(StatefulSet, 3 Broker)")]
-        KAFKA -->|"consume"| WORKER["reservation-worker (Pods, KEDA-scaled)"]
-        WORKER -->|"seat lock / commit"| PG[("PostgreSQL - CNPG<br/>(Primary + 2 Replicas, PVC)")]
-        WORKER -->|"produce ReservationConfirmed/Rejected"| KAFKA
-        KAFKA -->|"consume"| NOTIFY["notification-worker (Pods)"]
-        API -->|"read seat availability"| PG
-
-        PROM["Prometheus"] -.->|"scrape /metrics"| API
-        PROM -.->|"scrape /metrics"| WORKER
-        PROM -.->|"scrape /metrics"| NOTIFY
-        PROM --> GRAFANA["Grafana Dashboard (as Code)"]
-        PROM --> ALERT["Alertmanager (Alert-Regel: Backlog/Fehlerquote)"]
-        ARGOCD["ArgoCD (App-of-Apps, Auto-Sync + Self-Heal)"]
+    subgraph BUSPLANE["Event-Bus-Plane"]
+        KAFKA[("📨 Kafka - Strimzi<br/>Event Bus, 3 Broker<br/>Topology-Spread: region-a/b/c")]
     end
 
-    LOADGEN["load-generator (k6)"] -->|"künstliche Lastspitze"| API
+    subgraph BEPLANE["Backend-Plane"]
+        RESERVATION["⬡ reservation-worker<br/>(Pods, KEDA-scaled)"]
+        NOTIFY["⬡ notification-worker<br/>(Pods)"]
+        PG[("🗄️ PostgreSQL - CNPG<br/>Persistence Layer<br/>Primary + 2 Replicas<br/>Topology-Spread: region-a/b/c")]
+    end
 
-    W1 -.->|"Topology-Spread"| PG
-    W2 -.->|"Topology-Spread"| PG
-    W3 -.->|"Topology-Spread"| PG
-    W1 -.->|"Topology-Spread"| KAFKA
-    W2 -.->|"Topology-Spread"| KAFKA
-    W3 -.->|"Topology-Spread"| KAFKA
+    FRONTEND -->|"produce ReservationRequested"| KAFKA
+    FRONTEND -->|"read Sitzplatzverfügbarkeit"| PG
+    KAFKA -->|"consume"| RESERVATION
+    RESERVATION -->|"seat lock / commit"| PG
+    RESERVATION -->|"produce Confirmed/Rejected"| KAFKA
+    KAFKA -->|"consume"| NOTIFY
 ```
 
 **Datenfluss von der VM bis zum Pod:**
