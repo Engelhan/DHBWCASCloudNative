@@ -15,7 +15,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    targetRevision: niklas
+    targetRevision: main
     path: gitops/apps
     directory:
       recurse: false

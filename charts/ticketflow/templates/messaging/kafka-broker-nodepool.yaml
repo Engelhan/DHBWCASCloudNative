@@ -1,0 +1,60 @@
+# Broker-Pool, getrennt vom Controller-Pool (kafka-controller-nodepool.yaml) - anders als unser
+# erster Entwurf (Combined-Role), orientiert an einer realen Strimzi-Referenz aus dem
+# Arbeitsumfeld des Nutzers.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: broker
+  namespace: {{ .Values.kafka.metadata.namespace }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+spec:
+  replicas: {{ .Values.kafka.broker.replicas }}
+
+  roles:
+    - broker
+
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: {{ .Values.kafka.broker.storage.type }}
+        size: {{ .Values.kafka.broker.storage.size }}
+        deleteClaim: false
+
+  resources:
+    requests:
+      memory: {{ .Values.kafka.broker.resources.requests.memory }}
+    limits:
+      memory: {{ .Values.kafka.broker.resources.limits.memory }}
+
+  template:
+    pod:
+      affinity:
+        podAntiAffinity:
+          # Weich: verteilt Broker-Pods bevorzugt auf verschiedene Nodes (aus der Referenz
+          # uebernommen). Fuer die harte P4-Anforderung ("nie auf demselben simulierten
+          # Standort") sorgt der topologySpreadConstraint unten zusaetzlich.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: strimzi.io/name
+                      operator: In
+                      values:
+                        - {{ .Values.kafka.metadata.name }}-kafka
+                topologyKey: kubernetes.io/hostname
+      {{- if gt (int .Values.kafka.broker.replicas) 1 }}
+      # P4: harte Verteilung ueber die drei simulierten Regionen (topology.ticketflow/region,
+      # von infra/ansible/roles/node_labels gesetzt). Nur relevant ab 2+ Replicas
+      # (values-dev.yaml faehrt mit einem einzigen Broker, siehe dortiger Kommentar).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.ticketflow/region
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+              strimzi.io/pool-name: broker
+      {{- end }}

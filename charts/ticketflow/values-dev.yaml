@@ -1,0 +1,32 @@
+# Kleine Werte fuer Funktionstests auf den Lab-VMs - siehe README ## values-dev.yaml vs.
+# values-prod.yaml. Ein Controller + ein Broker reichen, um zu zeigen, dass Produce/Consume
+# funktioniert; P4 (Regionen-Verteilung) greift erst ab 2+ Replicas je Pool.
+
+kafka:
+  controller:
+    replicas: 1
+    storage:
+      size: 2Gi
+  broker:
+    replicas: 1
+    storage:
+      size: 5Gi
+  config:
+    offsetsTopicReplicationFactor: 1
+    transactionStateLogReplicationFactor: 1
+    transactionStateLogMinIsr: 1
+    defaultReplicationFactor: 1
+    minInsyncReplicas: 1
+  topics:
+    - name: reservation-requested
+      partitions: 3
+      replicationFactor: 1
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete
+    - name: reservation-result
+      partitions: 3
+      replicationFactor: 1
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete

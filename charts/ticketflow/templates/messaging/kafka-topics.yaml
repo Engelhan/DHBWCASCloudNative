@@ -1,0 +1,27 @@
+# RESERVATION_TOPIC/RESULT_TOPIC aus src/catalog-api, src/reservation-worker,
+# src/notification-worker ## Konfiguration - Namen/Partitions/RF kommen aus .Values.kafka.topics
+# (values.yaml, ueberschrieben von values-dev.yaml/values-prod.yaml).
+{{- range .Values.kafka.topics }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    strimzi.io/cluster: {{ $.Values.kafka.metadata.name }}
+spec:
+  partitions: {{ .partitions }}
+  replicas: {{ .replicationFactor }}
+  {{- if .config }}
+  config:
+    # Alle Config-Werte kommen in values.yaml bereits als String (z.B. retention.ms: "604800000")
+    # - Helms YAML->JSON-Zwischenschritt macht aus einer bare number ein float64, und Go
+    # formatiert grosse runde float64-Werte per Default in wissenschaftlicher Notation
+    # ("6.048e+08" statt "604800000"), was Kafkas Config-Parser nicht akzeptiert. Als String in
+    # der Quelle umgeht das die Float-Konvertierung komplett, statt sie nur zu kaschieren.
+    {{- range $key, $value := .config }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}

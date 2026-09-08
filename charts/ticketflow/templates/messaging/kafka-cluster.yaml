@@ -1,0 +1,90 @@
+# Kafka-CR in KRaft-Modus (kein ZooKeeper - in Strimzi laengst entfernt), Broker-/
+# Controller-Replicas und Storage kommen ausschliesslich aus den beiden KafkaNodePools
+# (kafka-broker-nodepool.yaml/kafka-controller-nodepool.yaml), nicht aus diesem spec.kafka-Block.
+#
+# Struktur (metadataVersion, metricsConfig, kafkaExporter, entityOperator-Resources) orientiert
+# an einer realen Strimzi-Referenz aus dem Arbeitsumfeld des Nutzers - bewusst NICHT uebernommen:
+# externer Listener/TLS/SCRAM-Auth (kein externer Zugriff noetig, siehe Root-README
+# ## Entscheidungen), `authorization: type: simple` (kein Sinn ohne KafkaUser-Identitaeten -
+# folgt, sobald catalog-api/reservation-worker/notification-worker existieren und eigene
+# KafkaUser-CRs bekommen), `inter.broker.protocol.version` (ZK-Aera-Feld, in reinem KRaft-Betrieb
+# ohne Wirkung), `message.max.bytes: 200MB` (fuer unsere kleinen JSON-Reservierungs-Events nicht
+# begruendbar - Kafka-Default bleibt).
+#
+# Gegen die echte installierte CRD geprueft (kubectl explain, siehe CLAUDE.md-Memory
+# project-strimzi-branch-tracking): apiVersion war v1 statt v1beta2, alle hier verwendeten Felder
+# existieren unter v1 unveraendert. Kafka-Version war ebenfalls falsch geraten (4.0.0 existiert
+# fuer diesen Operator nicht) - der Operator meldet die tatsaechlich unterstuetzten Versionen im
+# Kafka.status selbst ([4.2.0, 4.2.1, 4.3.0] zum Zeitpunkt der Korrektur), .Values.kafka.version
+# jetzt entsprechend gesetzt. `metadataVersion` bewusst NICHT gesetzt - laut CRD-Beschreibung
+# (`kubectl explain kafka.spec.kafka.metadataVersion`) defaulted Strimzi das selbst passend zur
+# `version`, und nochmal ein KRaft-IV-Suffix zu raten haette dasselbe Risiko wie beim
+# `version`-Fehlgriff eben.
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: {{ .Values.kafka.metadata.name }}
+  namespace: {{ .Values.kafka.metadata.namespace }}
+  annotations:
+    strimzi.io/kraft: enabled
+    strimzi.io/node-pools: enabled
+spec:
+  kafka:
+    version: {{ .Values.kafka.version | quote }}
+
+    listeners:
+      # Cluster-intern, kein TLS/Auth - kein externer Zugriff und keine
+      # Verschluesselungs-/Auth-Anforderung in P1-P7 dokumentiert (siehe Root-README
+      # ## Entscheidungen).
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+
+    config:
+      offsets.topic.replication.factor: {{ .Values.kafka.config.offsetsTopicReplicationFactor }}
+      transaction.state.log.replication.factor: {{ .Values.kafka.config.transactionStateLogReplicationFactor }}
+      transaction.state.log.min.isr: {{ .Values.kafka.config.transactionStateLogMinIsr }}
+      default.replication.factor: {{ .Values.kafka.config.defaultReplicationFactor }}
+      min.insync.replicas: {{ .Values.kafka.config.minInsyncReplicas }}
+      # Nur die beiden per KafkaTopic-CR verwalteten Topics sollen existieren - verhindert, dass
+      # ein Tippfehler im Topic-Namen eines Services still ein neues, unverwaltetes Topic anlegt.
+      auto.create.topics.enable: false
+      delete.topic.enable: true
+
+    template:
+      # P5: sichert Rolling Updates/Node-Drains ab, so dass nie mehr als ein Broker gleichzeitig
+      # nicht verfuegbar ist.
+      podDisruptionBudget:
+        maxUnavailable: 1
+
+    # JMX-Prometheus-Exporter - macht Broker-/Controller-Metriken fuer kube-prometheus-stack
+    # scrapebar (P7), Regeln in der begleitenden ConfigMap (kafka-metrics-configmap.yaml).
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics
+          key: kafka-metrics-config.yml
+
+  # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
+  # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber
+  # dieses Exporter).
+  kafkaExporter:
+    topicRegex: ".*"
+    groupRegex: ".*"
+
+  # Pflicht, damit KafkaTopic-CRs (kafka-topics.yaml) ueberhaupt reconciled werden.
+  entityOperator:
+    topicOperator:
+      resources:
+        requests:
+          memory: {{ .Values.kafka.entityOperator.topicOperator.resource.memoryLimit }}
+        limits:
+          memory: {{ .Values.kafka.entityOperator.topicOperator.resource.memoryLimit }}
+    userOperator:
+      resources:
+        requests:
+          memory: {{ .Values.kafka.entityOperator.userOperator.resource.memoryLimit }}
+        limits:
+          memory: {{ .Values.kafka.entityOperator.userOperator.resource.memoryLimit }}

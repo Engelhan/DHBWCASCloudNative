@@ -21,9 +21,13 @@ ticketflow/
     ├── reservation-worker/  # Deployment, ScaledObject (KEDA), ServiceMonitor
     ├── frontend/             # Deployment, Service, Ingress
     ├── database/
-    │   └── cnpg-cluster.yaml # CNPG `Cluster`-CR (PVC-Größe, Instanzanzahl aus values)
-    ├── messaging/
-    │   └── kafka-cluster.yaml # Strimzi `Kafka`- und `KafkaTopic`-CRs
+    │   └── cnpg-cluster.yaml # CNPG `Cluster`-CR (PVC-Größe, Instanzanzahl aus values) — TODO
+    ├── messaging/                       # fertig, siehe unten
+    │   ├── kafka-broker-nodepool.yaml     # Strimzi `KafkaNodePool`, role broker
+    │   ├── kafka-controller-nodepool.yaml # Strimzi `KafkaNodePool`, role controller
+    │   ├── kafka-cluster.yaml             # Strimzi `Kafka`-CR, KRaft-Modus (kein ZooKeeper)
+    │   ├── kafka-metrics-configmap.yaml   # JMX-Prometheus-Exporter-Regeln (P7)
+    │   └── kafka-topics.yaml              # `KafkaTopic`-CRs, aus `.Values.kafka.topics` generiert
     ├── config/
     │   ├── configmap.yaml
     │   └── secret.yaml        # Platzhalter-Struktur; echte Werte kommen aus External Secret /
@@ -53,6 +57,7 @@ helm lint charts/ticketflow -f charts/ticketflow/values-dev.yaml
 helm template ticketflow charts/ticketflow -f charts/ticketflow/values-prod.yaml
 ```
 
-`TODO`: Templates schreiben, sobald `catalog-api`/`reservation-worker` ein `/metrics`- und
-`/healthz`-Endpoint haben und die CNPG-/Strimzi-Operator-CRD-Versionen (aus `gitops/apps/`)
-feststehen (`notification-worker` hat das bereits, siehe `charts/notification-worker/`).
+`messaging/` ist fertig (Kafka-Cluster, siehe `gitops/apps/ticketflow.yaml`, aktuell auf Branch
+`strimzi-setup`). `TODO`: restliche Templates (Services, `database/`, `config/`, `monitoring/`)
+schreiben, sobald die drei Services ein `/metrics`- und `/healthz`-Endpoint haben und die
+CNPG-Operator-CRD-Version feststeht.

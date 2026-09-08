@@ -99,7 +99,7 @@
       shell: |
         set -o pipefail
         kubectl create secret generic cert-manager-rfc2136-tsig \
-          -n cert-manager --from-literal=secret={{ rfc2136_tsig_secret_value }} \
+          -n cert-manager --from-literal=secret="{{ rfc2136_tsig_secret_value }}" \
           --dry-run=client -o yaml | kubectl apply -f -
       args:
         executable: /bin/bash
@@ -110,7 +110,7 @@
       shell: |
         set -o pipefail
         kubectl create secret generic external-dns-rfc2136-tsig \
-          -n external-dns --from-literal=secret={{ rfc2136_tsig_secret_value }} \
+          -n external-dns --from-literal=secret="{{ rfc2136_tsig_secret_value }}" \
           --dry-run=client -o yaml | kubectl apply -f -
       args:
         executable: /bin/bash

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "ticketflow",
+  "description": "Validiert bisher nur den Kafka-/Messaging-Teil (charts/ticketflow/templates/messaging/). Bewusst ohne additionalProperties:false auf Root- oder kafka-Ebene, damit weitere Abschnitte (catalog-api, frontend, database, ...) ergaenzt werden koennen, ohne dieses Schema umzubauen.",
+  "type": "object",
+  "required": ["namespace", "kafka"],
+  "properties": {
+    "namespace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kafka": {
+      "type": "object",
+      "required": ["metadata", "version", "controller", "broker", "config", "topics"],
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "required": ["name", "namespace"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "namespace": { "type": "string", "minLength": 1 }
+          }
+        },
+        "version": { "type": "string", "minLength": 1 },
+        "controller": { "$ref": "#/definitions/nodePool" },
+        "broker": { "$ref": "#/definitions/nodePool" },
+        "config": {
+          "type": "object",
+          "required": [
+            "offsetsTopicReplicationFactor",
+            "transactionStateLogReplicationFactor",
+            "transactionStateLogMinIsr",
+            "defaultReplicationFactor",
+            "minInsyncReplicas"
+          ],
+          "properties": {
+            "offsetsTopicReplicationFactor": { "type": "integer", "minimum": 1 },
+            "transactionStateLogReplicationFactor": { "type": "integer", "minimum": 1 },
+            "transactionStateLogMinIsr": { "type": "integer", "minimum": 1 },
+            "defaultReplicationFactor": { "type": "integer", "minimum": 1 },
+            "minInsyncReplicas": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "entityOperator": {
+          "type": "object",
+          "properties": {
+            "topicOperator": { "$ref": "#/definitions/operatorResource" },
+            "userOperator": { "$ref": "#/definitions/operatorResource" }
+          }
+        },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "partitions", "replicationFactor"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "partitions": { "type": "integer", "minimum": 1 },
+              "replicationFactor": { "type": "integer", "minimum": 1 },
+              "config": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "nodePool": {
+      "type": "object",
+      "required": ["replicas", "storage", "resources"],
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "storage": {
+          "type": "object",
+          "required": ["type", "size"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "size": { "type": "string", "minLength": 1 }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": { "type": "object" },
+            "limits": { "type": "object" }
+          }
+        }
+      }
+    },
+    "operatorResource": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "object",
+          "properties": {
+            "memoryLimit": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

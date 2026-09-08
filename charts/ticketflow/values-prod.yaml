@@ -1,0 +1,41 @@
+# HA-Werte - siehe README ## values-dev.yaml vs. values-prod.yaml. 3 Controller + 3 Broker,
+# verteilt ueber die drei simulierten Regionen (P4), Topic-replicationFactor darauf abgestimmt.
+#
+# partitions: 8 passt zu reservationWorker.maxReplicas: 8 (siehe README-Tabelle) - erst ab
+# mindestens so vielen Partitionen kann KEDA den Consumer wirklich bis auf 8 Pods parallelisieren
+# (ein Consumer pro Partition ist das Maximum innerhalb einer Consumer-Group).
+#
+# min.insync.replicas: 2 (Topic- und Cluster-Ebene) bei replicationFactor 3: toleriert den
+# Ausfall eines Brokers, ohne dass Produce-Requests mit acks=all fehlschlagen (P5-Begruendung:
+# Ticket-Reservierungen sind Geschaeftsdaten).
+
+kafka:
+  controller:
+    replicas: 3
+    storage:
+      size: 5Gi
+  broker:
+    replicas: 3
+    storage:
+      size: 10Gi
+  config:
+    offsetsTopicReplicationFactor: 3
+    transactionStateLogReplicationFactor: 3
+    transactionStateLogMinIsr: 2
+    defaultReplicationFactor: 3
+    minInsyncReplicas: 2
+  topics:
+    - name: reservation-requested
+      partitions: 8
+      replicationFactor: 3
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete
+        min.insync.replicas: "2"
+    - name: reservation-result
+      partitions: 8
+      replicationFactor: 3
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete
+        min.insync.replicas: "2"

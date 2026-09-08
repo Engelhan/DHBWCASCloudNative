@@ -2,6 +2,12 @@ variable "name_prefix" {
   type = string
 }
 
+variable "name_suffix" {
+  description = "Optionales Suffix (ohne fuehrenden Bindestrich, z.B. \"carlos\") fuer alle Ressourcennamen, damit mehrere Studierende auf demselben Projekt unterscheidbare VMs anlegen koennen"
+  type        = string
+  default     = ""
+}
+
 variable "network_id" {
   type = string
 }
