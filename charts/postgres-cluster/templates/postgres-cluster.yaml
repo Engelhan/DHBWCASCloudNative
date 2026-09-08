@@ -1,0 +1,123 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: "{{ .Values.database.name }}-postgres-cluster"
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+spec:
+  instances: {{ .Values.instances }}
+  primaryUpdateMethod: {{ .Values.database.primaryUpdateMethod | default "switchover" }}
+  primaryUpdateStrategy: {{ .Values.database.primaryUpdateStrategy | default "supervised" }}
+  enableSuperuserAccess: true
+  imageName: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  {{- if .Values.image.pullSecret }}
+  imagePullSecrets:
+    - name: {{ .Values.image.pullSecret }}
+  {{- end }}
+
+  postgresql:
+    parameters:
+      shared_buffers: {{ .Values.database.postgresql.parameters.shared_buffers | default "2GB" | quote }}
+      effective_cache_size: {{ .Values.database.postgresql.parameters.effective_cache_size | default "4GB" | quote }}
+      autovacuum: "on"
+      work_mem: {{ .Values.database.postgresql.parameters.work_mem | default "4MB" | quote }}
+      random_page_cost: "2.5"
+      max_connections: {{ .Values.database.postgresql.parameters.max_connections | default "100" | quote }}
+      {{- if .Values.database.postgresql.parameters.pg_stat_statements }}
+      pg_stat_statements.track: {{ .Values.database.postgresql.parameters.pg_stat_statements.track | default "top" | quote }}
+      {{- end }}
+      {{- with .Values.database.postgresql.extraParameters }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+    {{- with .Values.database.postgresql.pg_hba }}
+    pg_hba:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  bootstrap:
+    {{- $backup := .Values.backup | default dict -}}
+    {{- $import := .Values.import | default dict -}}
+    {{- if and (eq $backup.enabled true) (eq $backup.restoreFromBackup true) }}
+    recovery:
+      database: {{ .Values.database.name | quote }}
+      owner: {{ .Values.database.owner | quote }}
+      secret:
+        name: "{{ .Values.database.name }}-postgres-user"
+      source: restoreServer
+      {{- if .Values.backup.timestampToRestoreFrom }}
+      recoveryTarget:
+        targetTime: {{ .Values.backup.timestampToRestoreFrom | quote }}
+      {{- end }}
+    {{- else }}
+    initdb:
+      database: {{ .Values.database.name | quote }}
+      owner: {{ .Values.database.owner | quote }}
+      secret:
+        name: "{{ .Values.database.name }}-postgres-user"
+      encoding: UTF-8
+      localeCollate: en_US.UTF-8
+      localeCType: en_US.UTF-8
+      {{- if eq $import.enabled true }}
+      import:
+        type: microservice
+        databases:
+          - {{ $import.databaseToImport }}
+        source:
+          externalCluster: oldDBServer
+      {{- end }}
+    {{- end }}
+
+  {{- if eq $backup.enabled true }}
+  backup:
+    target: primary
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "{{ $.Values.database.name }}-postgres-cluster-backup"
+        serverName: {{ $backup.s3.backupFolderName | quote }}
+  {{- end }}
+
+  resources:
+    {{- $resources := .Values.resources | default dict }}
+    requests:
+      {{- $requests := $resources.requests | default dict }}
+      memory: {{ $requests.memory | default "4Gi" | quote }}
+      cpu: {{ $requests.cpu | default "10m" | quote }}
+    limits:
+      {{- $limits := $resources.limits | default dict }}
+      memory: {{ $limits.memory | default "1024Mi" | quote }}
+      cpu: {{ $limits.cpu | default "1" | quote }}
+
+  {{- if .Values.affinity }}
+  affinity:
+    enablePodAntiAffinity: {{ .Values.affinity.enablePodAntiAffinity | quote | default true }}
+    topologyKey: {{ .Values.affinity.topologyKey | quote | default "kubernetes.io/hostname" }}
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType | quote | default "preferred" }}
+  {{- end }}
+
+  storage:
+    storageClass: {{ .Values.storage.storageClass | quote }}
+    size: {{ .Values.storage.size | quote }}
+
+  {{- if or (eq $import.enabled true) (and (eq $backup.enabled true) (eq $backup.restoreFromBackup true)) }}
+  externalClusters:
+    {{- if eq $import.enabled true }}
+    - name: oldDBServer
+      connectionParameters:
+        host: {{ $import.server }}
+        user: {{ $import.user }}
+        dbname: {{ $import.databaseToImport }}
+      password:
+        name: {{ $.Values.database.name }}-import-password
+        key: password
+    {{- end }}
+    {{- if and (eq $backup.enabled true) (eq $backup.restoreFromBackup true) }}
+    - name: restoreServer
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: "{{ $.Values.database.name }}-postgres-cluster-restore"
+          serverName: {{ $backup.restoreBackupFolderName | quote }}
+    {{- end }}
+  {{- end }}

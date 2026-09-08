@@ -2,6 +2,11 @@
 
 Umbrella-Helm-Chart für die gesamte TicketFlow-Anwendungsebene.
 
+**Hinweis:** `notification-worker` hat inzwischen einen eigenen, eigenständigen Chart
+(`charts/notification-worker/`) bekommen, statt Teil dieses Umbrella-Charts zu sein — siehe
+`../README.md`. Die Struktur unten ist entsprechend nur noch für `catalog-api` und
+`reservation-worker` (beide noch nicht implementiert) sowie die CNPG-/Kafka-CRs gültig.
+
 ## Geplante Struktur
 
 ```
@@ -14,7 +19,6 @@ ticketflow/
 └── templates/
     ├── catalog-api/         # Deployment, Service, ConfigMap, ServiceMonitor
     ├── reservation-worker/  # Deployment, ScaledObject (KEDA), ServiceMonitor
-    ├── notification-worker/ # Deployment, ServiceMonitor
     ├── frontend/             # Deployment, Service, Ingress
     ├── database/
     │   └── cnpg-cluster.yaml # CNPG `Cluster`-CR (PVC-Größe, Instanzanzahl aus values) — TODO

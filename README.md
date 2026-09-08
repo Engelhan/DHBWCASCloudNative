@@ -5,21 +5,59 @@ Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Beri
 
 ## ToDo
 
+Pfisterer:
 - Application
-   - Frontend
-   - API + Kafka Producer
-   - Kafka Consumer
-   - Message service
-- Kafka Cluster
-- Postgres Cluster
+   - Frontend -> Philipp
+      - Buchungsseite, Sitzplatzauswahl, Anzeige Bestätigung, Fehlermeldung, Datenbank Info welche PLätze belegt, Session ID Kundenunterscheidung
+   - API + Kafka Producer -> Philipp
+   - Kafka Consumer -> Carlos
+      - DB Schema aufbauen und über applikation versionieren
+      - Event verarbeitung mit Reservierung des sitzplatzes, anschließend event ob successfull oder nicht
+   - Message service -> Niklas
+- Kafka Cluster -> Carlos
+   - Schema Registry
+   - Kafka Cluster
+   - AKHQ als Oberfläche
+- Postgres Cluster -> Niklas
+
+
+Für alle Applikationen:
+- Scheduling und Platzierung der Pods
+- Resilienz der deployments
+- Requests und Limits checken
+- Helm Chart mit Values Schema
+
+Bonus:
+- Helm Charts
+- Packaging von Helm Charts
+- Kafka Strimzi
+- Chaos Experiment
+
+
+Screen Cast:
+Alle Zusammen
+
+
 - Observability mit OpenTelemetry
    - Logging
    - Metriken
    - evtl. Traces
 - Autoscaler
-- Scheduling und Platzierung der Pods
-- Resilienz der deployments
-- Requests und Limits checken
+
+Sturm:
+Beleuchten Sie die ihnen zugeteilte Laborarbeit auf der Basis der in der Vorlesung
+vermittelten theoretischen Grundlagen:
+− Welche Vorteile und Nachteile ergeben sich für Ihre Anwendung aus der Realisierung
+als Cloud Native? Zeigen Sie dabei auch alternative Realisierungsmöglichkeiten auf,
+stellen Sie diese Ihrer Cloud Native Lösung gegenüber und erörtern Sie kritisch.
+Unterlegen sie ihrer Argumentation mit konkreten Beispielen.
+− Wie gewährleisten Sie die Datensicherheit? Bewerten Sie dabei auch die Relevanz der
+DSGVO für Ihre Anwendung.
+− Skizzieren und begründen Sie abschließend welche Cloud Native Pattern sich wo in
+ihrer Anwendungsarchitektur wiederfinden.
+
+Alea macht einen ersten Wurf
+ 
 
 > **Status:** Repository-Grundgerüst. Diese README beschreibt die geplante und im Aufbau
 > befindliche Architektur; Abschnitte, die noch nicht final implementiert sind, sind mit `TODO`
@@ -41,41 +79,28 @@ nicht nur vorgeführt.
 
 ```mermaid
 flowchart TB
-    subgraph OpenStack["DHBWCloud / OpenStack"]
-        subgraph VMs["VMs (Terraform + Ansible, k3s)"]
-            CP["control-plane VM"]
-            W1["worker VM 1 (Label: region-a)"]
-            W2["worker VM 2 (Label: region-b)"]
-            W3["worker VM 3 (Label: region-c)"]
-        end
+    LOADGEN["🌐 load-generator (k6)<br/>künstliche Lastspitze"] --> FRONTEND
+
+    subgraph FEPLANE["Frontend-Plane"]
+        FRONTEND["⬡ Frontend<br/>(UI-Pod + catalog-api REST, HPA)"]
     end
 
-    subgraph Cluster["k3s-Cluster"]
-        FE["frontend (Pod)"] --> API
-        API["catalog-api (Pods, HPA)"] -->|"REST"| FE
-        API -->|"produce ReservationRequested"| KAFKA[("Kafka - Strimzi\n(StatefulSet, 3 Broker)")]
-        KAFKA -->|"consume"| WORKER["reservation-worker (Pods, KEDA-scaled)"]
-        WORKER -->|"seat lock / commit"| PG[("PostgreSQL - CNPG\n(Primary + 2 Replicas, PVC)")]
-        WORKER -->|"produce ReservationConfirmed/Rejected"| KAFKA
-        KAFKA -->|"consume"| NOTIFY["notification-worker (Pods)"]
-        API -->|"read seat availability"| PG
-
-        PROM["Prometheus"] -.scrape /metrics.-> API
-        PROM -.scrape /metrics.-> WORKER
-        PROM -.scrape /metrics.-> NOTIFY
-        PROM --> GRAFANA["Grafana Dashboard (as Code)"]
-        PROM --> ALERT["Alertmanager (Alert-Regel: Backlog/Fehlerquote)"]
-        ARGOCD["ArgoCD"] -.auto-sync.-> Cluster
+    subgraph BUSPLANE["Event-Bus-Plane"]
+        KAFKA[("📨 Kafka - Strimzi<br/>Event Bus, 3 Broker<br/>Topology-Spread: region-a/b/c")]
     end
 
-    LOADGEN["load-generator (k6)"] -->|"künstliche Lastspitze"| API
+    subgraph BEPLANE["Backend-Plane"]
+        RESERVATION["⬡ reservation-worker<br/>(Pods, KEDA-scaled)"]
+        NOTIFY["⬡ notification-worker<br/>(Pods)"]
+        PG[("🗄️ PostgreSQL - CNPG<br/>Persistence Layer<br/>Primary + 2 Replicas<br/>Topology-Spread: region-a/b/c")]
+    end
 
-    W1 -. "Topology-Spread" .-> PG
-    W2 -. "Topology-Spread" .-> PG
-    W3 -. "Topology-Spread" .-> PG
-    W1 -. "Topology-Spread" .-> KAFKA
-    W2 -. "Topology-Spread" .-> KAFKA
-    W3 -. "Topology-Spread" .-> KAFKA
+    FRONTEND -->|"produce ReservationRequested"| KAFKA
+    FRONTEND -->|"read Sitzplatzverfügbarkeit"| PG
+    KAFKA -->|"consume"| RESERVATION
+    RESERVATION -->|"seat lock / commit"| PG
+    RESERVATION -->|"produce Confirmed/Rejected"| KAFKA
+    KAFKA -->|"consume"| NOTIFY
 ```
 
 **Datenfluss von der VM bis zum Pod:**
@@ -165,6 +190,26 @@ kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
 Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten (ohne manuelle
 Portal-Klicks) zum laufenden Stack führen.
 
+### Lokale Entwicklung (catalog-api + frontend)
+
+Rein für die Entwicklung von `catalog-api`/`frontend`, kein Teil des obigen Cluster-Pfads:
+
+```bash
+docker compose up -d --build
+# frontend: http://localhost:8081, catalog-api: http://localhost:8080
+docker compose down -v
+```
+
+Postgres/Kafka laufen dabei als lokale Stand-ins für CNPG/Strimzi (Seed-Daten aus
+`local/postgres/init.sql`). `reservation-worker` existiert noch nicht, daher bleibt jede Buchung
+lokal auf Status `pending` stehen (`GET /reservations/{id}`) — die Kafka-Message
+(`ReservationRequested`) wird trotzdem korrekt publiziert und lässt sich prüfen:
+
+```bash
+docker exec $(docker compose ps -q kafka) /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:29092 --topic reservation-requested --from-beginning
+```
+
 ## Entscheidungen
 
 Je Pflicht- und Wahlthema: Wahl, Alternative, Begründung.
@@ -174,19 +219,34 @@ Je Pflicht- und Wahlthema: Wahl, Alternative, Begründung.
 zustandsbehaftete Dienste. *Alternative:* ein einzelner Monolith mit synchronem DB-Zugriff.
 *Begründung:* Erst die Trennung von Annahme (API) und Verarbeitung (Worker) über eine Queue macht
 den Lastpfad des Flash-Sales beherrschbar und erlaubt, genau den Engpass-Service unabhängig zu
-skalieren.
+skalieren. `catalog-api` selbst ist in Go + `chi` umgesetzt (schreibt bewusst nie synchron in
+Postgres, nur lesend + Kafka-Producer, siehe `src/catalog-api/README.md`), damit dieselbe
+Toolchain wie im geplanten `reservation-worker` zum Einsatz kommt und das Image im Flash-Sale-Pfad
+klein/schnell startend bleibt. *Alternative:* Python + FastAPI (schnelleres Prototyping, aber
+größeres Image und eine zweite Toolchain neben Go).
 
 **P2 – Infrastruktur als Code.** *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
-VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap. *Alternative:* Managed Kubernetes oder
-manuelle VM-Erstellung im Portal. *Begründung:* Managed K8s ist auf der DHBWCloud ausgeschlossen;
-Terraform+Ansible ist die vorgegebene Kombination und trennt sauber "Ressourcen existieren" von
-"Ressourcen sind konfiguriert".
+VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap — ein `terraform apply` gefolgt von einem
+`ansible-playbook site.yml` bringt den kompletten Stack hoch. *Alternative:* manuell im
+DHBWCloud-Portal angelegte VMs, oder ein anderes IaC-Werkzeug (z. B. Pulumi) statt der
+vorgeschlagenen Kombination. *Begründung:* Ein Portal-Klick wäre schneller, ließe sich aber nicht
+reproduzieren und zählt laut Aufgabenstellung explizit nicht als Nachweis ("kein Klick im
+Portal"); Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen. Terraform+Ansible trennt
+zusätzlich sauber "Ressourcen existieren" (Terraform, siehe
+[`infra/terraform/`](infra/terraform/)) von "Ressourcen sind konfiguriert" (Ansible, siehe
+[`infra/ansible/`](infra/ansible/)) — ein einzelnes Werkzeug für beides würde diese Trennung
+verwischen und macht schwerer nachvollziehbar, welcher Schritt für einen fehlgeschlagenen Bootstrap
+verantwortlich ist.
 
-**P3 – Deployment und Konfiguration.** *Wahl:* Helm-Werte legen Requests/Limits je Service fest,
-Images werden mit Git-SHA getaggt, DB-Zugangsdaten/Kafka-Bootstrap-Server kommen aus
-ConfigMap/Secret. *Alternative:* Werte im Image hart kodieren. *Begründung:* Ohne getrennte
-Konfiguration könnten dev/prod-Werte (siehe W1) nicht dasselbe Image nutzen, und Secrets im Image
-wären ein Sicherheitsproblem.
+**P3 – Deployment und Konfiguration.** *Wahl:* Helm-Werte legen Requests/Limits je Service fest
+(z. B. `notification-worker`: 25m/100m CPU, 32Mi/64Mi Memory — bewusst klein, weil der Dienst nur
+Kafka-Konsum und kurze Log-/SMTP-Aufrufe macht, keine CPU-intensive Verarbeitung wie
+`reservation-worker`; siehe [`charts/notification-worker/values.yaml`](charts/notification-worker/values.yaml)),
+Images werden mit dem Git-SHA statt `:latest` getaggt, DB-Zugangsdaten/Kafka-Bootstrap-Server
+kommen aus ConfigMap/Secret. *Alternative:* Werte im Image hart kodieren oder `:latest`
+verwenden. *Begründung:* `:latest` macht Rollbacks unmöglich, weil unklar bleibt, welches Image zu
+einem Zeitpunkt tatsächlich lief; Secrets im Image wären sowohl in der Registry einsehbar als auch
+nicht pro Umgebung (dev/prod, siehe W1) austauschbar, ohne das Image neu zu bauen.
 
 **P4 – Scheduling und Platzierung.** *Wahl:* Jeder Worker trägt ein Node-Label
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
@@ -196,50 +256,74 @@ Region/AZ bereit, die Verteilung wird für diese Entscheidung bewusst simuliert)
 `topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas nie auf
 demselben simulierten Standort landen. *Alternative:* freie Platzierung durch den
 Standard-Scheduler, oder ein einzelner dedizierter "Storage-Node" für beide Dienste.
-*Begründung:* Ticket-Reservierungen und deren Event-Log dürfen nicht durch den Ausfall eines
-einzelnen Nodes komplett verschwinden; ein einzelner Storage-Node wäre selbst ein Single Point of
+*Begründung:* Freie Platzierung könnte alle Replicas eines Dienstes zufällig auf denselben Node
+verteilen — der Ausfall genau dieses einen Nodes würde Ticket-Reservierungen und deren Event-Log
+komplett verschwinden lassen. Ein einzelner Storage-Node wäre selbst wieder ein Single Point of
 Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (Ausfallsicherheit
-beim Ticketverkauf) beantwortet.
+beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
 **P5 – Resilienz und Persistenz.** *Wahl:* Liveness/Readiness-Probes auf allen drei Services, CNPG
 verwaltet PVCs für Primary+2 Replicas, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
-PodDisruptionBudgets sichern Rolling Updates ab. *Alternative:* `emptyDir` oder ein Single-Instance-
-Postgres ohne Replikation. *Begründung:* Ticket-Reservierungen sind Geschäftsdaten; ein Pod-Verlust
-darf keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
+PodDisruptionBudgets sichern Rolling Updates ab (für `notification-worker` bereits umgesetzt:
+`replicaCount: 3`, `minAvailable: 2`, siehe
+[`charts/notification-worker/templates/poddisruptionbudget.yaml`](charts/notification-worker/templates/poddisruptionbudget.yaml)).
+*Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
+*Begründung:* `emptyDir` und ein Single-Instance-Postgres wären einfacher aufzusetzen, aber jeder
+Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich löschen statt sie
+nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten; ein Pod-Verlust darf
+keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
 
 **P6 – Skalierbarkeit.** *Wahl:* KEDA skaliert `reservation-worker` auf Basis des
 Kafka-Consumer-Group-Lags. *Alternative:* HPA auf CPU-Auslastung. *Begründung:* Die eigentliche
-fachliche Engpassgröße ist "wie viele Reservierungen warten auf Verarbeitung", nicht CPU-Last –
-CPU kann bei I/O-gebundener Arbeit trügerisch niedrig bleiben, obwohl die Warteschlange wächst.
+fachliche Engpassgröße ist "wie viele Reservierungen warten auf Verarbeitung", nicht CPU-Last —
+CPU kann bei I/O-gebundener Arbeit (Warten auf DB-Commit, Kafka-Fetch) trügerisch niedrig bleiben,
+obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung warten. Der Trade-off: eine
+Lag-basierte Metrik braucht einen zusätzlichen Scaler/Adapter (KEDA) statt der im Cluster bereits
+eingebauten HPA-CPU-Metrik — der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest
+schlicht am falschen Signal skalieren würde.
 
-**P7 – Observability.** *Wahl:* Jeder Service exponiert `/metrics` (Prometheus-Client), CNPG und
-Strimzi bringen eigene ServiceMonitor-fähige Metriken mit, ein Grafana-Dashboard liegt als
-Code (`observability/dashboards/`) vor, eine Alert-Regel feuert auf
-"Reservation-Backlog über Schwellwert für 5 Minuten". *Alternative:* Ad-hoc-Logging ohne
-Metriken. *Begründung:* Ohne Metriken lässt sich P6 nicht demonstrieren – die Alert-Regel macht
-sichtbar, ab wann die Lastspitze geschäftlich relevant wird, nicht nur technisch.
+**P7 – Observability.** *Wahl:* Jeder Service exponiert `/metrics` (Prometheus-Client). Wo ein
+Service von anderen Pods über eine `Service`-Ressource erreichbar sein muss, wird per
+`ServiceMonitor` gescraped (`catalog-api`, `reservation-worker`, geplant); wo es — wie bei
+`notification-worker` — keinen anderen Konsumenten der HTTP-Endpunkte gibt (reiner
+Kafka-Consumer, keine eingehenden Requests), entfällt die `Service`-Ressource zugunsten eines
+direkt auf die Pod-Labels zielenden `PodMonitor` (bereits umgesetzt, siehe
+[`charts/notification-worker/templates/podmonitor.yaml`](charts/notification-worker/templates/podmonitor.yaml)).
+CNPG und Strimzi bringen eigene Metriken mit, ein Grafana-Dashboard liegt als Code
+(`observability/dashboards/`) vor, eine Alert-Regel feuert auf "Reservation-Backlog über
+Schwellwert für 5 Minuten". *Alternative:* Ad-hoc-Logging ohne Metriken, oder überall
+`ServiceMonitor` samt unbenutzter `Service`-Ressource statt `PodMonitor`. *Begründung:* Ohne
+Metriken lässt sich P6 nicht demonstrieren — KEDA braucht eine abfragbare Zeitreihe, kein
+Log-Grepping. Eine unbenutzte `Service`-Ressource nur für den Scraper wäre reine Zeremonie; die
+Alert-Regel macht zusätzlich sichtbar, ab wann die Lastspitze geschäftlich relevant wird
+(Kunden warten spürbar), nicht nur technisch (Lag-Zahl steigt).
 
 **W1 – Packaging (Helm).** *Wahl:* ein Umbrella-Chart `charts/ticketflow` mit
-`values-dev.yaml`, `values-prod.yaml` und `values.schema.json`. *Alternative:* Kustomize mit
-Base+Overlays. *Begründung:* Ein Chart, das CNPG-`Cluster`- und Strimzi-`Kafka`-Custom-Resources
-mitsamt den drei Anwendungs-Deployments bündelt, macht die Differenz zwischen dev (kleine
-Replica-Zahlen, ein Broker) und prod (HA-Setup) explizit und typgeprüft über das Schema.
+`values-dev.yaml`, `values-prod.yaml` und `values.schema.json` (Muster bereits im ersten
+Service-Chart etabliert, siehe [`charts/notification-worker/values.schema.json`](charts/notification-worker/values.schema.json)).
+*Alternative:* Kustomize mit Base+Overlays. *Begründung:* Kustomize kennt kein Werte-Schema — ein
+vergessener oder falsch typisierter dev-Wert (z. B. eine String- statt Int-Replica-Zahl) fiele
+erst zur Laufzeit im Cluster auf. Mit Helm+`values.schema.json` schlägt `helm lint`/`helm install`
+schon vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder Strimzi-`Kafka`-Resource
+überhaupt angewendet wird — bei zustandsbehafteten Custom Resources ist das der relevantere
+Fehlerzeitpunkt.
 
 **W2 – GitOps.** *Wahl:* ArgoCD mit App-of-Apps-Pattern, Auto-Sync und Self-Heal.
-*Alternative:* reines `kubectl apply`/CI-Pipeline ohne Cluster-seitigen Agenten.
+*Alternative:* reines `kubectl apply`/eine CI-Pipeline ohne Cluster-seitigen Agenten.
 *Begründung:* Ansible bootstrappt bewusst nur so viel, dass ArgoCD läuft; alles danach (Operatoren,
-Kafka, Postgres, App) kommt aus Git – Drift (z.B. manuell veränderte Replica-Zahl) wird
-nachweisbar automatisch zurückgedreht.
-
-*(TODO: nach Implementierung um Verweise auf konkrete Commits/Dateien ergänzen, wo das jeweils
-umgesetzt ist.)*
+Kafka, Postgres, App) kommt aus Git. Der Trade-off: eine reine CI-Pipeline hätte keinen laufenden
+Agenten im Cluster, der Drift erkennt — eine manuell (z. B. während eines Incidents) geänderte
+Replica-Zahl bliebe bestehen, bis zufällig die nächste Pipeline läuft, statt automatisch per
+Self-Heal zurückgedreht zu werden. Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
+`kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
 
 ## Grenzen
 
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit; CNPG- und Kafka-Replikation
   sind daher klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
-- Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` loggt nur,
-  statt E-Mail/SMS wirklich zu versenden.
+- Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` kann
+  optional per SMTP echte E-Mails versenden, fällt aber standardmäßig (kein SMTP-Relay im
+  Demo-Betrieb konfiguriert) auf reine Log-Ausgabe statt echtem E-Mail/SMS-Versand zurück.
 - k3s statt eines vollwertigen Kubernetes verkleinert den Kontrollebenen-Fußabdruck, verhält sich
   aber nicht in jedem Detail wie ein Cloud-Provider-Kubernetes.
 - Der Lastgenerator bildet einen synthetischen "alle klicken gleichzeitig"-Fall nach; reales
@@ -248,3 +332,65 @@ umgesetzt ist.)*
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
 
 *(TODO: nach Lasttests unter echten Bedingungen konkretisieren, was tatsächlich beobachtet wurde.)*
+
+## Bonus
+
+> `TODO`: Beide Leistungen sind unten als Plan beschrieben, aber noch **nicht umgesetzt** — dieser
+> Abschnitt wird erst final in der Abgabe stehen bleiben, wenn Nachweis im Betrieb existiert
+> (Aufgabenstellung: "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe"). Bis dahin dient
+> er als Umsetzungsplan; Verweise auf Dateien werden ergänzt, sobald sie existieren.
+
+**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll:* Deny-by-default
+Network Policies je Namespace (`kafka`, `cnpg-system`, künftiger `ticketflow`-App-Namespace) plus
+explizite Allow-Regeln für die tatsächlich benötigten Pfade — `catalog-api`/`reservation-worker` →
+CNPG-Primary auf Port 5432, `catalog-api`/`reservation-worker`/`notification-worker` → Kafka-Broker
+auf 9092/9093, Prometheus → `/metrics` auf allen drei Services, ArgoCD → Kubernetes-API-Server.
+Drei Charts haben ein solches Netzwerk-Policy-Netz bereits scope-geprüft aktiv (`cert-manager`,
+`kube-prometheus-stack`, `tempo`, siehe `charts/README.md` ## Resource-Limits, Security-Context,
+NetworkPolicy); CNPG, Strimzi, Longhorn und `external-dns` bringen aber kein eigenes
+`networkPolicy`-Feld mit (dort müssten die Policies selbst geschrieben werden) und
+`notification-worker`/`loki` haben ihr Toggle bewusst noch aus. Dazu: die bislang rein
+gitignoreten `infra/ansible/secrets.yml` (RFC2136-TSIG) und `infra/ansible/argocd_deploy_key`
+werden SOPS-verschlüsselt (age-Backend) eingecheckt statt nur lokal zu existieren und
+out-of-band verteilt zu werden — Ansible entschlüsselt sie zur Laufzeit über ein
+`community.sops`-Lookup-Plugin, ein `.sops.yaml` legt fest, welche Felder verschlüsselt werden.
+*Alternative:* Sealed Secrets (Controller-basiert) oder Vault (eigener Dienst) statt SOPS.
+*Begründung:* Sealed Secrets bräuchte einen zusätzlichen, selbst zu betreibenden
+zustandsbehafteten Controller nur für diesen einen Zweck; Vault wäre für ein Laborsetup mit
+überschaubarer Secret-Zahl deutlich überdimensioniert. SOPS verschlüsselt einzelne Dateien ohne
+zusätzlichen Cluster-Dienst und passt zum bestehenden Muster
+(`secrets.yml.example`/`terraform.tfvars.example`) — die verschlüsselte Datei kann committet
+werden, ohne das bisherige `delegate_to: localhost`-Modell von `gitops_secrets` zu ändern.
+*Nachweis im Betrieb (geplant):* `kubectl describe networkpolicy -A` zeigt die Deny-by-default-
+Policies; ein Pod ohne passendes Label kann nachweislich **nicht** gegen CNPG:5432 oder den
+Kafka-Broker verbinden (negative Probe); `git show` zeigt die SOPS-verschlüsselte
+`secrets.yml`, `sops -d` (nur mit dem richtigen age-Key) das Klartext-Ergebnis.
+
+**B2 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
+hinaus.** *Was getan werden soll:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
+für alle drei Services bekommt jeder Service über Strimzis **User Operator** eine eigene
+`KafkaUser`-Custom-Resource mit SCRAM-SHA-512-Authentifizierung (das zugehörige Secret erzeugt
+der Operator automatisch) und ein eigenes, engst mögliches `spec.authorization`
+(`type: simple`, ACLs): `catalog-api` darf nur `Write` auf `reservation-requests`, kein `Read`;
+`reservation-worker` darf `Read` auf `reservation-requests` und `Write` auf
+`reservation-results`; `notification-worker` darf ausschließlich `Read` auf
+`reservation-results`. Ergänzend läuft **AKHQ** (schreibgeschützt konfiguriert) als Kafka-Ops-UI
+im Cluster — Topics, Partitionen und Consumer-Group-Lag live einsehbar, ursprünglich bereits im
+Team-ToDo für die Kafka-Cluster-Aufgabe vorgesehen. *Alternative:* ein einziges, geteiltes
+Client-Secret für alle Producer/Consumer (der in der Vorlesung/GridFlex gezeigte Umfang), oder
+Kafka-ACLs händisch per `kafka-acls.sh` statt deklarativ über `KafkaUser`. *Begründung:* Ein
+geteiltes Secret ist funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht
+aber jeden der drei Services implizit zu einem Producer/Consumer auf *jedem* Topic — ein Bug in
+`notification-worker` könnte dann unbemerkt in `reservation-results` schreiben und stille
+Dateninkonsistenz erzeugen, statt sofort mit einer `TopicAuthorizationException` abgelehnt zu
+werden. Händische `kafka-acls.sh`-Aufrufe wären nicht GitOps-versioniert und müssten bei jedem
+Cluster-Rebuild manuell wiederholt werden; `KafkaUser` als Custom Resource kommt wie alles andere
+aus Git und wird von ArgoCD mitverwaltet (siehe W2). *Tragend, nicht dekorativ:* Die ACLs ändern
+das tatsächliche Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller
+Fehlschreibung) und sind damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht
+nur eine zusätzliche Konfigurationsdatei. *Nachweis im Betrieb (geplant):* `kubectl get kafkauser
+-n kafka` zeigt die drei Nutzer; ein absichtlich falsch konfigurierter Test-Producer (z. B. ein
+`kubectl run`-Pod mit `notification-worker`s Credentials, der versucht auf
+`reservation-requests` zu schreiben) wird von Kafka mit einer Autorisierungs-Exception abgelehnt
+— eine Screencast-taugliche Negativprobe; AKHQ zeigt die drei Consumer-Groups mit wachsendem/
+fallendem Lag live während der P6-Lastdemo.

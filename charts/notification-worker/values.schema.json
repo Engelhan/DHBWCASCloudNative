@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "notification-worker",
+  "type": "object",
+  "required": ["image", "replicaCount", "config"],
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "const": "latest" }
+        },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": ["kafkaBrokers", "resultTopic", "consumerGroup"],
+      "properties": {
+        "kafkaBrokers": { "type": "string", "minLength": 1 },
+        "resultTopic": { "type": "string", "minLength": 1 },
+        "consumerGroup": { "type": "string", "minLength": 1 },
+        "notifyMaxRetries": { "type": "integer", "minimum": 0 },
+        "kafkaTls": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "smtp": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "host": { "type": "string" },
+            "from": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "tlsMode": { "type": "string", "enum": ["none", "starttls", "tls"] }
+          },
+          "if": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          },
+          "then": {
+            "required": ["host", "from"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "from": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "secret": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "kafkaTlsCaCert": { "type": "string" },
+        "kafkaTlsClientCert": { "type": "string" },
+        "kafkaTlsClientKey": { "type": "string" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "config": {
+        "properties": {
+          "kafkaTls": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["kafkaTls"]
+      }
+    },
+    "required": ["config"]
+  },
+  "then": {
+    "properties": {
+      "secret": {
+        "required": ["kafkaTlsCaCert", "kafkaTlsClientCert", "kafkaTlsClientKey"],
+        "properties": {
+          "kafkaTlsCaCert": { "type": "string", "minLength": 1 },
+          "kafkaTlsClientCert": { "type": "string", "minLength": 1 },
+          "kafkaTlsClientKey": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

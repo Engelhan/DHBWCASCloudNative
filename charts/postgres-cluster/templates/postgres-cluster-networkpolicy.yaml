@@ -1,0 +1,36 @@
+# this Policy allows the apiserver proxy to talk to the database
+# is required to use the kubectl-cnpg plugin status command
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "allow-apiserver-to-{{ .Values.database.name }}-postgres-cluster"
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.database.name }}-postgres-cluster
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - port: 8000
+          protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 8000
+          protocol: TCP
+    # allows postgres traffic (streaming replication, client connections) between
+    # the cluster's own pods (primary, replicas, join pods)
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ .Values.database.name }}-postgres-cluster
+      ports:
+        - port: 5432
+          protocol: TCP

@@ -15,7 +15,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    targetRevision: main
+    targetRevision: niklas
     path: charts/argocd-ingress
   destination:
     server: https://kubernetes.default.svc

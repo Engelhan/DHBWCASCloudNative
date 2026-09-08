@@ -12,8 +12,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    #targetRevision: main
-    targetRevision: strimzi-setup
+    targetRevision: main
     path: charts/strimzi-operator
   destination:
     server: https://kubernetes.default.svc

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TicketFlow</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    // Basis-URL der catalog-api. Kein Build-Step im Frontend (bewusst reines HTML/CSS/JS) -
+    // fuer lokale Entwicklung per docker-compose reicht ein fester Wert; im Cluster wuerde das
+    // ueber ein Ingress-Routing (Frontend + /api auf derselben Origin) geloest, das gehoert aber
+    // in charts/ticketflow und ist dort noch nicht gebaut.
+    window.API_BASE_URL = "http://localhost:8080";
+  </script>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">TicketFlow</p>
+      <h1 id="event-name">Lade Event…</h1>
+      <p id="event-meta" class="event-meta"></p>
+    </div>
+  </header>
+
+  <main>
+    <section id="seat-section" class="panel">
+      <div class="panel-header">
+        <h2>Sitzplatzauswahl</h2>
+        <p id="availability-summary" class="availability-summary"></p>
+      </div>
+
+      <div class="stage-row" aria-hidden="true">
+        <span></span>
+        <div class="stage">Bühne</div>
+      </div>
+
+      <div id="hall" aria-live="polite">
+        <p class="loading">Lade Sitzplätze…</p>
+      </div>
+
+      <ul id="category-legend" class="category-legend"></ul>
+      <ul class="status-legend">
+        <li><span class="seat-swatch free"></span> frei</li>
+        <li><span class="seat-swatch occupied"></span> belegt</li>
+        <li><span class="seat-swatch selected"></span> ausgewählt</li>
+      </ul>
+    </section>
+
+    <section id="status-card" class="panel status-card" hidden>
+      <div id="status-icon" class="status-icon" aria-hidden="true"></div>
+      <div>
+        <p id="status-title" class="status-title"></p>
+        <p id="status-message" class="status-detail"></p>
+      </div>
+    </section>
+
+    <div id="error-banner" class="error-banner" hidden role="alert"></div>
+  </main>
+
+  <dialog id="booking-dialog">
+    <form id="booking-form" method="dialog">
+      <h2>Buchung</h2>
+      <dl class="seat-summary">
+        <div><dt>Platz</dt><dd id="dialog-seat-label"></dd></div>
+        <div><dt>Kategorie</dt><dd id="dialog-seat-category"></dd></div>
+        <div><dt>Preis</dt><dd id="dialog-seat-price"></dd></div>
+      </dl>
+
+      <label>
+        Vorname
+        <input type="text" name="first_name" required autocomplete="given-name" />
+      </label>
+      <label>
+        Nachname
+        <input type="text" name="last_name" required autocomplete="family-name" />
+      </label>
+      <label>
+        E-Mail
+        <input type="email" name="email" required autocomplete="email" />
+      </label>
+
+      <div class="dialog-actions">
+        <button type="button" id="dialog-cancel" class="btn-secondary">Abbrechen</button>
+        <button type="submit" id="dialog-submit" class="btn-primary">Jetzt buchen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

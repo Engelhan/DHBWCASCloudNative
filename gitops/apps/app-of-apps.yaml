@@ -15,8 +15,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    #targetRevision: main
-    targetRevision: strimzi-setup
+    targetRevision: main
     path: gitops/apps
     directory:
       recurse: false
