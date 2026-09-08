@@ -38,6 +38,7 @@ deploy.env
 *.pem
 *.key
 kubeconfig*
+.ssh
 
 # OS / editor
 .DS_Store

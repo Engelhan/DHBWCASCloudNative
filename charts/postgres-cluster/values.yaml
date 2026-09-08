@@ -1,0 +1,103 @@
+instances: 2
+# Namespace for rendered resources. Falls back to the Helm release namespace when empty.
+namespace: ""
+
+image:
+  # Container image repository used by CloudNativePG.
+  repository: ghcr.io/cloudnative-pg/postgresql
+  # Pull policy for the PostgreSQL image.
+  pullPolicy: IfNotPresent
+  # Optional pull secret name for private registries.
+  pullSecret: ""
+  # PostgreSQL image tag.
+  tag: "18.4-202608030910-standard-trixie@sha256:f0cc49632b5cc1e51f65ba03658c89bd31d64ea2672b14843a808a8d281417e1"
+
+database:
+  # Logical database name used for the cluster and secrets.
+  name: postgres
+  # Database owner created during bootstrap.
+  owner: postgres
+  # Plaintext password for the bootstrap secret. Provide via --set/-f, not committed.
+  password: CHANGE_ME
+  primaryUpdateMethod: switchover
+  primaryUpdateStrategy: supervised
+  postgresql:
+    parameters:
+      # Shared memory available to PostgreSQL. Recommended to set to 25% of the container memory limit.
+      shared_buffers: 1GB
+      # Cached data kept available for the planner. Recommended to set to 50% of the container memory limit.
+      effective_cache_size: 2GB
+      # Per-session working memory for sorts and hashes. work_mem * max_connections should be 1/4 of memory limit
+      work_mem: 4MB
+      # Maximum number of PostgreSQL connections.
+      max_connections: "100"
+    # extend the postgresql.conf file with custom parameters
+    extraParameters: { }
+      # Example:
+      # password_encryption: "md5"
+    # set the pg_hba.conf file with custom parameters
+    pg_hba: [ ]
+      # Example:
+      # - host all all all md5
+
+
+# Optional backup configuration. Enable it to render backup resources.
+backup:
+  # Enables the backup resources for this chart.
+  enabled: false
+  # Switches bootstrap from initdb to recovery when true.
+  restoreFromBackup: false
+  # Backup source name used for recovery. Can not be the same name as backup Folder Name in S3 Section
+  restoreBackupFolderName: postgres-backup-restore-source
+  # Specifies the timestamp to restore from. If not specified, the latest backup will be used.
+  timestampToRestoreFrom: "2023-08-11 11:14:21.00000+02"
+  s3:
+    # Destination path for the barman object store.
+    destinationPath: s3://example-backup-bucket/postgres
+    # S3 endpoint URL used by barman.
+    endpointURL: https://s3.example.com/
+    # Server name written into the backup catalog.
+    backupFolderName: postgres-backup
+    # Plaintext S3 access key. Provide via --set/-f, not committed.
+    accessKey: CHANGE_ME
+    # Plaintext S3 secret key. Provide via --set/-f, not committed.
+    secretKey: CHANGE_ME
+  # Retention policy for stored backups.
+  retentionPolicy: 7d
+  # Schedule used by the ScheduledBackup resource.
+  schedule: "0 0 2 * * *"
+
+# Optional import configuration. Enable it to bootstrap from an existing database.
+import:
+  # Enables the import bootstrap secret and recovery source.
+  enabled: false
+  # Source database host name.
+  server: postgres.example.svc.cluster.local
+  # Source database user.
+  user: postgres
+  # Database name to import.
+  databaseToImport: postgres
+  # Plaintext password for the source database. Provide via --set/-f, not committed.
+  password: CHANGE_ME
+
+affinity:
+  # Pod anti-affinity strategy used by the cluster.
+  podAntiAffinityType: required
+
+storage:
+  # Kubernetes StorageClass used for PostgreSQL data.
+  storageClass: longhorn
+  # Persistent volume size for the PostgreSQL data directory.
+  size: 10Gi
+
+resources:
+  requests:
+    # Requested memory for the PostgreSQL pods.
+    memory: 2Gi
+  limits:
+    # Maximum memory for the PostgreSQL pods.
+    memory: 2Gi
+    # Maximum CPU for the PostgreSQL pods.
+    cpu: "1"
+
+monitoring: true

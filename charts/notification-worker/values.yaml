@@ -1,0 +1,83 @@
+image:
+  repository: ticketflow/notification-worker
+  tag: "" # Pflichtfeld beim Deploy (kein Default, nie :latest, siehe P3)
+  pullPolicy: IfNotPresent
+
+# Mehrere Consumer-Instanzen derselben CONSUMER_GROUP teilen sich die Partitionen von
+# config.resultTopic automatisch (Kafka-Consumer-Group-Rebalancing) - die Partitionsanzahl des
+# Topics sollte >= replicaCount sein, sonst bleiben ueberzaehlige Replicas ungenutzt. Das Topic
+# selbst entsteht erst mit Strimzi/charts/ticketflow, ausserhalb des Scopes dieses Charts.
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+config:
+  kafkaBrokers: "" # Pflicht, z.B. "my-cluster-kafka-bootstrap.kafka.svc:9092"
+  resultTopic: "reservation-results"
+  consumerGroup: "notification-worker"
+  # Leer = kein Dead-Letter-Publish. Das "Offset nur bei tatsaechlichem Versand committen"-
+  # Verhalten bleibt trotzdem bestehen, siehe internal/kafkaconsumer im Anwendungscode.
+  dltTopic: ""
+  notifyMaxRetries: 3
+  notifyRetryBackoff: "2s"
+  logLevel: "info"
+  httpAddr: ":8080"
+
+  kafkaTls:
+    enabled: false # optionales mTLS zum Kafka-Broker; Zertifikate kommen aus secret.kafkaTls*
+
+  smtp:
+    enabled: false # Demo-sicherer Default: nur Log-Ausgabe, kein echter Mailversand
+    host: ""
+    port: 587
+    from: ""
+    tlsMode: "starttls" # none|starttls|tls
+
+secret:
+  create: true # false = ein extern (z.B. External Secret) bereitgestelltes Secret gleichen Namens wird erwartet
+  # Platzhalter-Struktur; echte Werte via --set/--set-file/External Secret zur Deploy-Zeit, nie im
+  # Repo committen (gleiches Muster wie charts/ticketflow/README.md config/secret.yaml).
+  smtpUsername: ""
+  smtpPassword: ""
+  kafkaTlsCaCert: ""
+  kafkaTlsClientCert: ""
+  kafkaTlsClientKey: ""
+
+# PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (siehe
+# templates/podmonitor.yaml), daher auch keine eigene Service-Ressource in diesem Chart.
+podMonitor:
+  enabled: true
+  interval: 30s
+  # Annahme, nicht live verifiziert: charts/kube-prometheus-stack/values.yaml hat keinen
+  # expliziten podMonitorSelector-Override, das deutet auf den Chart-Default
+  # "release: <helm-release-name>" hin (symmetrisch zum serviceMonitorSelector-Default). Falls
+  # falsch: nur dieses Label anpassen, keine Code-/Template-Aenderung noetig.
+  labels:
+    release: kube-prometheus-stack
+
+networkPolicy:
+  enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2 # toleriert einen Node-Drain/Rollout-Schritt bei replicaCount: 3

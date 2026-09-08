@@ -1,0 +1,13 @@
+{{- if eq .Values.monitoring true }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: "{{ .Values.database.name }}-postgres-cluster"
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+spec:
+  podMetricsEndpoints:
+    - port: metrics
+  selector:
+    matchLabels:
+      cnpg.io/cluster: "{{ .Values.database.name }}-postgres-cluster"
+{{- end }}

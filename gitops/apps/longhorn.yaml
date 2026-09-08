@@ -11,7 +11,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    targetRevision: main
+    targetRevision: niklas
     path: charts/longhorn
   destination:
     server: https://kubernetes.default.svc

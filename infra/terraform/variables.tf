@@ -34,7 +34,7 @@ variable "network_name" {
 variable "name_prefix" {
   description = "Präfix für alle erzeugten Ressourcennamen"
   type        = string
-  default     = "ticketflow"
+  default     = "niklas-ticketflow"
 }
 
 variable "image_name" {

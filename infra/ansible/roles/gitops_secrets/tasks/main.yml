@@ -39,7 +39,7 @@
         kubectl create secret generic repo-ticketflow -n argocd \
           --from-literal=type=git \
           --from-literal=url=git@github.com:Engelhan/DHBWCASCloudNative.git \
-          --from-file=sshPrivateKey={{ playbook_dir }}/../argocd_deploy_key \
+          --from-file=sshPrivateKey="{{ playbook_dir }}/../argocd_deploy_key" \
           --dry-run=client -o yaml | kubectl apply -f -
       args:
         executable: /bin/bash
