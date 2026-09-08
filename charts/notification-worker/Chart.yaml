@@ -1,0 +1,9 @@
+apiVersion: v2
+name: notification-worker
+description: >-
+  Volleigener, eigenstaendiger Chart fuer notification-worker (zweite, unabhaengige
+  Kafka-Consumer-Group auf dem Reservierungs-Ergebnis-Topic). Bewusst NICHT Teil des noch nicht
+  begonnenen charts/ticketflow-Umbrella-Charts - siehe charts/README.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

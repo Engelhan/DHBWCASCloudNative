@@ -2,6 +2,11 @@
 
 Umbrella-Helm-Chart für die gesamte TicketFlow-Anwendungsebene.
 
+**Hinweis:** `notification-worker` hat inzwischen einen eigenen, eigenständigen Chart
+(`charts/notification-worker/`) bekommen, statt Teil dieses Umbrella-Charts zu sein — siehe
+`../README.md`. Die Struktur unten ist entsprechend nur noch für `catalog-api` und
+`reservation-worker` (beide noch nicht implementiert) sowie die CNPG-/Kafka-CRs gültig.
+
 ## Geplante Struktur
 
 ```
@@ -14,7 +19,6 @@ ticketflow/
 └── templates/
     ├── catalog-api/         # Deployment, Service, ConfigMap, ServiceMonitor
     ├── reservation-worker/  # Deployment, ScaledObject (KEDA), ServiceMonitor
-    ├── notification-worker/ # Deployment, ServiceMonitor
     ├── frontend/             # Deployment, Service, Ingress
     ├── database/
     │   └── cnpg-cluster.yaml # CNPG `Cluster`-CR (PVC-Größe, Instanzanzahl aus values)
@@ -49,5 +53,6 @@ helm lint charts/ticketflow -f charts/ticketflow/values-dev.yaml
 helm template ticketflow charts/ticketflow -f charts/ticketflow/values-prod.yaml
 ```
 
-`TODO`: Templates schreiben, sobald die drei Services ein `/metrics`- und `/healthz`-Endpoint
-haben und die CNPG-/Strimzi-Operator-CRD-Versionen (aus `gitops/apps/`) feststehen.
+`TODO`: Templates schreiben, sobald `catalog-api`/`reservation-worker` ein `/metrics`- und
+`/healthz`-Endpoint haben und die CNPG-/Strimzi-Operator-CRD-Versionen (aus `gitops/apps/`)
+feststehen (`notification-worker` hat das bereits, siehe `charts/notification-worker/`).

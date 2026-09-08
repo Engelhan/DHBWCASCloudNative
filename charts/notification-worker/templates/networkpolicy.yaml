@@ -1,0 +1,28 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "notification-worker.fullname" . }}
+  labels:
+    {{- include "notification-worker.labels" . | nindent 4 }}
+spec:
+  # podSelector bewusst auf die eigenen Pod-Labels beschraenkt, niemals leer - siehe
+  # charts/README.md fuer den dokumentierten Loki-Vorfall (leerer podSelector traf alle Pods im
+  # geteilten Namespace und kappte Grafana-Sidecars den API-Zugriff).
+  podSelector:
+    matchLabels:
+      {{- include "notification-worker.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Nur Prometheus-Scraping aus dem monitoring-Namespace erlauben. Egress bleibt offen: den
+    # Kafka-Broker und einen beliebigen externen SMTP-Relay aus diesem Chart heraus sicher
+    # einzugrenzen ist ohne die Netzwerktopologie von charts/ticketflow nicht sinnvoll planbar.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: http
+          protocol: TCP
+{{- end }}

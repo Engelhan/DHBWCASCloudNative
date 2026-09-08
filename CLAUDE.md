@@ -387,6 +387,34 @@ here once those exist instead of leaving this section stale.
 - **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
   `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`,
   `reservation-worker`, `notification-worker`, `load-generator` application code,
+- **Done:** `src/notification-worker/` — first implemented service in the repo (Go), the second,
+  independent Kafka consumer group off `RESULT_TOPIC`. `github.com/segmentio/kafka-go`
+  (pure-Go, no cgo, needed for the distroless build). Config entirely via env vars
+  (ConfigMap/Secret, see the package's own README table). Notification channel is pluggable:
+  `LogNotifier` (default, demo-safe) or an optional `SMTPNotifier` gated by `SMTP_ENABLED`, with
+  optional Kafka mTLS (`KAFKA_TLS_ENABLED`) structured the same way. Delivery semantics: the
+  Kafka offset is committed **only on actual successful send**; a message that exhausts
+  `NOTIFY_MAX_RETRIES` is published to an optional dead-letter topic (`DLT_TOPIC`) for
+  visibility but stays uncommitted (redelivered on restart/rebalance) — a deliberate
+  at-least-once trade-off, see `internal/kafkaconsumer` package doc. `/metrics`
+  (`notifications_sent_total`, `notification_dispatch_errors_total`,
+  `notification_dlt_published_total`), `/healthz`, `/readyz` (reflects Kafka reachability, not
+  message arrival). Paired with its own **standalone** Helm chart `charts/notification-worker/`
+  — deliberately *not* part of the umbrella chart below (a fully-custom, pattern-(b) chart per
+  `charts/README.md`, first chart in the repo with `_helpers.tpl` since it renders 5 resources:
+  Deployment/ConfigMap/Secret/PodDisruptionBudget/PodMonitor, plus an optional NetworkPolicy —
+  deliberately no `Service`: nothing else consumes its HTTP endpoints (pure Kafka consumer,
+  kubelet probes hit the pod directly), so a `PodMonitor` scrapes `/metrics` straight off the pod
+  label selector instead of the usual `Service`+`ServiceMonitor` pair), `replicaCount: 3` +
+  `PodDisruptionBudget` by default, and its own `values.schema.json` (the only per-service chart
+  in the repo with one so far — everywhere else a schema is tied to the not-yet-started umbrella
+  chart). No `gitops/apps/notification-worker.yaml` yet (out of scope for now — chart is
+  lint/template-only, not deployed via ArgoCD). Go deps and both Dockerfile base images
+  (`golang`, `distroless/static-debian12`) are pinned to latest-stable and digest-pinned (not
+  floating tags) — re-check before rebuilding long after this was written.
+- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
+  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, remaining `src/*`
+  application code (`catalog-api`, `reservation-worker`, `frontend`, `load-generator`),
   `observability/dashboards/` + `observability/alerts/` content.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
