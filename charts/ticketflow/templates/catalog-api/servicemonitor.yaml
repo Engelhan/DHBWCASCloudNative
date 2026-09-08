@@ -1,0 +1,22 @@
+{{- if .Values.catalogApi.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ticketflow-catalog-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: catalog-api
+    app.kubernetes.io/part-of: ticketflow
+    {{- with .Values.catalogApi.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-api
+      app.kubernetes.io/part-of: ticketflow
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.catalogApi.serviceMonitor.interval }}
+{{- end }}

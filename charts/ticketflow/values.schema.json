@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "ticketflow",
-  "description": "Validiert bisher nur den Kafka-/Messaging-Teil (charts/ticketflow/templates/messaging/). Bewusst ohne additionalProperties:false auf Root- oder kafka-Ebene, damit weitere Abschnitte (catalog-api, frontend, database, ...) ergaenzt werden koennen, ohne dieses Schema umzubauen.",
+  "description": "Validiert den Kafka-/Messaging- sowie den catalogApi-/frontend-Teil (charts/ticketflow/templates/). Bewusst ohne additionalProperties:false auf Root-Ebene, damit weitere Abschnitte (reservation-worker, ...) ergaenzt werden koennen, ohne dieses Schema umzubauen.",
   "type": "object",
-  "required": ["namespace", "kafka"],
+  "required": ["namespace", "kafka", "catalogApi", "frontend"],
   "properties": {
     "namespace": {
       "type": "string",
@@ -63,9 +63,100 @@
           }
         }
       }
+    },
+    "catalogApi": {
+      "type": "object",
+      "required": ["replicas", "image", "service", "resources", "env", "databaseSecretName"],
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/definitions/image" },
+        "service": {
+          "type": "object",
+          "required": ["port"],
+          "properties": { "port": { "type": "integer", "minimum": 1 } }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "env": {
+          "type": "object",
+          "required": ["logLevel", "port", "reservationTopic", "kafkaBrokers"],
+          "properties": {
+            "logLevel": { "type": "string", "minLength": 1 },
+            "port": { "type": "string", "minLength": 1 },
+            "reservationTopic": { "type": "string", "minLength": 1 },
+            "kafkaBrokers": { "type": "string", "minLength": 1 },
+            "corsAllowedOrigin": { "type": "string" }
+          }
+        },
+        "databaseSecretName": { "type": "string", "minLength": 1 },
+        "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "interval": { "type": "string", "minLength": 1 },
+            "labels": { "type": "object" }
+          }
+        },
+        "topologySpreadConstraint": { "$ref": "#/definitions/topologySpreadConstraint" }
+      }
+    },
+    "frontend": {
+      "type": "object",
+      "required": ["replicas", "image", "service", "resources", "ingress"],
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/definitions/image" },
+        "service": {
+          "type": "object",
+          "required": ["port"],
+          "properties": { "port": { "type": "integer", "minimum": 1 } }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "ingress": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "host": { "type": "string" },
+            "clusterIssuerName": { "type": "string" },
+            "tlsSecretName": { "type": "string" }
+          }
+        },
+        "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },
+        "topologySpreadConstraint": { "$ref": "#/definitions/topologySpreadConstraint" }
+      }
     }
   },
   "definitions": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": { "type": "object" },
+        "limits": { "type": "object" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string"] }
+      }
+    },
+    "topologySpreadConstraint": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxSkew": { "type": "integer", "minimum": 1 }
+      }
+    },
     "nodePool": {
       "type": "object",
       "required": ["replicas", "storage", "resources"],

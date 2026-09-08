@@ -1,8 +1,9 @@
 ---
 # TicketFlow-Anwendungsebene. Eigener Chart ../../charts/ticketflow (kein Wrapper - volleigene
-# Custom Resources, siehe charts/ticketflow/Chart.yaml). Bisher nur der Kafka-Cluster
-# (KafkaNodePool/Kafka/KafkaTopic, siehe charts/ticketflow/templates/messaging/) - catalog-api/
-# frontend/notification-worker/CNPG-Cluster folgen als eigene Templates.
+# Custom Resources, siehe charts/ticketflow/Chart.yaml). Kafka-Cluster (KafkaNodePool/Kafka/
+# KafkaTopic) sowie catalog-api/frontend (Deployment/Service/ConfigMap/Ingress/ServiceMonitor),
+# siehe charts/ticketflow/templates/. reservation-worker folgt als eigenes Template;
+# notification-worker/CNPG-Cluster sind eigene, volleigenstaendige Charts, siehe charts/README.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -12,8 +13,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
-    #targetRevision: main
-    targetRevision: strimzi-setup
+    targetRevision: main
     path: charts/ticketflow
     helm:
       valueFiles:
