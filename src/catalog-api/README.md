@@ -39,10 +39,10 @@ und merkt sich die Anfrage kurzzeitig im Speicher, um `GET /reservations/{id}` s
 `status: "pending"` beantworten zu können, bevor der `reservation-worker` eine Zeile in
 `reservations` geschrieben hat.
 
-## Kafka-Event-Schema (Entwurf, noch nicht final mit Carlos/reservation-worker abgestimmt)
+## Kafka-Event-Schema
 
-Topic: `RESERVATION_TOPIC` (env, lokal z.B. `reservation-requested`). Message-Key = `seat_id`
-(Ordering pro Sitzplatz). Value (JSON):
+**`ReservationRequested`** (von catalog-api published). Topic: `RESERVATION_TOPIC` (env, lokal
+z.B. `reservation-requested`). Message-Key = `seat_id` (Ordering pro Sitzplatz). Value (JSON):
 
 ```json
 {
@@ -56,6 +56,14 @@ Topic: `RESERVATION_TOPIC` (env, lokal z.B. `reservation-requested`). Message-Ke
   "requested_at": "2026-08-09T12:00:00Z"
 }
 ```
+
+`TODO`: Feldnamen/-inhalt final mit dem `reservation-worker`-Owner abstimmen, sobald der Consumer
+existiert.
+
+**`ReservationConfirmed`/`ReservationRejected`** (vom `reservation-worker` published, Topic
+`RESULT_TOPIC`/`reservation-result`) – Namen sind festgelegt, siehe
+[`src/reservation-worker/README.md`](../reservation-worker/README.md). Payload-Schema folgt dort,
+sobald der Service existiert.
 
 `TODO`: mit dem `reservation-worker`-Owner abstimmen, bevor das Schema als endgültig gilt.
 
