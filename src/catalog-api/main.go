@@ -24,7 +24,7 @@ func main() {
 	corsOrigin := getenv("CORS_ALLOWED_ORIGIN", "*")
 	port := getenv("PORT", "8080")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	database, err := db.Connect(ctx, databaseURL)
@@ -33,6 +33,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer database.Close()
+
+	if err := database.Migrate(ctx); err != nil {
+		slog.Error("database migration failed", "error", err)
+		os.Exit(1)
+	}
 
 	producer := reservation.NewProducer(kafkaBrokers, reservationTopic)
 	defer producer.Close()
