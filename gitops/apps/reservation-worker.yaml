@@ -1,0 +1,42 @@
+---
+# reservation-worker: Kafka-Consumer, der die eigentliche Sitzplatzbuchung durchfuehrt (siehe
+# src/reservation-worker/README.md, charts/reservation-worker/). config.kafkaBrokers ist ein
+# echter Wert (Strimzi-Bootstrap-Service aus charts/ticketflow, gleicher Namespace "ticketflow").
+#
+# image.tag und secret.databaseUrl sind dagegen bewusst falsche Platzhalter, kein echter Deploy-
+# Wert: .github/workflows/build-images.yml ist noch als TODO deaktiviert (kein Image je in eine
+# Registry gepusht), und charts/postgres-cluster legt das DB-Secret nur im Namespace
+# "application" an - Secrets sind namespace-uebergreifend nicht referenzierbar, siehe dessen
+# eigener Kommentar in charts/reservation-worker/values.yaml. Mit automated/selfHeal bleibt diese
+# Application deshalb absichtlich rot (ImagePullBackOff / DB-Connect-Fehler) in der ArgoCD-UI,
+# statt unbemerkt gruen mit falschen Daten zu laufen - sichtbarer Reminder, bis beide Werte durch
+# echte ersetzt werden (z.B. per `argocd app set --helm-set ...` oder einem External Secret, dann
+# hier committen).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: reservation-worker
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/reservation-worker
+    helm:
+      values: |
+        image:
+          tag: "REPLACE-ME-no-image-pushed-yet"
+        config:
+          kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+        secret:
+          databaseUrl: "REPLACE-ME-cross-namespace-secret-unresolved"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ticketflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

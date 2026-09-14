@@ -477,10 +477,27 @@ committed). Add real commands here once these gaps close instead of leaving this
   never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
   Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
   root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
-- **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/reservation-worker.yaml`,
-  `gitops/apps/notification-worker.yaml`, `gitops/projects/ticketflow-project.yaml`, Helm charts
-  for `catalog-api`/`frontend` (both have working `src/*` code but no chart yet), all
-  `src/load-generator` code, `observability/dashboards/` + `observability/alerts/` content, and
-  the cross-namespace `DATABASE_URL` wiring described above.
+- **Done, deliberately kept red in ArgoCD:** `gitops/apps/reservation-worker.yaml`
+  (`automated`/`selfHeal`, namespace `ticketflow`, inline `helm.values` — no `values-dev.yaml`/
+  `values-prod.yaml` split for this chart, unlike `charts/ticketflow`). `config.kafkaBrokers` is
+  a real value (`ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092`, same namespace as the
+  already-deployed Strimzi cluster); `image.tag` and `secret.databaseUrl` are intentionally wrong
+  placeholder strings (`REPLACE-ME-*`), not real values, because both underlying gaps are still
+  open: `.github/workflows/build-images.yml` is still TODO-disabled (no image ever pushed to a
+  registry), and `charts/postgres-cluster`'s DB secret lives in namespace `application` while
+  this deploys into `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same
+  gap documented in `charts/reservation-worker/values.yaml`). The Application will sync but stay
+  Degraded (`ImagePullBackOff`/DB-connect failure) until both are replaced with real values (e.g.
+  `argocd app set reservation-worker --helm-set ...`, then commit) — chosen deliberately over
+  *not* creating the Application (as was done for `notification-worker`) so the gap stays visible
+  in the ArgoCD UI instead of silently postponed. Not `helm lint`/`template`-checked against this
+  exact Application (Docker wasn't running locally when this was written) — worth a quick
+  `helm template charts/reservation-worker -f <(same inline values)` pass before trusting it
+  fully.
+- **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
+  `gitops/projects/ticketflow-project.yaml`, Helm charts for `catalog-api`/`frontend` (both have
+  working `src/*` code but no chart yet), all `src/load-generator` code,
+  `observability/dashboards/` + `observability/alerts/` content, and the cross-namespace
+  `DATABASE_URL` wiring described above (blocking `reservation-worker`'s real deploy, see above).
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
