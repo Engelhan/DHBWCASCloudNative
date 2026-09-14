@@ -477,16 +477,38 @@ committed). Add real commands here once these gaps close instead of leaving this
   never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
   Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
   root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
+- **Done:** `.github/workflows/build-images.yml` now actually builds and pushes (previously just
+  a `docker build`-only TODO stub — all four matrix Dockerfiles already existed, only the push
+  target was missing). Pushes to **ghcr.io** (GitHub Container Registry) as
+  `ghcr.io/<owner-lowercase>/ticketflow-<service>:<git-short-sha>`, auth via the built-in
+  `GITHUB_TOKEN` (`packages: write` permission, no extra secret) — chosen over a self-hosted
+  in-cluster registry: ghcr.io is explicitly covered by "container registries/package sources are
+  permitted external dependencies" (see What this repo is above), needs no public ingress/auth of
+  its own for GitHub's external runners to push to, and decouples image lifecycle from cluster
+  rebuilds (a self-hosted registry's images would be lost on rebuild same as the cluster). Owner
+  is lowercased via `${GITHUB_REPOSITORY_OWNER,,}` (ghcr.io requires lowercase image names,
+  the repo owner `Engelhan` is mixed-case). **Deliberately public, not private** — pure build
+  artifacts, no reason to gate them, and public avoids needing a cluster-side `imagePullSecret`
+  entirely. **Manual one-time step still needed**, not automatable via `GITHUB_TOKEN`: after the
+  first successful run, set each of the four packages' visibility to "Public" in GitHub's package
+  settings (defaults to the repo's private visibility otherwise) — until then pods get
+  `ImagePullBackOff` even with a correct tag. `charts/reservation-worker/values.yaml` and
+  `charts/notification-worker/values.yaml` `image.repository` defaults now point at the real
+  ghcr.io path (previously a fake placeholder `ticketflow/<service>`); `catalog-api`/`frontend`
+  have no chart yet so nothing to update there. `scripts/personalize.py` does **not** cover the
+  image registry path yet (only repoURL/DNS/ACME/TSIG) — a fork under a different GitHub owner
+  would need to hand-edit these two `image.repository` values, unlike everything personalize.py
+  already rewrites.
 - **Done, deliberately kept red in ArgoCD:** `gitops/apps/reservation-worker.yaml`
   (`automated`/`selfHeal`, namespace `ticketflow`, inline `helm.values` — no `values-dev.yaml`/
-  `values-prod.yaml` split for this chart, unlike `charts/ticketflow`). `config.kafkaBrokers` is
-  a real value (`ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092`, same namespace as the
-  already-deployed Strimzi cluster); `image.tag` and `secret.databaseUrl` are intentionally wrong
+  `values-prod.yaml` split for this chart, unlike `charts/ticketflow`). `config.kafkaBrokers` and
+  `image.repository` are now real values (Strimzi bootstrap service, ghcr.io path — see
+  `build-images.yml` above); `image.tag` and `secret.databaseUrl` are still intentionally wrong
   placeholder strings (`REPLACE-ME-*`), not real values, because both underlying gaps are still
-  open: `.github/workflows/build-images.yml` is still TODO-disabled (no image ever pushed to a
-  registry), and `charts/postgres-cluster`'s DB secret lives in namespace `application` while
-  this deploys into `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same
-  gap documented in `charts/reservation-worker/values.yaml`). The Application will sync but stay
+  open: no `build-images.yml` run has completed yet (no real git-short-sha tag exists to point
+  at), and `charts/postgres-cluster`'s DB secret lives in namespace `application` while this
+  deploys into `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same gap
+  documented in `charts/reservation-worker/values.yaml`). The Application will sync but stay
   Degraded (`ImagePullBackOff`/DB-connect failure) until both are replaced with real values (e.g.
   `argocd app set reservation-worker --helm-set ...`, then commit) — chosen deliberately over
   *not* creating the Application (as was done for `notification-worker`) so the gap stays visible

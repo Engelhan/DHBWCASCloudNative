@@ -1,6 +1,6 @@
 image:
-  repository: ticketflow/notification-worker
-  tag: "" # Pflichtfeld beim Deploy (kein Default, nie :latest, siehe P3)
+  repository: ghcr.io/engelhan/ticketflow-notification-worker # siehe .github/workflows/build-images.yml
+  tag: "" # Pflichtfeld beim Deploy (Git-Short-SHA aus build-images.yml, kein Default, nie :latest, siehe P3)
   pullPolicy: IfNotPresent
 
 # Mehrere Consumer-Instanzen derselben CONSUMER_GROUP teilen sich die Partitionen von
