@@ -284,10 +284,9 @@ docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... &&
 `load-generator` still has no code. `charts/notification-worker/` and
 `charts/reservation-worker/` can be `helm lint`/`helm template`-checked (see their own
 `values.schema.json`), but neither is deployed via a `gitops/apps/*.yaml` Application yet.
-`src/reservation-worker` has Go unit tests (`go test ./...`) but was written in a sandbox without
-a Go toolchain/network access — `go mod tidy` needs to run once locally before `go build`/`go
-test` are known-good. Add real commands here once these gaps close instead of leaving this
-section stale.
+`src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... && go test ./...` all
+pass (verified locally 2026-09-14 with Go 1.27; `go.sum` was missing until this run and is now
+committed). Add real commands here once these gaps close instead of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
@@ -445,8 +444,8 @@ section stale.
   lint/template-only, not deployed via ArgoCD). Go deps and both Dockerfile base images
   (`golang`, `distroless/static-debian12`) are pinned to latest-stable and digest-pinned (not
   floating tags) — re-check before rebuilding long after this was written.
-- **Done (written in a sandbox without a Go toolchain — run `go mod tidy && go build ./... &&
-  go test ./...` once locally before treating as verified):** `src/reservation-worker/` — the
+- **Done, verified locally (2026-09-14, Go 1.27: `go mod tidy && go vet ./... && go build ./...
+  && go test ./...` all pass, `go.sum` now committed):** `src/reservation-worker/` — the
   second Kafka consumer in the repo, the one that does the actual booking (Carlos' "Kafka
   Consumer" task, see root `README.md` ## ToDo). Consumes `RESERVATION_TOPIC`
   (`event.Requested`, exactly `catalog-api`'s already-published schema), claims the seat via
