@@ -1,10 +1,10 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/), der `catalog-api` und
-`reservation-worker` (beide noch nicht implementiert) bündeln soll, dazu die
-CNPG-`Cluster`-Ressource und die Strimzi-`Kafka`-Ressource sowie zugehörige
-ConfigMaps/Secrets/ServiceMonitors/HPA-KEDA-Objekte. `notification-worker` ist bewusst **kein**
-Teil davon — es hat einen eigenen, standalone Chart, siehe unten.
+Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource
+(CNPG-`Cluster` folgt dort noch, siehe dessen `Chart.yaml`). `catalog-api`, `notification-worker`
+und `reservation-worker` sind bewusst **kein** Teil davon — jeder hat einen eigenen, standalone
+Chart nach demselben Muster, siehe unten (catalog-api-Chart existiert noch nicht,
+`notification-worker`/`reservation-worker` schon).
 
 ## `notification-worker` — eigenständiger Chart statt Teil des Umbrella-Charts
 
@@ -17,12 +17,40 @@ Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-con
 deutlich mehr rendert als die anderen Custom-Charts. Bewusst kein `Service` — es gibt keinen
 anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes gehen direkt an den
 Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
-Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als einziger
-Chart im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an das noch nicht
-begonnene `charts/ticketflow` gebunden, siehe root-README `## Entscheidungen` zu W1) sowie
-`replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
+Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als
+einer von zwei Charts im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an
+das noch nicht vollständige `charts/ticketflow` gebunden, siehe root-README `##
+Entscheidungen` zu W1) sowie `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
 `gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
-ArgoCD deployt.
+ArgoCD deployt. **Hinweis:** `values.yaml` → `config.resultTopic` default `"reservation-results"`
+(Plural) weicht vom tatsächlichen, per `charts/ticketflow` angelegten Kafka-Topic
+`reservation-result` (Singular, siehe `charts/ticketflow/values.yaml`) ab — noch nicht
+korrigiert/live relevant, da der Chart noch nicht deployt ist, aber vor dem ersten echten Deploy
+gegenzuprüfen.
+
+## `reservation-worker` — eigenständiger Chart, gleiches Muster wie `notification-worker`
+
+[`reservation-worker/`](reservation-worker/) ist der zweite vollständig implementierte Service,
+analog zu `notification-worker` als eigener Chart (Deployment, ConfigMap, Secret,
+PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigenes
+`values.schema.json`). Zwei Abweichungen von dessen Vorlage: `replicaCount: 1` statt `3`
+(`PodDisruptionBudget` daher default `enabled: false`) — der Service wird künftig von KEDA auf
+Kafka-Consumer-Lag skaliert (P6, `gitops/apps/keda.yaml` existiert noch nicht), ein hoher
+statischer Default wäre vor dessen Einführung irreführend; und ein zusätzliches
+`DATABASE_URL`-Secret-Feld, weil der Service (anders als `notification-worker`) transaktional in
+CNPG-Postgres schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
+
+**Offener Punkt, noch nicht gelöst:** `charts/postgres-cluster` legt nur ein
+`username`/`password`-`Secret` im Namespace `application` an (siehe dessen
+`postgres-user-secret.yaml`), kein fertiges `DATABASE_URL`. `reservation-worker` liegt (wie
+`charts/ticketflow`) im Namespace `ticketflow` — Kubernetes-`Secret`s sind nicht
+Namespace-übergreifend referenzierbar, ein direkter `secretKeyRef` auf das
+Postgres-User-`Secret` funktioniert also nicht. Bis das geklärt ist (z.B. External Secret, oder
+eine gemeinsame Namespace-Entscheidung mit `postgres-cluster`), bleibt
+`secret.databaseUrl` ein manuell zu befüllender Platzhalter, genau wie
+`notification-worker`s SMTP/TLS-Secrets. Ebenfalls noch **kein**
+`gitops/apps/reservation-worker.yaml` — gleicher "chart-fertig, noch nicht deployt"-Zustand wie
+bei `notification-worker`.
 
 ## Addon-Charts
 

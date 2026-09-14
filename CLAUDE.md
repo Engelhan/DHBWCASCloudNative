@@ -48,10 +48,10 @@ a small, fixed seat count. This is the load path the whole architecture exists t
 - `frontend`, `load-generator` — demo UI and the k6 flash-sale load script.
 - Stateful services: **CNPG** (PostgreSQL operator) and **Strimzi** (Kafka).
 
-`catalog-api` and `frontend` now have working code (see Current implementation status below);
-`reservation-worker`, `notification-worker`, `load-generator` still only have per-service
-`README.md` files describing the planned interface/config. When implementing a service, keep it
-consistent with its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
+`catalog-api`, `frontend`, `notification-worker` and `reservation-worker` now have working code
+(see Current implementation status below); only `load-generator` still has just a `README.md`
+describing the planned interface/config. When implementing a service, keep it consistent with
+its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
 
 ## Infra layering (read this before touching infra/)
 
@@ -281,9 +281,13 @@ cd src/catalog-api
 docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... && go build -o /tmp/catalog-api-bin ."
 ```
 
-`charts/ticketflow` still has no templates to `helm lint`/`helm template` against;
-`reservation-worker`/`notification-worker`/`load-generator` still have no code. Add real commands
-here once those exist instead of leaving this section stale.
+`load-generator` still has no code. `charts/notification-worker/` and
+`charts/reservation-worker/` can be `helm lint`/`helm template`-checked (see their own
+`values.schema.json`), but neither is deployed via a `gitops/apps/*.yaml` Application yet.
+`src/reservation-worker` has Go unit tests (`go test ./...`) but was written in a sandbox without
+a Go toolchain/network access — `go mod tidy` needs to run once locally before `go build`/`go
+test` are known-good. Add real commands here once these gaps close instead of leaving this
+section stale.
 
 ## Current implementation status (update this section as work lands)
 
@@ -397,9 +401,6 @@ here once those exist instead of leaving this section stale.
   real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ and a schema registry
   (also Carlos' scope per the team's task split) are deliberately **not** part of this yet —
   separate follow-up, registry implementation undecided.
-- **Not started:** `gitops/apps/keda.yaml`, `gitops/projects/ticketflow-project.yaml`,
-  `charts/ticketflow/templates/{catalog-api,reservation-worker,notification-worker,frontend,
-  database,config,monitoring}/`, AKHQ, schema registry, all `src/*` application code,
 - **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
   Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
   single-node) and a headless-Chromium click-through:** `src/catalog-api/` (Go 1.25 + `chi`,
@@ -411,16 +412,14 @@ here once those exist instead of leaving this section stale.
   (`demo-konzert`, 30 seats) for both. catalog-api deliberately never writes to `reservations` —
   only the (not-yet-built) `reservation-worker` will; `GET /reservations/{id}` reports `pending`
   from an in-memory cache until that row exists, so the full `pending`→`confirmed`/`rejected`
-  transition can't complete locally yet (confirmed as expected during testing, not a bug). The
-  `ReservationRequested` Kafka payload (see `src/catalog-api/README.md` ## Kafka-Event-Schema) is
-  a **draft**, not yet aligned with whoever builds `reservation-worker`. `docker-compose.yml`
+  transition can't complete locally yet (confirmed as expected during testing, not a bug) until
+  `reservation-worker` (see below) is actually deployed alongside it. The `ReservationRequested`
+  Kafka payload (see `src/catalog-api/README.md` ## Kafka-Event-Schema) is now matched
+  1:1 by `reservation-worker`'s `event.Requested`. `docker-compose.yml`
   includes a `kafka-init` one-shot job that pre-creates the topic — without it, the *first*
   request after a fresh stack start fails (`Unknown Topic Or Partition`) because Kafka's
   auto-topic-creation-on-first-produce is asynchronous to that same produce call; found live
   during E2E testing.
-- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`,
-  `reservation-worker`, `notification-worker`, `load-generator` application code,
 - **Done:** `src/notification-worker/` — first implemented service in the repo (Go), the second,
   independent Kafka consumer group off `RESULT_TOPIC`. `github.com/segmentio/kafka-go`
   (pure-Go, no cgo, needed for the distroless build). Config entirely via env vars
@@ -446,9 +445,43 @@ here once those exist instead of leaving this section stale.
   lint/template-only, not deployed via ArgoCD). Go deps and both Dockerfile base images
   (`golang`, `distroless/static-debian12`) are pinned to latest-stable and digest-pinned (not
   floating tags) — re-check before rebuilding long after this was written.
-- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, remaining `src/*`
-  application code (`catalog-api`, `reservation-worker`, `frontend`, `load-generator`),
-  `observability/dashboards/` + `observability/alerts/` content.
+- **Done (written in a sandbox without a Go toolchain — run `go mod tidy && go build ./... &&
+  go test ./...` once locally before treating as verified):** `src/reservation-worker/` — the
+  second Kafka consumer in the repo, the one that does the actual booking (Carlos' "Kafka
+  Consumer" task, see root `README.md` ## ToDo). Consumes `RESERVATION_TOPIC`
+  (`event.Requested`, exactly `catalog-api`'s already-published schema), claims the seat via
+  **optimistic locking on `seats.status`** (`UPDATE ... WHERE status = 'free'`, no
+  `SELECT ... FOR UPDATE`, per the service's own README), writes `reservations` and publishes
+  `event.Result` to `RESULT_TOPIC` — exactly `notification-worker`'s already-defined consumer
+  schema (`internal/event/event.go`), so no schema was renegotiated, just matched on both ends.
+  Idempotent on `reservation_id` (redelivery after a crash between DB commit and offset commit
+  re-derives the same result instead of double-claiming a seat — see `internal/booking` package
+  doc). Builds its own DB schema at startup via embedded, versioned SQL migrations
+  (`internal/migrate`, `schema_migrations` table, `CREATE TABLE IF NOT EXISTS` so it's safe
+  against both an empty CNPG database and the already-seeded local `docker-compose` DB) instead
+  of a separate migration tool — this is the "DB Schema aufbauen und über Applikation
+  versionieren" part of the task. `/metrics`
+  (`reservations_processed_total{result}`, `reservation_processing_duration_seconds{result}`,
+  `reservation_processing_errors_total{stage}`), `/healthz`, `/readyz` (actively pings DB *and*
+  Kafka, like `catalog-api`, unlike `notification-worker`'s simpler always-ready-once-connected
+  check). Paired with its own standalone Helm chart `charts/reservation-worker/` (same
+  Deployment/ConfigMap/Secret/PodDisruptionBudget/PodMonitor/NetworkPolicy/`_helpers.tpl`/
+  `values.schema.json` pattern as `charts/notification-worker/`; `replicaCount: 1` +
+  `PodDisruptionBudget` disabled by default since KEDA — the eventual scaler for this exact
+  service, P6 — doesn't exist yet). No `gitops/apps/reservation-worker.yaml` yet, same
+  "chart-fertig, noch nicht deployt" state as `notification-worker`. **Known unresolved gap,
+  documented in `charts/README.md` and the service's own README, not silently worked around:**
+  `charts/postgres-cluster` only creates a `username`/`password` `Secret` in namespace
+  `application`, not a ready-to-use `DATABASE_URL`, and this chart deploys into `ticketflow` —
+  Kubernetes `Secret`s aren't cross-namespace-referenceable, so `secret.databaseUrl` stays a
+  manually-filled placeholder (same "real value via `--set`/External Secret at deploy time,
+  never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
+  Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
+  root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
+- **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/reservation-worker.yaml`,
+  `gitops/apps/notification-worker.yaml`, `gitops/projects/ticketflow-project.yaml`, Helm charts
+  for `catalog-api`/`frontend` (both have working `src/*` code but no chart yet), all
+  `src/load-generator` code, `observability/dashboards/` + `observability/alerts/` content, and
+  the cross-namespace `DATABASE_URL` wiring described above.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.

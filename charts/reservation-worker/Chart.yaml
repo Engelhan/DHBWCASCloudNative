@@ -1,0 +1,10 @@
+apiVersion: v2
+name: reservation-worker
+description: >-
+  Volleigener, eigenstaendiger Chart fuer reservation-worker (transaktionale
+  Sitzplatzbuchung, Kafka-Consumer auf RESERVATION_TOPIC / Producer auf RESULT_TOPIC). Analog zu
+  charts/notification-worker - eigener Chart statt Teil des Umbrella-Charts charts/ticketflow,
+  siehe charts/README.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

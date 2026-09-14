@@ -1,0 +1,73 @@
+image:
+  repository: ticketflow/reservation-worker
+  tag: "" # Pflichtfeld beim Deploy (kein Default, nie :latest, siehe P3)
+  pullPolicy: IfNotPresent
+
+# Statischer Default fuer jetzt - der eigentliche Skalierungs-Trigger (KEDA auf
+# Consumer-Lag von config.consumerGroup, P6) existiert noch nicht (siehe
+# gitops/apps/keda.yaml, CLAUDE.md ## Current implementation status). Sobald KEDA
+# eingerichtet ist, wird replicaCount vom ScaledObject ueberschrieben - dieser Wert bleibt dann
+# nur noch der Startwert/minReplicaCount.
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 48Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+config:
+  kafkaBrokers: "" # Pflicht, z.B. "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+  reservationTopic: "reservation-requested"
+  resultTopic: "reservation-result"
+  consumerGroup: "reservation-worker"
+  processMaxRetries: 3
+  processRetryBackoff: "2s"
+  logLevel: "info"
+  httpAddr: ":8080"
+
+secret:
+  create: true # false = ein extern (z.B. External Secret) bereitgestelltes Secret gleichen Namens wird erwartet
+  # Platzhalter-Struktur; echter Wert via --set/--set-file/External Secret zur Deploy-Zeit, nie im
+  # Repo committen (gleiches Muster wie charts/notification-worker/values.yaml).
+  #
+  # NICHT final geloest: charts/postgres-cluster legt nur ein username/password-Secret im
+  # Namespace "application" an (siehe dessen postgres-user-secret.yaml), kein fertiges
+  # DATABASE_URL, und dieser Chart deployt (wie charts/ticketflow) in den Namespace "ticketflow" -
+  # Secrets sind in Kubernetes nicht Namespace-uebergreifend referenzierbar. Bis das (z.B. per
+  # External Secret oder einer gemeinsamen Namespace-Entscheidung) geklaert ist, muss
+  # databaseUrl hier manuell zur Deploy-Zeit gesetzt werden.
+  databaseUrl: ""
+
+# PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (reiner
+# Kafka-Consumer, Kubelet-Probes gehen direkt an den Pod), daher auch keine eigene
+# Service-Ressource in diesem Chart - siehe templates/podmonitor.yaml.
+podMonitor:
+  enabled: true
+  interval: 30s
+  # Analog zu charts/notification-worker/values.yaml: Annahme, nicht live verifiziert.
+  labels:
+    release: kube-prometheus-stack
+
+networkPolicy:
+  enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
+
+podDisruptionBudget:
+  enabled: false # sinnvoll erst ab replicaCount > 1 (bzw. sobald KEDA minReplicaCount > 1 setzt)
+  minAvailable: 1
