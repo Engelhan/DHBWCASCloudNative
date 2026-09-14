@@ -318,7 +318,7 @@ committed). Add real commands here once these gaps close instead of leaving this
   (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
   `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the
   `ClusterIssuer`) and `charts/argocd-ingress/`. All use the real DHBW DNS zone
-  (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
+  (`cas420134-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
   secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
@@ -397,9 +397,9 @@ committed). Add real commands here once these gaps close instead of leaving this
   doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
   sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
   originally written against — fixed (all other fields matched `kubectl explain` against the
-  real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ and a schema registry
-  (also Carlos' scope per the team's task split) are deliberately **not** part of this yet —
-  separate follow-up, registry implementation undecided.
+  real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ now exists (see
+  `gitops/apps/akhq.yaml` below); a schema registry (also Carlos' scope) is still **not** part of
+  this yet — separate follow-up, registry implementation undecided.
 - **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
   Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
   single-node) and a headless-Chromium click-through:** `src/catalog-api/` (Go 1.25 + `chi`,
@@ -477,6 +477,35 @@ committed). Add real commands here once these gaps close instead of leaving this
   never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
   Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
   root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
+- **Done, not live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
+  `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
+  Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
+  Kafka-platform tooling, not part of the TicketFlow app itself; cross-namespace access to the
+  bootstrap service in `ticketflow` is fine, only `Secret`s are namespace-scoped, not `Service`s).
+  `secrets.akhq.connections.ticketflow-kafka.properties.bootstrap.servers` points at the real
+  Strimzi bootstrap service. Public via a plain `Ingress` (`akhq.<zone>`) + `cert-manager.io/
+  cluster-issuer` annotation — deliberately simpler than the ArgoCD ingress: AKHQ speaks plain
+  HTTP, no TLS-passthrough `IngressRouteTCP` needed, so external-dns' already-enabled `ingress`
+  source (`charts/external-dns/values.yaml`) picks up the host automatically once Traefik
+  assigns the Ingress a `LoadBalancer` address — no `traefik-config`-style workaround required.
+  Secured with basic-auth (`micronaut.security.enabled` + `akhq.security`), RBAC roles adapted
+  from AKHQ's own `application.example.yml` but restricted to the `*-read` roles only (no
+  `*-admin` roles with CREATE/UPDATE/DELETE), matching root `README.md` ## Entscheidungen (B2)'s
+  explicit "AKHQ (schreibgeschützt konfiguriert)" claim — discovered while building this that the
+  root README already documents a whole **B2 elective topic** (per-service `KafkaUser` CRs with
+  SCRAM-SHA-512 + narrow `type: simple` ACLs, one per service, plus read-only AKHQ as the
+  Kafka-ops UI) that doesn't exist yet in the cluster (`charts/ticketflow` has no `KafkaUser`
+  resources — see that section above) and isn't listed in this file's "Chosen elective topics" at
+  the top (which only names W1/W2) — **flagged to the user, not resolved**: unclear whether B2 is
+  a live commitment needing implementation (KafkaUser/ACLs are Carlos' scope, same as the Kafka
+  cluster itself) or aspirational text to revise down; update both this file and the "Chosen
+  elective topics" line once that's settled. `default-group: no-roles` (not the upstream
+  example's `admin`) so anonymous visitors get no access at all; the basic-auth password is a
+  `CHANGE_ME` placeholder (same pattern as `charts/postgres-cluster` `database.password`) that
+  must be set via `--helm-set` before the first real sync. **Not verified against a live cluster
+  or even `helm template`** (Docker wasn't running locally while this was written) — the RBAC
+  config in particular is copied from docs, not tested; check login + role behavior in the AKHQ
+  UI after the first real sync.
 - **Done:** `.github/workflows/build-images.yml` now actually builds and pushes (previously just
   a `docker build`-only TODO stub — all four matrix Dockerfiles already existed, only the push
   target was missing). Pushes to **ghcr.io** (GitHub Container Registry) as

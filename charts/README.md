@@ -55,8 +55,8 @@ bei `notification-worker`.
 ## Addon-Charts
 
 Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns, CNPG-Operator,
-Strimzi-Operator, kube-prometheus-stack, Loki, Tempo; künftig KEDA) liegen als **eigene, kleine
-Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
+Strimzi-Operator, kube-prometheus-stack, Loki, Tempo, AKHQ; künftig KEDA) liegen als **eigene,
+kleine Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
 [`../gitops/apps/`](../gitops/apps/), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
 auf den Upstream-Helm-Repo) – ein einheitliches Muster für alle Charts in diesem Repo statt zwei
 verschiedener (Application-inline-Values vs. lokaler Chart), und alle Werte landen sichtbar
@@ -67,7 +67,7 @@ Zwei Varianten:
 - **Wrapper um einen Upstream-Chart** ([`longhorn/`](longhorn/), [`cert-manager/`](cert-manager/),
   [`external-dns/`](external-dns/), [`cnpg-operator/`](cnpg-operator/),
   [`strimzi-operator/`](strimzi-operator/), [`kube-prometheus-stack/`](kube-prometheus-stack/),
-  [`loki/`](loki/), [`tempo/`](tempo/)): `Chart.yaml` deklariert den Upstream-Chart als
+  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/)): `Chart.yaml` deklariert den Upstream-Chart als
   `dependencies`-Eintrag (Name/Version/Repository), `values.yaml` reicht unsere Werte unter dem
   Dependency-Alias (z.B. `longhorn:`) durch. ArgoCD baut die Dependency beim Sync automatisch
   (`helm dependency build`) – kein `Chart.lock`/`charts/*.tgz` im Repo (gitignored, siehe
