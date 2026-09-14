@@ -89,8 +89,8 @@ Four layers, each owning a distinct concern — don't blur them:
    (Strimzi `Kafka` CR in KRaft mode plus separate `broker`/`controller` `KafkaNodePool`s — not
    combined-role, matching a real Strimzi setup the user provided as reference — two
    `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) is
-   written and deployed via `gitops/apps/ticketflow.yaml`, currently on branch `strimzi-setup` —
-   the rest (services, `database/`, `config/`, `monitoring/`) is still template-less.
+   written and deployed via `gitops/apps/ticketflow.yaml` (merged to `main`) — the rest (services,
+   `database/`, `config/`, `monitoring/`) is still template-less.
 
 Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
 add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
@@ -370,7 +370,7 @@ here once those exist instead of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
-- **Done, on branch `strimzi-setup` (not yet merged to `main`):** `charts/ticketflow` Kafka
+- **Done, merged to `main`:** `charts/ticketflow` Kafka
   cluster — `Chart.yaml`/`values.yaml`/`values-dev.yaml`/`values-prod.yaml`/`values.schema.json`
   (schema currently only validates the `kafka.*` section; extensible for later sections) +
   `templates/messaging/`: `Kafka` CR in KRaft mode (no ZooKeeper, `strimzi.io/kraft: enabled`,
@@ -389,7 +389,7 @@ here once those exist instead of leaving this section stale.
   follow-up once `catalog-api`/`reservation-worker`/`notification-worker` exist),
   `inter.broker.protocol.version` (ZK-era field, meaningless under pure KRaft),
   `message.max.bytes: 200MB` (no justification for our small JSON events, left at the Kafka
-  default). `gitops/apps/ticketflow.yaml` (`targetRevision: strimzi-setup`, namespace
+  default). `gitops/apps/ticketflow.yaml` (`targetRevision: main`, namespace
   `ticketflow`, syncs `values-dev.yaml`). Strimzi chart version is pinned as `1.1.0`, which
   doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
   sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
