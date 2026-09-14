@@ -279,14 +279,24 @@ docker compose down -v
 # catalog-api build/vet without a local Go toolchain
 cd src/catalog-api
 docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... && go build -o /tmp/catalog-api-bin ."
+
+# helm lint/template without a local helm binary (any chart under charts/) - on Windows Git Bash,
+# MSYS_NO_PATHCONV=1 is needed or the -v path gets mangled
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 dependency update /charts/<name>
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 lint /charts/<name>
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 template <name> /charts/<name>
 ```
 
-`load-generator` still has no code. `charts/notification-worker/` and
-`charts/reservation-worker/` can be `helm lint`/`helm template`-checked (see their own
-`values.schema.json`), but neither is deployed via a `gitops/apps/*.yaml` Application yet.
-`src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... && go test ./...` all
-pass (verified locally 2026-09-14 with Go 1.27; `go.sum` was missing until this run and is now
-committed). Add real commands here once these gaps close instead of leaving this section stale.
+`load-generator` still has no code. `charts/notification-worker/` can be `helm lint`/`helm
+template`-checked (see its own `values.schema.json`) but is not deployed via a
+`gitops/apps/*.yaml` Application yet. `charts/reservation-worker/` and `charts/akhq/` **are**
+deployed (`gitops/apps/reservation-worker.yaml`/`akhq.yaml`) and both pass `helm lint`/`template`
+locally (verified 2026-09-14 with Docker available) — see their bullets under Current
+implementation status for what's still unverified beyond that (live cluster behavior,
+placeholder values). `src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... &&
+go test ./...` all pass (verified locally 2026-09-14 with Go 1.27; `go.sum` was missing until
+this run and is now committed), and `docker build src/reservation-worker` succeeds. Add real
+commands here once these gaps close instead of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
@@ -477,7 +487,7 @@ committed). Add real commands here once these gaps close instead of leaving this
   never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
   Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
   root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
-- **Done, not live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
+- **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
   `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
   Kafka-platform tooling, not part of the TicketFlow app itself; cross-namespace access to the
@@ -502,10 +512,12 @@ committed). Add real commands here once these gaps close instead of leaving this
   elective topics" line once that's settled. `default-group: no-roles` (not the upstream
   example's `admin`) so anonymous visitors get no access at all; the basic-auth password is a
   `CHANGE_ME` placeholder (same pattern as `charts/postgres-cluster` `database.password`) that
-  must be set via `--helm-set` before the first real sync. **Not verified against a live cluster
-  or even `helm template`** (Docker wasn't running locally while this was written) — the RBAC
-  config in particular is copied from docs, not tested; check login + role behavior in the AKHQ
-  UI after the first real sync.
+  must be set via `--helm-set` before the first real sync. `helm dependency update`/`lint`/
+  `template` all pass (verified locally 2026-09-14 once Docker was available) and the rendered
+  Secret/ConfigMap/Deployment/Ingress all look correct — but this only proves the chart renders,
+  not that AKHQ actually enforces the RBAC config as intended; the RBAC block itself is still
+  copied from docs, not tested against a running instance — check login + role behavior in the
+  AKHQ UI after the first real sync.
 - **Done:** `.github/workflows/build-images.yml` now actually builds and pushes (previously just
   a `docker build`-only TODO stub — all four matrix Dockerfiles already existed, only the push
   target was missing). Pushes to **ghcr.io** (GitHub Container Registry) as
@@ -541,10 +553,12 @@ committed). Add real commands here once these gaps close instead of leaving this
   Degraded (`ImagePullBackOff`/DB-connect failure) until both are replaced with real values (e.g.
   `argocd app set reservation-worker --helm-set ...`, then commit) — chosen deliberately over
   *not* creating the Application (as was done for `notification-worker`) so the gap stays visible
-  in the ArgoCD UI instead of silently postponed. Not `helm lint`/`template`-checked against this
-  exact Application (Docker wasn't running locally when this was written) — worth a quick
-  `helm template charts/reservation-worker -f <(same inline values)` pass before trusting it
-  fully.
+  in the ArgoCD UI instead of silently postponed. `helm lint`/`template` with the exact same
+  override values as the Application's inline `helm.values` verified locally 2026-09-14 (once
+  Docker was available) — renders cleanly, `image.repository` resolves to the real
+  `ghcr.io/engelhan/ticketflow-reservation-worker` path with the placeholder tag appended as
+  expected. Also confirmed `docker build src/reservation-worker` succeeds locally, de-risking
+  tomorrow's first real `build-images.yml` run against this Dockerfile.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
   `gitops/projects/ticketflow-project.yaml`, Helm charts for `catalog-api`/`frontend` (both have
   working `src/*` code but no chart yet), all `src/load-generator` code,
