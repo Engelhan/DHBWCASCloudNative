@@ -35,8 +35,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
-  # Legt das Reservation-Topic vorab an, statt sich auf Kafkas Auto-Create-on-first-produce zu
-  # verlassen - sonst schlaegt genau die erste Buchung im Screencast mit "Unknown Topic Or
+  # Legt Reservation- und Result-Topic vorab an, statt sich auf Kafkas Auto-Create-on-first-produce
+  # zu verlassen - sonst schlaegt genau die erste Buchung im Screencast mit "Unknown Topic Or
   # Partition" fehl, weil die Themenerstellung asynchron zur ersten Produce-Anfrage laeuft.
   kafka-init:
     image: apache/kafka:3.8.0
@@ -47,7 +47,9 @@ services:
       - >
         until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list; do sleep 1; done &&
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists
-        --topic reservation-requested --partitions 1 --replication-factor 1
+        --topic reservation-requested --partitions 1 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists
+        --topic reservation-result --partitions 1 --replication-factor 1
 
   catalog-api:
     build: ./src/catalog-api
@@ -59,6 +61,23 @@ services:
       RESERVATION_TOPIC: reservation-requested
       LOG_LEVEL: info
       CORS_ALLOWED_ORIGIN: http://localhost:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  reservation-worker:
+    build: ./src/reservation-worker
+    ports:
+      - "8082:8080"
+    environment:
+      DATABASE_URL: postgres://ticketflow:ticketflow@postgres:5432/ticketflow?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      RESERVATION_TOPIC: reservation-requested
+      RESULT_TOPIC: reservation-result
+      CONSUMER_GROUP: reservation-worker
+      LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
