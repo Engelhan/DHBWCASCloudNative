@@ -1,0 +1,51 @@
+# Apicurio Registry (https://www.apicur.io) - JSON-Schema-Registry fuer die Kafka-Event-Contracts
+# (ReservationRequested/ReservationResult), Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
+# reservation-worker), siehe CLAUDE.md ## Team. Volleigener Chart statt Upstream-Wrapper - siehe
+# Chart.yaml fuer die Begruendung (community Upstream-Chart nicht mehr pullbar).
+replicaCount: 1
+
+image:
+  repository: quay.io/apicurio/apicurio-registry
+  tag: "3.3.3" # kein :latest, siehe P3; echte, aktuelle 3.x-Version (verifiziert auf quay.io)
+  pullPolicy: IfNotPresent
+
+# kafkasql-Storage: Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer eigenen
+# Postgres-Instanz - vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die aktuell
+# den echten Deploy von reservation-worker blockiert (siehe charts/reservation-worker/values.yaml).
+# Zeigt auf den bereits deployten Strimzi-Bootstrap-Service in Namespace "ticketflow". Beides
+# unkritisch (keine Zugangsdaten), landet deshalb in der ConfigMap, nicht in einem Secret.
+config:
+  storageKind: kafkasql
+  kafkaBootstrapServers: ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092
+
+service:
+  port: 8080
+
+# Groessenordnung an den (fuer 2.x geschriebenen) Vorschlagswerten des urspruenglich geplanten
+# Upstream-Charts orientiert - Apicurio ist eine Quarkus/JVM-Anwendung, braucht spuerbar mehr
+# Memory als z.B. AKHQ.
+resources:
+  requests:
+    cpu: 200m
+    memory: 600Mi
+  limits:
+    cpu: 1000m
+    memory: 1300Mi
+
+# runAsUser: 185 ist keine Vermutung, sondern die von Red-Hat/Quarkus-basierten Images (inkl.
+# frueherer Apicurio-Versionen) verwendete Standard-UID. readOnlyRootFilesystem bewusst NICHT
+# gesetzt - unklar, ob/wohin die Anwendung zur Laufzeit schreibt (kein Hinweis in der 3.x-Doku
+# gefunden); vor einem echten Deploy per laufendem Pod verifizieren, dann erst aktivieren (siehe
+# charts/README.md ## Resource-Limits... zum selben Vorgehen bei AKHQ/Tempo).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 185
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+nameOverride: ""
+fullnameOverride: ""

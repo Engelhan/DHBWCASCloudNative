@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ticketflow.example/schemas/reservation-requested.schema.json",
+  "title": "ReservationRequested",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reservation_id",
+    "event_id",
+    "seat_id",
+    "session_id",
+    "first_name",
+    "last_name",
+    "email",
+    "requested_at"
+  ],
+  "properties": {
+    "reservation_id": { "type": "string", "minLength": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
+    "seat_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "first_name": { "type": "string", "minLength": 1 },
+    "last_name": { "type": "string", "minLength": 1 },
+    "email": { "type": "string", "minLength": 1, "format": "email" },
+    "requested_at": { "type": "string", "format": "date-time" }
+  }
+}

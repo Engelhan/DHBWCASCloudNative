@@ -1,0 +1,14 @@
+apiVersion: v2
+name: apicurio
+description: >-
+  Volleigener, eigenstaendiger Chart fuer Apicurio Registry (JSON-Schema-Registry fuer die
+  Kafka-Event-Contracts). Urspruenglich als Wrapper um den Upstream-Community-Chart
+  (eshepelyuk/apicurio-registry-helm) geplant, siehe charts/README.md ## Addon-Charts - dessen
+  ghcr.io-OCI-Paket ist jedoch nicht mehr oeffentlich pullbar (403 Forbidden, verifiziert sowohl
+  via Docker als auch direkt gegen den ghcr.io-Token-Endpoint; ghcr.io selbst ist erreichbar,
+  andere Pakete dort funktionieren), vermutlich eine Folge von dessen Archivierung 2024-11-13.
+  Deshalb volleigener Chart, analog zu charts/reservation-worker/charts/notification-worker statt
+  eines Upstream-Dependency-Wrappers.
+type: application
+version: 0.1.0
+appVersion: "3.3.3"
