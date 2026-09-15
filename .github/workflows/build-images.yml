@@ -1,13 +1,15 @@
 name: build-images
 
-# Baut reproduzierbar Container-Images aus src/ (P1) und taggt sie mit dem Git-Short-SHA statt
-# `:latest` (P3). Push nach ghcr.io (GitHub Container Registry) - laut Aufgabenstellung/
-# CLAUDE.md ausdruecklich erlaubte externe Abhaengigkeit ("container registries/package
-# sources"), Auth ueber den eingebauten GITHUB_TOKEN, kein zusaetzliches Secret noetig. Die
-# Packages muessen einmalig nach dem ersten Push in den GitHub-Package-Settings auf "Public"
-# gestellt werden (GITHUB_TOKEN kann das nicht selbst setzen) - sonst braucht der Cluster ein
-# imagePullSecret zum Pullen, siehe CLAUDE.md ## Current implementation status
-# (reservation-worker).
+# Baut reproduzierbar Container-Images aus src/ (P1) und taggt sie primaer mit dem
+# Git-Short-SHA statt nur `:latest` (P3, Nachvollziehbarkeit welcher Commit im Cluster laeuft).
+# Zusaetzlich wird derselbe Build auch als `:latest` gepusht, fuer Konsumenten, die keinen
+# festen Tag pinnen wollen. Push nach ghcr.io (GitHub Container Registry) - laut
+# Aufgabenstellung/ CLAUDE.md ausdruecklich erlaubte externe Abhaengigkeit ("container
+# registries/package sources"), Auth ueber den eingebauten GITHUB_TOKEN, kein zusaetzliches
+# Secret noetig. Die Packages muessen einmalig nach dem ersten Push in den
+# GitHub-Package-Settings auf "Public" gestellt werden (GITHUB_TOKEN kann das nicht selbst
+# setzen) - sonst braucht der Cluster ein imagePullSecret zum Pullen, siehe CLAUDE.md
+# ## Current implementation status (reservation-worker).
 
 on:
   push:
@@ -46,6 +48,9 @@ jobs:
 
       - name: Build and push ${{ matrix.service }}
         run: |
-          IMAGE="${REGISTRY}/${OWNER_LC}/ticketflow-${{ matrix.service }}:${GITHUB_SHA::8}"
-          docker build -t "$IMAGE" src/${{ matrix.service }}
-          docker push "$IMAGE"
+          BASE="${REGISTRY}/${OWNER_LC}/ticketflow-${{ matrix.service }}"
+          SHA_TAG="${BASE}:${GITHUB_SHA::8}"
+          LATEST_TAG="${BASE}:latest"
+          docker build -t "$SHA_TAG" -t "$LATEST_TAG" src/${{ matrix.service }}
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
