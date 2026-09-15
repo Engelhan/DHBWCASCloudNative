@@ -25,14 +25,6 @@ spec:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
     targetRevision: main
     path: charts/reservation-worker
-    helm:
-      values: |
-        image:
-          tag: "REPLACE-ME-set-to-a-real-git-short-sha-after-build-images-runs"
-        config:
-          kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
-        secret:
-          databaseUrl: "REPLACE-ME-cross-namespace-secret-unresolved"
   destination:
     server: https://kubernetes.default.svc
     namespace: ticketflow
