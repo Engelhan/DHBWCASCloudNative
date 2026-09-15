@@ -83,11 +83,16 @@ akhq:
             - role: group-read
 
   # Sensible Werte (Kafka-Verbindung, Basic-Auth-Passwort-Hash) - landen in einem Secret statt im
-  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Das Passwort ist ein
-  # Platzhalter (wie charts/postgres-cluster/values.yaml database.password), MUSS vor dem Sync
-  # per --set/--set-file ueberschrieben werden - nie im Klartext committen. Format: SHA-256-Hex
-  # von `echo -n "<echtes-passwort>" | sha256sum` (kein passwordHash-Feld gesetzt -> SHA256 ist
-  # AKHQs Default, siehe akhq.io Basic-Auth-Doku).
+  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Format: SHA-256-Hex von
+  # `echo -n "<echtes-passwort>" | sha256sum` (kein passwordHash-Feld gesetzt -> SHA256 ist AKHQs
+  # Default, siehe akhq.io Basic-Auth-Doku).
+  #
+  # Lab-Zugangsdaten (2026-09-15, auf expliziten Wunsch direkt hier hinterlegt statt per --set,
+  # da fuer diesen Kurs kein produktionsartiges Geheimnis): Passwort "ticketflow" - schwach und
+  # als solches im SHA-256-Hash unten fuer jeden mit Repo-Zugriff leicht rueckrechenbar (kein
+  # Salt, sehr kurzes Woerterbuch-Wort), aber fuer ein privates Uebungsrepo akzeptiert. Username
+  # "admin" ist nur ein Label - die Gruppe "reader" bestimmt die tatsaechlichen (schreibgeschuetzten)
+  # Rechte, siehe root README.md ## Entscheidungen (B2) "AKHQ schreibgeschuetzt konfiguriert".
   secrets:
     akhq:
       connections:
@@ -96,8 +101,8 @@ akhq:
             bootstrap.servers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
       security:
         basic-auth:
-          - username: viewer
-            password: CHANGE_ME
+          - username: admin
+            password: b3c20af422987f4f012e71955f29ccbd5335b08c05df52c5740207b63a161180
             groups:
               - reader
 
