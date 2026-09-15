@@ -1,0 +1,78 @@
+# Registriert die beiden kanonischen Schemas (configmap.yaml) idempotent in Apicurio Registry
+# (charts/apicurio) bei jedem Helm-Sync - "Infra deklariert Schemas deklarativ" analog zu den
+# KafkaTopic-CRs in messaging/kafka-topics.yaml, statt eine der drei App-Services das zur Laufzeit
+# machen zu lassen. Wartet auf die echte REST-API selbst (GET .../groups) statt auf einen
+# geratenen Health-Endpoint - siehe charts/README.md ## apicurio fuer die Begruendung (kein fuer
+# 3.x bestaetigter Health-Pfad gefunden).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.kafka.metadata.name }}-schema-registrar
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: ticketflow
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: ticketflow-schema-registrar
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: register
+          image: alpine:3.20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: REGISTRY_URL
+              value: {{ .Values.schemaRegistry.url | quote }}
+            - name: GROUP_ID
+              value: {{ .Values.schemaRegistry.groupId | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              apk add --no-cache curl jq >/dev/null
+
+              until curl -sf "$REGISTRY_URL/groups" >/dev/null 2>&1; do
+                echo "waiting for apicurio registry at $REGISTRY_URL..."
+                sleep 2
+              done
+
+              register() {
+                artifact_id="$1"
+                file="$2"
+                body=$(jq -n --arg id "$artifact_id" --rawfile content "$file" \
+                  '{artifactId:$id, artifactType:"JSON",
+                    firstVersion:{content:{content:$content, contentType:"application/json"}}}')
+                echo "registering $artifact_id from $file..."
+                curl -sf -X POST \
+                  "$REGISTRY_URL/groups/$GROUP_ID/artifacts?ifExists=FIND_OR_CREATE_VERSION&canonical=true" \
+                  -H "Content-Type: application/json" \
+                  --data "$body"
+                echo
+              }
+
+              register "reservation-requested-value" /schemas/reservation-requested.schema.json
+              register "reservation-result-value"    /schemas/reservation-result.schema.json
+          volumeMounts:
+            - name: schemas
+              mountPath: /schemas
+              readOnly: true
+      volumes:
+        - name: schemas
+          configMap:
+            name: {{ .Values.kafka.metadata.name }}-schemas
