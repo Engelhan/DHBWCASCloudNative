@@ -79,10 +79,19 @@ sowohl "bereits belegt" als auch "unbekannter Sitzplatz" ab, siehe `internal/boo
 Eingangsereignis trägt nur `event_id`, kein lesbarer Name, und ein zusätzlicher DB-Lookup dafür
 stand nicht im Scope dieser ersten Implementierung.
 
+**Wire-Format seit der Apicurio-Integration:** beide Message-`Value`s sind nicht mehr reines
+JSON, sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId`
++ das jeweilige JSON als Payload. Die kanonischen Schemas (JSON Schema, identisch zu den obigen
+Contracts) liegen unter `charts/ticketflow/files/schemas/` und werden bei jedem Helm-Sync in
+Apicurio Registry (`charts/apicurio`) registriert; `reservation-worker` validiert lokal dagegen
+(embedded, siehe `internal/schemareg`) - kein Registry-Roundtrip pro Nachricht. Siehe
+`charts/README.md` ## apicurio für Details/offene Punkte.
+
 ## Datenbankschema
 
-`internal/migrate` wendet beim Start eingebettete SQL-Dateien aus `internal/migrate/sql/`
-gegen `DATABASE_URL` an (Reihenfolge nach Dateiname, je Datei eine Transaktion, Fortschritt in
+`internal/migrate` wendet beim Start eingebettete SQL-Dateien aus `internal/migrate/sql/` gegen
+die aus `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_SSLMODE`/`DB_USER`/`DB_PASSWORD` zusammengesetzte
+Connection-String an (Reihenfolge nach Dateiname, je Datei eine Transaktion, Fortschritt in
 einer `schema_migrations`-Tabelle) – das ist die "DB Schema aufbauen und über Applikation
 versionieren"-Aufgabe. `0001_init.sql` legt `events`/`seats`/`reservations` an (identisches
 Schema zu [`local/postgres/init.sql`](../../local/postgres/init.sql), dem reinen
@@ -99,23 +108,30 @@ gelesen. Die Demo-Seed-Daten (`demo-konzert` + Sitzplan) kommen weiterhin nur au
 
 | Variable | Quelle | Bedeutung |
 |---|---|---|
-| `DATABASE_URL` | Secret | Connection-String zum CNPG-Cluster |
+| `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres (z.B. `<cluster>-rw.<namespace>.svc`) |
+| `DB_PORT` | ConfigMap | Postgres-Port, Default `5432` |
+| `DB_NAME` | ConfigMap | Datenbankname |
+| `DB_SSLMODE` | ConfigMap | z.B. `disable` (lokal) / `require` (Cluster) |
+| `DB_USER` | Secret | Postgres-Benutzername |
+| `DB_PASSWORD` | Secret | Postgres-Passwort |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Eingangstopic für `ReservationRequested` |
 | `RESULT_TOPIC` | ConfigMap | Kafka-Ausgangstopic für `ReservationConfirmed`/`ReservationRejected` |
 | `CONSUMER_GROUP` | ConfigMap | Kafka-Consumer-Group-ID (Grundlage für KEDA-Lag-Metrik) |
 | `PROCESS_MAX_RETRIES` | ConfigMap | Anzahl Verarbeitungsversuche (DB-Transaktion + Publish) vor Aufgabe, Default `3` |
 | `PROCESS_RETRY_BACKOFF` | ConfigMap | Wartezeit zwischen Versuchen, Default `2s` |
+| `REGISTRY_URL` | ConfigMap | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
+| `REGISTRY_GROUP_ID` | ConfigMap | Registry-Group, Default `ticketflow` |
 | `LOG_LEVEL` | ConfigMap | z.B. `info` |
 | `HTTP_ADDR` | ConfigMap | Adresse für `/metrics`, `/healthz`, `/readyz`, Default `:8080` |
 
-Offen und **nicht** Teil dieses Charts (siehe [`charts/README.md`](../../charts/README.md)
-## `reservation-worker`): wie `DATABASE_URL` zur Deploy-Zeit konkret befüllt wird –
-`charts/postgres-cluster` legt aktuell nur ein `username`/`password`-Secret im Namespace
-`application` an, kein fertiges `DATABASE_URL`, und dieser Service liegt (wie
-`charts/ticketflow`) im Namespace `ticketflow`. Cross-Namespace-Secret-Zugriff ist in
-Kubernetes nicht direkt möglich; bis das geklärt ist, bleibt `DATABASE_URL` ein manuell zu
-befüllender Secret-Platzhalter (siehe `charts/reservation-worker/values.yaml`).
+`reservation-worker` baut den Postgres-Connection-String selbst aus diesen Einzelteilen zusammen
+(Team-Entscheidung, gleiches Muster wie `catalog-api`, siehe dessen README ## Konfiguration),
+statt ein fertiges `DATABASE_URL`-Secret zu erwarten. `DB_USER`/`DB_PASSWORD` kommen aus einem
+vom Chart selbst angelegten Secret (`charts/reservation-worker/templates/secret.yaml`,
+`CHANGE_ME`-Platzhalter, echte Werte via `--set`/`--set-file` zur Deploy-Zeit – müssen mit
+`charts/postgres-cluster` `values.yaml` `database.owner`/`.password` übereinstimmen, gleiches
+Muster wie `charts/notification-worker` und `charts/ticketflow-app`).
 
 ## Lokal starten
 

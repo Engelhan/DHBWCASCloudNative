@@ -33,7 +33,7 @@ func main() {
 	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelConnect()
 
-	database, err := db.Connect(connectCtx, cfg.DatabaseURL)
+	database, err := db.Connect(connectCtx, cfg.DatabaseURL())
 	if err != nil {
 		logger.Error("connect to database failed", "error", err)
 		os.Exit(1)

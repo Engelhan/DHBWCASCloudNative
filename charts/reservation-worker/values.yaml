@@ -51,21 +51,25 @@ config:
   logLevel: "info"
   httpAddr: ":8080"
 
-secret:
-  create: true # false = ein extern (z.B. External Secret) bereitgestelltes Secret gleichen Namens wird erwartet
-  # Platzhalter-Struktur; echter Wert via --set/--set-file/External Secret zur Deploy-Zeit, nie im
-  # Repo committen (gleiches Muster wie charts/notification-worker/values.yaml).
-  #
-  # NICHT final geloest: charts/postgres-cluster legt nur ein username/password-Secret im
-  # Namespace "application" an (siehe dessen postgres-user-secret.yaml), kein fertiges
-  # DATABASE_URL, und dieser Chart deployt (wie charts/ticketflow) in den Namespace "ticketflow" -
-  # Secrets sind in Kubernetes nicht Namespace-uebergreifend referenzierbar. Bis das (z.B. per
-  # External Secret oder einer gemeinsamen Namespace-Entscheidung) geklaert ist, bleibt dies ein
-  # bewusst falscher Platzhalter (kein echter Deploy-Wert) statt eines leeren Strings, damit die
-  # Application syncen kann, aber sichtbar Degraded bleibt (DB-Connect-Fehler) statt unbemerkt
-  # gruen mit falschen Daten zu laufen - via --set/--set-file/External Secret zur Deploy-Zeit
-  # ersetzen, nie einen echten Wert hier committen.
-  databaseUrl: "REPLACE-ME-cross-namespace-secret-unresolved"
+# Anwendung baut den Connection-String selbst aus Host/Port/Name (hier, ConfigMap) +
+# Username/Passwort (Secret unten) zusammen - gleiches Muster wie charts/ticketflow-app
+# catalogApi.database, CNPG (charts/postgres-cluster) liefert ohnehin nur username/password
+# getrennt, kein fertiges DATABASE_URL.
+database:
+  host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
+  port: "5432"
+  name: "postgres"
+  sslMode: "require"
+
+# Chart legt das Secret selbst an (Niklas' Vorgabe, analog zu charts/notification-worker/
+# templates/secret.yaml und charts/ticketflow-app catalogApi.databaseSecret - kein externes
+# Copy-Skript mehr). Platzhalter-Struktur; echte Werte via --set/--set-file zur Deploy-Zeit, nie
+# im Repo committen. Muss mit charts/postgres-cluster values.yaml database.owner/.password
+# uebereinstimmen.
+databaseSecret:
+  create: true
+  username: "CHANGE_ME"
+  password: "CHANGE_ME"
 
 # PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (reiner
 # Kafka-Consumer, Kubelet-Probes gehen direkt an den Pod), daher auch keine eigene

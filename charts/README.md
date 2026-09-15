@@ -43,24 +43,27 @@ gegenzuprüfen.
 [`reservation-worker/`](reservation-worker/) ist der zweite vollständig implementierte Service,
 analog zu `notification-worker` als eigener Chart (Deployment, ConfigMap, Secret,
 PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigenes
-`values.schema.json`). Zwei Abweichungen von dessen Vorlage: `replicaCount: 1` statt `3`
-(`PodDisruptionBudget` daher default `enabled: false`) — der Service wird künftig von KEDA auf
-Kafka-Consumer-Lag skaliert (P6, `gitops/apps/keda.yaml` existiert noch nicht), ein hoher
-statischer Default wäre vor dessen Einführung irreführend; und ein zusätzliches
-`DATABASE_URL`-Secret-Feld, weil der Service (anders als `notification-worker`) transaktional in
-CNPG-Postgres schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
+`values.schema.json`) — deployt via `gitops/apps/reservation-worker.yaml`. Abweichungen von
+`notification-worker`s Vorlage: `replicaCount: 1` statt `3` (`PodDisruptionBudget` daher default
+`enabled: false`) — der Service wird künftig von KEDA auf Kafka-Consumer-Lag skaliert (P6,
+`gitops/apps/keda.yaml` existiert noch nicht), ein hoher statischer Default wäre vor dessen
+Einführung irreführend; und ein zusätzliches `database`/`databaseSecret`-Wertepaar statt
+`notification-worker`s SMTP/TLS-Secret-Feldern, weil der Service transaktional in CNPG-Postgres
+schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 
-**Offener Punkt, noch nicht gelöst:** `charts/postgres-cluster` legt nur ein
-`username`/`password`-`Secret` im Namespace `application` an (siehe dessen
-`postgres-user-secret.yaml`), kein fertiges `DATABASE_URL`. `reservation-worker` liegt (wie
-`charts/ticketflow`) im Namespace `ticketflow` — Kubernetes-`Secret`s sind nicht
-Namespace-übergreifend referenzierbar, ein direkter `secretKeyRef` auf das
-Postgres-User-`Secret` funktioniert also nicht. Bis das geklärt ist (z.B. External Secret, oder
-eine gemeinsame Namespace-Entscheidung mit `postgres-cluster`), bleibt
-`secret.databaseUrl` ein manuell zu befüllender Platzhalter, genau wie
-`notification-worker`s SMTP/TLS-Secrets. Ebenfalls noch **kein**
-`gitops/apps/reservation-worker.yaml` — gleicher "chart-fertig, noch nicht deployt"-Zustand wie
-bei `notification-worker`.
+**Postgres-Anbindung (gelöst, 2026-09-15):** `charts/postgres-cluster` legt nur ein
+`username`/`password`-`Secret` im Namespace `application` an, kein fertiges `DATABASE_URL`, und
+`reservation-worker` liegt (wie `charts/ticketflow-app`) im Namespace `ticketflow` —
+Kubernetes-`Secret`s sind nicht Namespace-übergreifend referenzierbar. Gelöst nach demselben
+Muster wie `catalog-api`/`notification-worker` (Niklas' Vorgabe, siehe deren Chart-Kommentare):
+der Chart legt sein Postgres-Credentials-`Secret` **selbst** an
+(`templates/secret.yaml`, `databaseSecret.{create,username,password}`, `CHANGE_ME`-Platzhalter,
+echte Werte via `--set`/`--set-file` – müssen mit `charts/postgres-cluster` `values.yaml`
+`database.owner`/`.password` übereinstimmen), statt ein extern kopiertes Secret zu referenzieren.
+Die Anwendung baut ihren Connection-String selbst aus `database.{host,port,name,sslMode}`
+(ConfigMap) + diesem Secret zusammen (Keys `username`/`password`, explizit auf `DB_USER`/
+`DB_PASSWORD` gemappt statt per `envFrom`, da die Schlüsselnamen nicht zu den erwarteten
+Env-Var-Namen passen).
 
 ## Addon-Charts
 

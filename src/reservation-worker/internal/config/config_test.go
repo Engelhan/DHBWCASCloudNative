@@ -4,7 +4,10 @@ import "testing"
 
 func baseEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/ticketflow")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_NAME", "ticketflow")
+	t.Setenv("DB_USER", "user")
+	t.Setenv("DB_PASSWORD", "pass")
 	t.Setenv("KAFKA_BROKERS", "broker-1:9092,broker-2:9092")
 	t.Setenv("RESERVATION_TOPIC", "reservation-requested")
 	t.Setenv("RESULT_TOPIC", "reservation-result")
@@ -35,11 +38,28 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.ProcessRetryBackoff.String() != "2s" {
 		t.Errorf("ProcessRetryBackoff = %s, want 2s", cfg.ProcessRetryBackoff)
 	}
+	if cfg.DBPort != "5432" {
+		t.Errorf("DBPort = %q, want %q", cfg.DBPort, "5432")
+	}
+	if cfg.DBSSLMode != "disable" {
+		t.Errorf("DBSSLMode = %q, want %q", cfg.DBSSLMode, "disable")
+	}
+}
+
+func TestDatabaseURL(t *testing.T) {
+	cfg := Config{
+		DBHost: "db.example", DBPort: "5432", DBName: "ticketflow",
+		DBUser: "user", DBPassword: "p@ss/word", DBSSLMode: "require",
+	}
+	want := "postgres://user:p%40ss%2Fword@db.example:5432/ticketflow?sslmode=require"
+	if got := cfg.DatabaseURL(); got != want {
+		t.Errorf("DatabaseURL() = %q, want %q", got, want)
+	}
 }
 
 func TestLoad_MissingRequired(t *testing.T) {
 	tests := []string{
-		"DATABASE_URL", "KAFKA_BROKERS", "RESERVATION_TOPIC", "RESULT_TOPIC", "CONSUMER_GROUP", "REGISTRY_URL",
+		"DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "KAFKA_BROKERS", "RESERVATION_TOPIC", "RESULT_TOPIC", "CONSUMER_GROUP", "REGISTRY_URL",
 	}
 
 	for _, missing := range tests {

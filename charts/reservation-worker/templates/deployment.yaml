@@ -29,8 +29,20 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "reservation-worker.fullname" . }}
-            - secretRef:
-                name: {{ include "reservation-worker.fullname" . }}
+          env:
+            # Aus dem chart-eigenen Secret (templates/secret.yaml) - Keys "username"/"password",
+            # deshalb explizit gemappt statt per envFrom (das wuerde Env-Vars "username"/
+            # "password" statt "DB_USER"/"DB_PASSWORD" erzeugen).
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "reservation-worker.fullname" . }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "reservation-worker.fullname" . }}
+                  key: password
           livenessProbe:
             httpGet:
               path: /healthz

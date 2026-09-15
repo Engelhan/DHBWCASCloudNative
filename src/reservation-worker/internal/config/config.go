@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -12,7 +13,17 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
+	// DB_HOST/DB_PORT/DB_NAME/DB_SSLMODE come from a ConfigMap, DB_USER/DB_PASSWORD from a
+	// Secret -- CNPG (charts/postgres-cluster) only provides a username/password Secret, not a
+	// pre-built connection string, so the application builds it itself (same team decision as
+	// catalog-api's buildDatabaseURL, see its main.go). Kept as separate fields + a DatabaseURL()
+	// method rather than a single DATABASE_URL env var so the construction is unit-testable here.
+	DBHost     string
+	DBPort     string
+	DBName     string
+	DBSSLMode  string
+	DBUser     string
+	DBPassword string
 
 	KafkaBrokers     []string
 	ReservationTopic string
@@ -37,7 +48,12 @@ type Config struct {
 // incomplete configuration fail confusingly later at runtime.
 func Load() (Config, error) {
 	cfg := Config{
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		DBHost:           os.Getenv("DB_HOST"),
+		DBPort:           getenvDefault("DB_PORT", "5432"),
+		DBName:           os.Getenv("DB_NAME"),
+		DBSSLMode:        getenvDefault("DB_SSLMODE", "disable"),
+		DBUser:           os.Getenv("DB_USER"),
+		DBPassword:       os.Getenv("DB_PASSWORD"),
 		ReservationTopic: os.Getenv("RESERVATION_TOPIC"),
 		ResultTopic:      os.Getenv("RESULT_TOPIC"),
 		ConsumerGroup:    os.Getenv("CONSUMER_GROUP"),
@@ -70,8 +86,17 @@ func Load() (Config, error) {
 }
 
 func (c Config) validate() error {
-	if c.DatabaseURL == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+	if c.DBHost == "" {
+		return fmt.Errorf("DB_HOST is required")
+	}
+	if c.DBName == "" {
+		return fmt.Errorf("DB_NAME is required")
+	}
+	if c.DBUser == "" {
+		return fmt.Errorf("DB_USER is required")
+	}
+	if c.DBPassword == "" {
+		return fmt.Errorf("DB_PASSWORD is required")
 	}
 	if len(c.KafkaBrokers) == 0 {
 		return fmt.Errorf("KAFKA_BROKERS is required")
@@ -92,6 +117,20 @@ func (c Config) validate() error {
 		return fmt.Errorf("PROCESS_MAX_RETRIES must be >= 0")
 	}
 	return nil
+}
+
+// DatabaseURL builds the Postgres connection string from the separate host/port/name/user/
+// password/sslmode fields. See the Config struct doc for why it's built here instead of read
+// from a single DATABASE_URL env var.
+func (c Config) DatabaseURL() string {
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.DBUser, c.DBPassword),
+		Host:     fmt.Sprintf("%s:%s", c.DBHost, c.DBPort),
+		Path:     "/" + c.DBName,
+		RawQuery: "sslmode=" + c.DBSSLMode,
+	}
+	return u.String()
 }
 
 func getenvDefault(key, def string) string {
