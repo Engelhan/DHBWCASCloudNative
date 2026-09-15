@@ -5,27 +5,36 @@ import (
 	"context"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// Pinger is satisfied by *schemareg.Client.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
 
 type Server struct {
 	httpServer *http.Server
 }
 
 // New builds the server. ready reflects Kafka broker reachability (see
-// internal/kafkaconsumer) and drives /readyz; /healthz is a plain liveness
-// check independent of Kafka state, since there may legitimately be no
-// Kafka traffic for long stretches until reservation-worker exists.
-func New(addr string, ready *atomic.Bool) *Server {
+// internal/kafkaconsumer); schema additionally reflects the schema-registry client's resolved
+// state (see internal/schemareg) -- both must be ready for /readyz to report ready. /healthz is a
+// plain liveness check independent of either, since there may legitimately be no Kafka traffic
+// for long stretches until reservation-worker exists.
+func New(addr string, ready *atomic.Bool, schema Pinger) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if ready.Load() {
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if ready.Load() && schema.Ping(ctx) == nil {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
 			return

@@ -23,12 +23,14 @@
     },
     "config": {
       "type": "object",
-      "required": ["kafkaBrokers", "resultTopic", "consumerGroup"],
+      "required": ["kafkaBrokers", "resultTopic", "consumerGroup", "registryUrl"],
       "properties": {
         "kafkaBrokers": { "type": "string", "minLength": 1 },
         "resultTopic": { "type": "string", "minLength": 1 },
         "consumerGroup": { "type": "string", "minLength": 1 },
         "notifyMaxRetries": { "type": "integer", "minimum": 0 },
+        "registryUrl": { "type": "string", "minLength": 1 },
+        "registryGroupId": { "type": "string", "minLength": 1 },
         "kafkaTls": {
           "type": "object",
           "properties": {
