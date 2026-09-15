@@ -546,24 +546,32 @@ commands here once these gaps close instead of leaving this section stale.
   would need to hand-edit these two `image.repository` values, unlike everything personalize.py
   already rewrites.
 - **Done, deliberately kept red in ArgoCD:** `gitops/apps/reservation-worker.yaml`
-  (`automated`/`selfHeal`, namespace `ticketflow`, inline `helm.values` — no `values-dev.yaml`/
-  `values-prod.yaml` split for this chart, unlike `charts/ticketflow`). `config.kafkaBrokers` and
-  `image.repository` are now real values (Strimzi bootstrap service, ghcr.io path — see
-  `build-images.yml` above); `image.tag` and `secret.databaseUrl` are still intentionally wrong
-  placeholder strings (`REPLACE-ME-*`), not real values, because both underlying gaps are still
-  open: no `build-images.yml` run has completed yet (no real git-short-sha tag exists to point
-  at), and `charts/postgres-cluster`'s DB secret lives in namespace `application` while this
-  deploys into `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same gap
-  documented in `charts/reservation-worker/values.yaml`). The Application will sync but stay
-  Degraded (`ImagePullBackOff`/DB-connect failure) until both are replaced with real values (e.g.
-  `argocd app set reservation-worker --helm-set ...`, then commit) — chosen deliberately over
-  *not* creating the Application (as was done for `notification-worker`) so the gap stays visible
-  in the ArgoCD UI instead of silently postponed. `helm lint`/`template` with the exact same
-  override values as the Application's inline `helm.values` verified locally 2026-09-14 (once
-  Docker was available) — renders cleanly, `image.repository` resolves to the real
-  `ghcr.io/engelhan/ticketflow-reservation-worker` path with the placeholder tag appended as
-  expected. Also confirmed `docker build src/reservation-worker` succeeds locally, de-risking
-  tomorrow's first real `build-images.yml` run against this Dockerfile.
+  (`automated`/`selfHeal`, namespace `ticketflow`, no `helm.values` override — no `values-dev.yaml`/
+  `values-prod.yaml` split for this chart either, unlike `charts/ticketflow`; all values come from
+  `charts/reservation-worker/values.yaml` defaults directly). `image.repository`/`image.tag`/
+  `config.kafkaBrokers` are now real values (ghcr.io path + a real, ghcr.io-verified git-short-sha
+  tag from a completed `build-images.yml` run, Strimzi bootstrap service — see `build-images.yml`
+  above); `secret.databaseUrl` is still an intentionally wrong placeholder string
+  (`REPLACE-ME-*`), not a real value, because the underlying gap is still open:
+  `charts/postgres-cluster`'s DB secret lives in namespace `application` while this deploys into
+  `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same gap documented in
+  `charts/reservation-worker/values.yaml`). **Real incident, 2026-09-15:** an earlier commit
+  removed the (then-still-needed) inline `helm.values` block from the Application without also
+  moving those values into the chart's own `values.yaml` — since `values.schema.json` requires
+  `config.kafkaBrokers`/`secret.databaseUrl` non-empty (and forbids `image.tag: latest`), `helm
+  template` failed schema validation entirely, so ArgoCD couldn't generate any manifest at all
+  (sync status `Unknown`, `ComparisonError` in `status.conditions`) — the ArgoCD UI's generic
+  fallback for that state is the misleading "revision main must be resolved" message, which is
+  *not* an actual git/repo-resolution problem. Fixed by keeping the placeholder/real values as
+  chart-level defaults in `values.yaml` instead of Application-level overrides. The Application
+  will sync but stay Degraded (DB-connect failure) until `secret.databaseUrl` is replaced with a
+  real value (e.g. via an External Secret, then committed) — chosen deliberately over *not*
+  creating the Application (as was done for `notification-worker`) so the gap stays visible in the
+  ArgoCD UI instead of silently postponed. `helm lint`/`template` against `values.yaml`'s current
+  defaults verified locally 2026-09-14/15 — renders cleanly, `image.repository`/`image.tag`
+  resolve to the real `ghcr.io/engelhan/ticketflow-reservation-worker:a0acfac6` image, only
+  `secret.databaseUrl` still fails intentionally-postponed-secret expectations. Also confirmed
+  `docker build src/reservation-worker` succeeds locally.
 - **Done, `helm lint`/`template` clean, full local end-to-end verified via `docker compose`
   against a real Apicurio instance — not yet live on a cluster (no cluster available):** Apicurio
   Registry integration (full wire-format scope, decided 2026-09-15 — see memory

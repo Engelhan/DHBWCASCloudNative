@@ -37,7 +37,8 @@ securityContext:
     drop: ["ALL"]
 
 config:
-  kafkaBrokers: "" # Pflicht, z.B. "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+  # Echter Wert: Strimzi-Bootstrap-Service aus charts/ticketflow, gleicher Namespace "ticketflow".
+  kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
   reservationTopic: "reservation-requested"
   resultTopic: "reservation-result"
   consumerGroup: "reservation-worker"
@@ -59,9 +60,12 @@ secret:
   # Namespace "application" an (siehe dessen postgres-user-secret.yaml), kein fertiges
   # DATABASE_URL, und dieser Chart deployt (wie charts/ticketflow) in den Namespace "ticketflow" -
   # Secrets sind in Kubernetes nicht Namespace-uebergreifend referenzierbar. Bis das (z.B. per
-  # External Secret oder einer gemeinsamen Namespace-Entscheidung) geklaert ist, muss
-  # databaseUrl hier manuell zur Deploy-Zeit gesetzt werden.
-  databaseUrl: ""
+  # External Secret oder einer gemeinsamen Namespace-Entscheidung) geklaert ist, bleibt dies ein
+  # bewusst falscher Platzhalter (kein echter Deploy-Wert) statt eines leeren Strings, damit die
+  # Application syncen kann, aber sichtbar Degraded bleibt (DB-Connect-Fehler) statt unbemerkt
+  # gruen mit falschen Daten zu laufen - via --set/--set-file/External Secret zur Deploy-Zeit
+  # ersetzen, nie einen echten Wert hier committen.
+  databaseUrl: "REPLACE-ME-cross-namespace-secret-unresolved"
 
 # PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (reiner
 # Kafka-Consumer, Kubelet-Probes gehen direkt an den Pod), daher auch keine eigene
