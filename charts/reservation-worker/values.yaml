@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/engelhan/ticketflow-reservation-worker # siehe .github/workflows/build-images.yml
-  tag: "" # Pflichtfeld beim Deploy (Git-Short-SHA aus build-images.yml, kein Default, nie :latest, siehe P3)
+  tag: "latest" # Pflichtfeld beim Deploy (Git-Short-SHA aus build-images.yml, kein Default, nie :latest, siehe P3)
   pullPolicy: IfNotPresent
 
 # Statischer Default fuer jetzt - der eigentliche Skalierungs-Trigger (KEDA auf

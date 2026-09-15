@@ -105,7 +105,7 @@ catalogApi:
     repository: ticketflow/catalog-api
     # Git-Short-SHA, wird beim Deploy gesetzt (--set catalogApi.image.tag=<sha>), siehe P3 -
     # kein :latest im Repo.
-    tag: ""
+    tag: "latest"
     pullPolicy: IfNotPresent
 
   service:
