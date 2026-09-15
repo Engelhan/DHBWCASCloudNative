@@ -24,7 +24,7 @@ catalogApi:
   replicas: 2
 
   image:
-    repository: ticketflow/catalog-api
+    repository: ghcr.io/engelhan/ticketflow-catalog-api
     # Git-Short-SHA, wird beim Deploy gesetzt (--set catalogApi.image.tag=<sha>), siehe P3 -
     # kein :latest im Repo.
     tag: "latest"
@@ -96,8 +96,8 @@ frontend:
   replicas: 2
 
   image:
-    repository: ticketflow/frontend
-    tag: ""
+    repository: ghcr.io/engelhan/ticketflow-frontend
+    tag: "latest"
     pullPolicy: IfNotPresent
 
   service:

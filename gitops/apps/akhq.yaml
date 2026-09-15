@@ -10,9 +10,8 @@
 # external-dns' "ingress"-Source (bereits in charts/external-dns/values.yaml aktiviert) traegt
 # den Host automatisch ein, sobald Traefik der Ingress eine LoadBalancer-Adresse zuweist.
 # Abgesichert per Basic-Auth (siehe charts/akhq/values.yaml secrets.akhq.security.basic-auth) -
-# das echte Passwort ist dort bewusst ein Platzhalter (CHANGE_ME), muss vor dem Sync per
-# --helm-set gesetzt werden, sonst bleibt der Login mit dem Platzhalter-Hash unbenutzbar (sicherer
-# Fehlschlag statt eines bekannten Default-Passworts).
+# Username "admin", Passwort siehe Kommentar dort (Lab-Zugangsdaten, bewusst direkt im Repo statt
+# per --helm-set, siehe dessen Begruendung).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
