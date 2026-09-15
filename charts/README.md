@@ -1,10 +1,10 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/), der `catalog-api` und
-`reservation-worker` (beide noch nicht implementiert) bündeln soll, dazu die
-CNPG-`Cluster`-Ressource und die Strimzi-`Kafka`-Ressource sowie zugehörige
-ConfigMaps/Secrets/ServiceMonitors/HPA-KEDA-Objekte. `notification-worker` ist bewusst **kein**
-Teil davon — es hat einen eigenen, standalone Chart, siehe unten.
+Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource
+(CNPG-`Cluster` folgt dort noch, siehe dessen `Chart.yaml`). `catalog-api`, `notification-worker`
+und `reservation-worker` sind bewusst **kein** Teil davon — jeder hat einen eigenen, standalone
+Chart nach demselben Muster, siehe unten (catalog-api-Chart existiert noch nicht,
+`notification-worker`/`reservation-worker` schon).
 
 ## `notification-worker` — eigenständiger Chart statt Teil des Umbrella-Charts
 
@@ -17,18 +17,46 @@ Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-con
 deutlich mehr rendert als die anderen Custom-Charts. Bewusst kein `Service` — es gibt keinen
 anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes gehen direkt an den
 Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
-Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als einziger
-Chart im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an das noch nicht
-begonnene `charts/ticketflow` gebunden, siehe root-README `## Entscheidungen` zu W1) sowie
-`replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
+Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als
+einer von zwei Charts im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an
+das noch nicht vollständige `charts/ticketflow` gebunden, siehe root-README `##
+Entscheidungen` zu W1) sowie `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
 `gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
-ArgoCD deployt.
+ArgoCD deployt. **Hinweis:** `values.yaml` → `config.resultTopic` default `"reservation-results"`
+(Plural) weicht vom tatsächlichen, per `charts/ticketflow` angelegten Kafka-Topic
+`reservation-result` (Singular, siehe `charts/ticketflow/values.yaml`) ab — noch nicht
+korrigiert/live relevant, da der Chart noch nicht deployt ist, aber vor dem ersten echten Deploy
+gegenzuprüfen.
+
+## `reservation-worker` — eigenständiger Chart, gleiches Muster wie `notification-worker`
+
+[`reservation-worker/`](reservation-worker/) ist der zweite vollständig implementierte Service,
+analog zu `notification-worker` als eigener Chart (Deployment, ConfigMap, Secret,
+PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigenes
+`values.schema.json`). Zwei Abweichungen von dessen Vorlage: `replicaCount: 1` statt `3`
+(`PodDisruptionBudget` daher default `enabled: false`) — der Service wird künftig von KEDA auf
+Kafka-Consumer-Lag skaliert (P6, `gitops/apps/keda.yaml` existiert noch nicht), ein hoher
+statischer Default wäre vor dessen Einführung irreführend; und ein zusätzliches
+`DATABASE_URL`-Secret-Feld, weil der Service (anders als `notification-worker`) transaktional in
+CNPG-Postgres schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
+
+**Offener Punkt, noch nicht gelöst:** `charts/postgres-cluster` legt nur ein
+`username`/`password`-`Secret` im Namespace `application` an (siehe dessen
+`postgres-user-secret.yaml`), kein fertiges `DATABASE_URL`. `reservation-worker` liegt (wie
+`charts/ticketflow`) im Namespace `ticketflow` — Kubernetes-`Secret`s sind nicht
+Namespace-übergreifend referenzierbar, ein direkter `secretKeyRef` auf das
+Postgres-User-`Secret` funktioniert also nicht. Bis das geklärt ist (z.B. External Secret, oder
+eine gemeinsame Namespace-Entscheidung mit `postgres-cluster`), bleibt
+`secret.databaseUrl` ein manuell zu befüllender Platzhalter, genau wie
+`notification-worker`s SMTP/TLS-Secrets. Ebenfalls noch **kein**
+`gitops/apps/reservation-worker.yaml` — gleicher "chart-fertig, noch nicht deployt"-Zustand wie
+bei `notification-worker`.
 
 ## Addon-Charts
 
 Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns, CNPG-Operator,
-Strimzi-Operator, kube-prometheus-stack, Loki, Tempo; künftig KEDA) liegen als **eigene, kleine
-Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
+Strimzi-Operator, kube-prometheus-stack, Loki, Tempo, AKHQ; künftig KEDA) liegen als **eigene,
+kleine Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
 [`../gitops/apps/`](../gitops/apps/), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
 auf den Upstream-Helm-Repo) – ein einheitliches Muster für alle Charts in diesem Repo statt zwei
 verschiedener (Application-inline-Values vs. lokaler Chart), und alle Werte landen sichtbar
@@ -39,7 +67,7 @@ Zwei Varianten:
 - **Wrapper um einen Upstream-Chart** ([`longhorn/`](longhorn/), [`cert-manager/`](cert-manager/),
   [`external-dns/`](external-dns/), [`cnpg-operator/`](cnpg-operator/),
   [`strimzi-operator/`](strimzi-operator/), [`kube-prometheus-stack/`](kube-prometheus-stack/),
-  [`loki/`](loki/), [`tempo/`](tempo/)): `Chart.yaml` deklariert den Upstream-Chart als
+  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/)): `Chart.yaml` deklariert den Upstream-Chart als
   `dependencies`-Eintrag (Name/Version/Repository), `values.yaml` reicht unsere Werte unter dem
   Dependency-Alias (z.B. `longhorn:`) durch. ArgoCD baut die Dependency beim Sync automatisch
   (`helm dependency build`) – kein `Chart.lock`/`charts/*.tgz` im Repo (gitignored, siehe
@@ -71,6 +99,50 @@ Lokal nachvollziehen/testen (kein Cluster nötig):
 helm dependency update charts/longhorn   # zieht den Upstream-Chart nach charts/longhorn/charts/
 helm template charts/longhorn
 ```
+
+## `apicurio` — volleigener Chart, kein Wrapper (ursprünglich anders geplant)
+
+[`apicurio/`](apicurio/) deployt Apicurio Registry (JSON-Schema-Registry für die
+Kafka-Event-Contracts `ReservationRequested`/`ReservationResult`, siehe
+`ticketflow/files/schemas/`). War ursprünglich als neunter Wrapper-Chart um
+`eshepelyuk/apicurio-registry-helm` (`oci://ghcr.io/eshepelyuk/helm/apicurio-registry`) geplant —
+dasselbe Muster wie unten. Dessen ghcr.io-OCI-Paket liefert aber **403 Forbidden** auf jeden
+anonymen Pull-Versuch (verifiziert sowohl über `docker run ... helm dependency update` als auch
+direkt gegen `https://ghcr.io/token?...`; ghcr.io selbst ist erreichbar, ein anderes, unabhängiges
+Paket dort liefert 200), vermutlich eine Folge von dessen Archivierung am 2024-11-13 — das Paket
+ist offenbar nicht mehr öffentlich, nicht nur unmaintained. Keine der geprüften Alternativen
+(`apicurio.github.io/apicurio-registry-helm-chart` → 404, `touk/apicurio-registry` → erreichbar,
+aber noch veralteter, appVersion max. `2.2.5.Final`, letztes Update 2022) war brauchbar; der
+offizielle Weg wäre der Apicurio-Registry-Operator, der aber OLM voraussetzt — ein in diesem
+Projekt bewusst nicht genutzter Mechanismus (CNPG/Strimzi installieren beide über reine
+Helm-Charts, siehe oben). Deshalb: volleigener, schlanker Chart (Deployment/Service/ConfigMap,
+`_helpers.tpl`, kein `values.schema.json` – Umfang zu klein), analog zu
+[`cert-manager-config/`](cert-manager-config/)/[`argocd-ingress/`](argocd-ingress/) oben, nicht zu
+den App-Charts (`notification-worker`/`reservation-worker`) mit ihren fünf Ressourcen.
+
+**Zusätzlicher Fallstrick, der die Wrapper-Idee ohnehin erschwert hätte:** der
+`eshepelyuk`-Chart ist für Apicurio Registry **2.x** gebaut, nicht 3.x — sein
+`registry.image.persistenceSuffix`-Mechanismus hängt dem Image-*Repository* (nicht dem Tag) einen
+Storage-Suffix an (`-kafkasql`/`-sql`/`-mem`, siehe dessen `_helpers.tpl`), weil 2.x pro
+Storage-Variante ein eigenes Image veröffentlichte; die `registry.kafka`/`registry.sql`-Value-Blöcke
+setzen entsprechend 2.x-Variablennamen (`KAFKA_BOOTSTRAP_SERVERS`, `REGISTRY_DATASOURCE_URL`).
+Apicurio 3.x ist dagegen **ein** Image für alle Storage-Varianten, Auswahl über
+`APICURIO_STORAGE_KIND`/`APICURIO_KAFKASQL_BOOTSTRAP_SERVERS` (verifiziert gegen die
+3.1.x-Doku "Installing Apicurio Registry using Docker") — selbst mit einem funktionierenden
+ghcr.io-Zugriff hätte der Wrapper diese Variablen von Hand über `extraEnv` setzen und
+`persistenceSuffix: false` erzwingen müssen. Der jetzige eigene Chart setzt sie direkt (siehe
+`apicurio/values.yaml` → `config.storageKind`/`config.kafkaBootstrapServers`, gerendert in
+`templates/configmap.yaml`).
+
+Storage-Backend: `kafkasql` (Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer
+eigenen Postgres-Instanz) — vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die
+aktuell `reservation-worker`s echten Deploy blockiert (siehe oben). Kein bestätigter
+Health-Endpoint für 3.x gefunden (evtl. separater Management-Port statt 8080) — Liveness-/
+Readiness-Probes nutzen deshalb die echte REST-API (`GET /apis/registry/v3/groups`) statt eines
+geratenen Health-Pfads; dieselbe Begründung gilt für die Wartelogik im
+`schema-registrar`-Job in `ticketflow/templates/schema-registry/`. Noch **kein**
+`gitops/apps/apicurio.yaml`-Sync live verifiziert (kein Cluster verfügbar) — `helm lint`/
+`template` lokal sauber.
 
 ## Resource-Limits, Security-Context, NetworkPolicy
 

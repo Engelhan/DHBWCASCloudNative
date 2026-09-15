@@ -18,6 +18,7 @@ import (
 	"ticketflow/notification-worker/internal/kafkaconsumer"
 	"ticketflow/notification-worker/internal/kafkatls"
 	"ticketflow/notification-worker/internal/notify"
+	"ticketflow/notification-worker/internal/schemareg"
 	"ticketflow/notification-worker/internal/server"
 )
 
@@ -44,9 +45,27 @@ func main() {
 		dispatcher = notify.NewDispatcher(logFallback, notify.ChannelLog)
 	}
 
+	schema, err := schemareg.New(schemareg.Config{
+		BaseURL:    cfg.RegistryURL,
+		GroupID:    cfg.RegistryGroupID,
+		ArtifactID: "reservation-result-value",
+		Logger:     logger,
+	}, schemareg.ResultSchemaJSON)
+	if err != nil {
+		logger.Error("compile embedded reservation-result schema failed", "error", err)
+		os.Exit(1)
+	}
+	resolveCtx, cancelResolve := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := schema.Resolve(resolveCtx); err != nil {
+		cancelResolve()
+		logger.Error("resolve reservation-result schema globalId failed", "error", err)
+		os.Exit(1)
+	}
+	cancelResolve()
+
 	var ready atomic.Bool
-	srv := server.New(cfg.HTTPAddr, &ready)
-	consumer := kafkaconsumer.New(cfg, tlsConfig, dispatcher, logFallback, logger, &ready)
+	srv := server.New(cfg.HTTPAddr, &ready, schema)
+	consumer := kafkaconsumer.New(cfg, tlsConfig, dispatcher, logFallback, schema, logger, &ready)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

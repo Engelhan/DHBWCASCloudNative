@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+
+	"ticketflow/catalog-api/internal/schemareg"
 )
 
 // Requested ist der Entwurf des ReservationRequested-Payloads. Noch NICHT final mit dem
@@ -26,17 +28,19 @@ type Requested struct {
 type Producer struct {
 	writer      *kafka.Writer
 	firstBroker string
+	schema      *schemareg.Client
 }
 
-func NewProducer(brokers []string, topic string) *Producer {
+func NewProducer(brokers []string, topic string, schema *schemareg.Client) *Producer {
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(brokers...),
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{}, // Key = seat_id: Nachrichten zum selben Sitzplatz bleiben geordnet
-			AllowAutoTopicCreation: true,           // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
+			AllowAutoTopicCreation: true,          // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
 		},
 		firstBroker: brokers[0],
+		schema:      schema,
 	}
 }
 
@@ -54,9 +58,13 @@ func (p *Producer) PublishReservationRequested(ctx context.Context, req Requeste
 	if err != nil {
 		return err
 	}
+	framed, err := p.schema.Wrap(value)
+	if err != nil {
+		return err
+	}
 	return p.writer.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(req.SeatID),
-		Value: value,
+		Value: framed,
 	})
 }
 

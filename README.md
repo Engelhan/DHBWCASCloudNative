@@ -201,9 +201,10 @@ docker compose down -v
 ```
 
 Postgres/Kafka laufen dabei als lokale Stand-ins für CNPG/Strimzi (Seed-Daten aus
-`local/postgres/init.sql`). `reservation-worker` existiert noch nicht, daher bleibt jede Buchung
-lokal auf Status `pending` stehen (`GET /reservations/{id}`) — die Kafka-Message
-(`ReservationRequested`) wird trotzdem korrekt publiziert und lässt sich prüfen:
+`local/postgres/init.sql`). `reservation-worker` läuft im selben Compose-Stack mit (baut sein
+eigenes DB-Schema beim Start über versionierte Migrationen auf, siehe
+`src/reservation-worker/README.md`) und verarbeitet die Buchung bis `confirmed`/`rejected` durch
+— die Kafka-Message (`ReservationRequested`) lässt sich trotzdem direkt prüfen:
 
 ```bash
 docker exec $(docker compose ps -q kafka) /opt/kafka/bin/kafka-console-consumer.sh \

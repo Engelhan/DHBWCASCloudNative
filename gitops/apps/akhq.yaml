@@ -1,0 +1,35 @@
+---
+# AKHQ (Kafka-Web-UI), Carlos' Scope - siehe CLAUDE.md ## Team, charts/akhq/values.yaml. Liegt im
+# Namespace "kafka" (zusammen mit dem Strimzi-Operator, siehe strimzi-operator.yaml) statt
+# "ticketflow" - AKHQ ist Kafka-Plattform-Tooling, kein Teil der TicketFlow-Anwendung selbst;
+# Cross-Namespace-Zugriff auf den Bootstrap-Service in "ticketflow" ist unproblematisch (nur
+# Secrets, nicht Services, sind in Kubernetes nicht Namespace-uebergreifend referenzierbar).
+#
+# Oeffentlich erreichbar unter akhq.<zone> via Standard-Ingress + cert-manager (einfacher als
+# der ArgoCD-Ingress: AKHQ spricht normales HTTP, kein TLS-Passthrough/IngressRouteTCP noetig) -
+# external-dns' "ingress"-Source (bereits in charts/external-dns/values.yaml aktiviert) traegt
+# den Host automatisch ein, sobald Traefik der Ingress eine LoadBalancer-Adresse zuweist.
+# Abgesichert per Basic-Auth (siehe charts/akhq/values.yaml secrets.akhq.security.basic-auth) -
+# das echte Passwort ist dort bewusst ein Platzhalter (CHANGE_ME), muss vor dem Sync per
+# --helm-set gesetzt werden, sonst bleibt der Login mit dem Platzhalter-Hash unbenutzbar (sicherer
+# Fehlschlag statt eines bekannten Default-Passworts).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: akhq
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/akhq
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

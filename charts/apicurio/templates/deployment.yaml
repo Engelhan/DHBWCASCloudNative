@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "apicurio.fullname" . }}
+  labels:
+    {{- include "apicurio.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "apicurio.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "apicurio.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: apicurio-registry
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "apicurio.fullname" . }}
+          # Kein dediziertes Health-Endpoint in der 3.x-Doku bestaetigt (moeglicherweise auf
+          # einem separaten Management-Port statt 8080, siehe charts/README.md). Nutzt
+          # stattdessen die echte, immer erreichbare REST-API selbst als Probe - dieselbe
+          # Begruendung wie der Wartelogik im schema-registrar-Job in charts/ticketflow.
+          livenessProbe:
+            httpGet:
+              path: /apis/registry/v3/groups
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /apis/registry/v3/groups
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

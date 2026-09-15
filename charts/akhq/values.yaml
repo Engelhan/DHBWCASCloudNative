@@ -1,0 +1,114 @@
+# AKHQ (https://akhq.io) - Web-UI fuer den Strimzi-Kafka-Cluster (Topics/Consumer-Groups/
+# Messages/Schema-Registry). Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
+# reservation-worker), siehe CLAUDE.md ## Team. Wrapper um den Upstream-Chart, gleiches Muster
+# wie die anderen Addon-Charts, siehe charts/README.md ## Addon-Charts.
+#
+# Muss unter dem Dependency-Alias "akhq" verschachtelt sein (siehe Chart.yaml), damit Helm die
+# Werte an den gewrappten Upstream-Chart durchreicht.
+akhq:
+  image:
+    tag: "0.28.0" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Chart-Default fuer beide ist {} (ungehaertet) - wie bei charts/strimzi-operator (siehe
+  # dessen values.yaml) explizit gesetzt statt uebernommen. readOnlyRootFilesystem bewusst NICHT
+  # gesetzt: unklar, ob/wohin AKHQ zur Laufzeit schreibt (kein Hinweis im Upstream-Chart/-Doku
+  # gefunden) - vor einem echten Deploy per `helm template` + laufendem Pod verifizieren, dann
+  # erst aktivieren (siehe charts/README.md ## Resource-Limits... zum selben Vorgehen bei Tempo).
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+  # Chart-Default ist bereits enabled: true, und templates/networkpolicy.yaml wurde gegengeprueft
+  # (podSelector korrekt auf die eigenen Pods verengt, kein "Loki-Bug" mit leerem Selector - siehe
+  # charts/README.md ## Resource-Limits...) - keine Aenderung noetig, nur zur Doku hier vermerkt.
+  networkPolicy:
+    enabled: true
+
+  # Nicht-sensible Konfiguration (landet in einem ConfigMap). RBAC-Rollen/-Gruppen an AKHQs
+  # eigenem application.example.yml angelehnt (https://github.com/tchiotludo/akhq/blob/dev/
+  # application.example.yml), aber bewusst NUR die *-read-Rollen uebernommen (keine
+  # */-admin-Rollen mit CREATE/UPDATE/DELETE) - root README.md ## Entscheidungen (B2) legt AKHQ
+  # explizit als "schreibgeschuetzt konfiguriert" fest (Topics/ACLs werden deklarativ ueber
+  # charts/ticketflow bzw. kuenftige KafkaUser-CRs verwaltet, nicht ad-hoc per UI). Kafka-Connect-
+  # Rollen (connect-admin/connect-cluster-read) komplett weggelassen - es existiert kein Kafka-
+  # Connect-Cluster in diesem Projekt. default-group auf eine leere Gruppe ("no-roles") statt
+  # "reader" wie fuer eingeloggte Nutzer, damit nicht eingeloggte Besucher:innen ueber die
+  # oeffentliche Ingress unten trotzdem NICHTS sehen.
+  #
+  # UNVERIFIZIERT (kein laufender Cluster zum Gegenpruefen verfuegbar) - vor dem ersten echten
+  # Sync in der ArgoCD-UI kontrollieren, ob Login + Rollenzuweisung tatsaechlich wie erwartet
+  # greifen.
+  configuration:
+    micronaut:
+      security:
+        enabled: true
+    akhq:
+      security:
+        default-group: no-roles
+        roles:
+          node-read:
+            - resources: ["NODE"]
+              actions: ["READ", "READ_CONFIG"]
+          topic-read:
+            - resources: ["TOPIC", "TOPIC_DATA"]
+              actions: ["READ"]
+            - resources: ["TOPIC"]
+              actions: ["READ_CONFIG"]
+          registry-read:
+            - resources: ["SCHEMA"]
+              actions: ["READ"]
+          group-read:
+            - resources: ["CONSUMER_GROUP"]
+              actions: ["READ"]
+        groups:
+          no-roles: []
+          reader:
+            - role: node-read
+            - role: topic-read
+            - role: registry-read
+            - role: group-read
+
+  # Sensible Werte (Kafka-Verbindung, Basic-Auth-Passwort-Hash) - landen in einem Secret statt im
+  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Das Passwort ist ein
+  # Platzhalter (wie charts/postgres-cluster/values.yaml database.password), MUSS vor dem Sync
+  # per --set/--set-file ueberschrieben werden - nie im Klartext committen. Format: SHA-256-Hex
+  # von `echo -n "<echtes-passwort>" | sha256sum` (kein passwordHash-Feld gesetzt -> SHA256 ist
+  # AKHQs Default, siehe akhq.io Basic-Auth-Doku).
+  secrets:
+    akhq:
+      connections:
+        ticketflow-kafka:
+          properties:
+            bootstrap.servers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+      security:
+        basic-auth:
+          - username: viewer
+            password: CHANGE_ME
+            groups:
+              - reader
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: certificate-cluster-issuer
+    hosts:
+      - akhq.cas420134-at-cas-dhbw-de.users.dhbw.site
+    tls:
+      - secretName: akhq-tls
+        hosts:
+          - akhq.cas420134-at-cas-dhbw-de.users.dhbw.site

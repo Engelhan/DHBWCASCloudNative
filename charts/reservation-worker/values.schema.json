@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "reservation-worker",
+  "type": "object",
+  "required": ["image", "replicaCount", "config"],
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "const": "latest" }
+        },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": ["kafkaBrokers", "reservationTopic", "resultTopic", "consumerGroup", "registryUrl"],
+      "properties": {
+        "kafkaBrokers": { "type": "string", "minLength": 1 },
+        "reservationTopic": { "type": "string", "minLength": 1 },
+        "resultTopic": { "type": "string", "minLength": 1 },
+        "consumerGroup": { "type": "string", "minLength": 1 },
+        "processMaxRetries": { "type": "integer", "minimum": 0 },
+        "processRetryBackoff": { "type": "string", "minLength": 1 },
+        "registryUrl": { "type": "string", "minLength": 1 },
+        "registryGroupId": { "type": "string", "minLength": 1 },
+        "logLevel": { "type": "string" },
+        "httpAddr": { "type": "string" }
+      }
+    },
+    "secret": {
+      "type": "object",
+      "required": ["databaseUrl"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "databaseUrl": { "type": "string", "minLength": 1 }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

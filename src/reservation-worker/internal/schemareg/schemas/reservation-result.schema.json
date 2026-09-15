@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ticketflow.example/schemas/reservation-result.schema.json",
+  "title": "ReservationResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "reservationId", "eventOccurredAt", "customerEmail"],
+  "properties": {
+    "eventType": {
+      "type": "string",
+      "enum": ["ReservationConfirmed", "ReservationRejected"]
+    },
+    "reservationId": { "type": "string", "minLength": 1 },
+    "eventOccurredAt": { "type": "string", "format": "date-time" },
+    "customerEmail": { "type": "string" },
+    "eventName": { "type": "string", "minLength": 1 },
+    "seatId": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

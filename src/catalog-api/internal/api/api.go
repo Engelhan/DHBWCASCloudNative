@@ -15,6 +15,7 @@ import (
 	"ticketflow/catalog-api/internal/db"
 	"ticketflow/catalog-api/internal/metrics"
 	"ticketflow/catalog-api/internal/reservation"
+	"ticketflow/catalog-api/internal/schemareg"
 )
 
 // pendingEntry haelt die von catalog-api selbst noch bekannten Angaben zu einer Reservierung,
@@ -30,16 +31,18 @@ type pendingEntry struct {
 type API struct {
 	DB         *db.DB
 	Producer   *reservation.Producer
+	Schema     *schemareg.Client
 	CORSOrigin string
 
 	pendingMu sync.Mutex
 	pending   map[string]pendingEntry
 }
 
-func New(database *db.DB, producer *reservation.Producer, corsOrigin string) *API {
+func New(database *db.DB, producer *reservation.Producer, schema *schemareg.Client, corsOrigin string) *API {
 	a := &API{
 		DB:         database,
 		Producer:   producer,
+		Schema:     schema,
 		CORSOrigin: corsOrigin,
 		pending:    make(map[string]pendingEntry),
 	}
@@ -98,8 +101,9 @@ func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 
 	dbErr := a.DB.Ping(ctx)
 	kafkaErr := a.Producer.Ping(ctx)
+	schemaErr := a.Schema.Ping(ctx)
 
-	ready := dbErr == nil && kafkaErr == nil
+	ready := dbErr == nil && kafkaErr == nil && schemaErr == nil
 	status := http.StatusOK
 	if !ready {
 		status = http.StatusServiceUnavailable
@@ -108,8 +112,9 @@ func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, map[string]any{
 		"status": readyString(ready),
 		"checks": map[string]bool{
-			"database": dbErr == nil,
-			"kafka":    kafkaErr == nil,
+			"database":       dbErr == nil,
+			"kafka":          kafkaErr == nil,
+			"schemaRegistry": schemaErr == nil,
 		},
 	})
 }

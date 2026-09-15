@@ -48,10 +48,10 @@ a small, fixed seat count. This is the load path the whole architecture exists t
 - `frontend`, `load-generator` — demo UI and the k6 flash-sale load script.
 - Stateful services: **CNPG** (PostgreSQL operator) and **Strimzi** (Kafka).
 
-`catalog-api` and `frontend` now have working code (see Current implementation status below);
-`reservation-worker`, `notification-worker`, `load-generator` still only have per-service
-`README.md` files describing the planned interface/config. When implementing a service, keep it
-consistent with its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
+`catalog-api`, `frontend`, `notification-worker` and `reservation-worker` now have working code
+(see Current implementation status below); only `load-generator` still has just a `README.md`
+describing the planned interface/config. When implementing a service, keep it consistent with
+its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
 
 ## Infra layering (read this before touching infra/)
 
@@ -279,11 +279,24 @@ docker compose down -v
 # catalog-api build/vet without a local Go toolchain
 cd src/catalog-api
 docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... && go build -o /tmp/catalog-api-bin ."
+
+# helm lint/template without a local helm binary (any chart under charts/) - on Windows Git Bash,
+# MSYS_NO_PATHCONV=1 is needed or the -v path gets mangled
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 dependency update /charts/<name>
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 lint /charts/<name>
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 template <name> /charts/<name>
 ```
 
-`charts/ticketflow` still has no templates to `helm lint`/`helm template` against;
-`reservation-worker`/`notification-worker`/`load-generator` still have no code. Add real commands
-here once those exist instead of leaving this section stale.
+`load-generator` still has no code. `charts/notification-worker/` can be `helm lint`/`helm
+template`-checked (see its own `values.schema.json`) but is not deployed via a
+`gitops/apps/*.yaml` Application yet. `charts/reservation-worker/` and `charts/akhq/` **are**
+deployed (`gitops/apps/reservation-worker.yaml`/`akhq.yaml`) and both pass `helm lint`/`template`
+locally (verified 2026-09-14 with Docker available) — see their bullets under Current
+implementation status for what's still unverified beyond that (live cluster behavior,
+placeholder values). `src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... &&
+go test ./...` all pass (verified locally 2026-09-14 with Go 1.27; `go.sum` was missing until
+this run and is now committed), and `docker build src/reservation-worker` succeeds. Add real
+commands here once these gaps close instead of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
@@ -315,7 +328,7 @@ here once those exist instead of leaving this section stale.
   (`Chart.yaml.dependencies` on the upstream chart) for `charts/longhorn/`, `charts/cert-manager/`,
   `charts/external-dns/`, fully-custom charts for `charts/cert-manager-config/` (the
   `ClusterIssuer`) and `charts/argocd-ingress/`. All use the real DHBW DNS zone
-  (`cas438007-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
+  (`cas420134-at-cas-dhbw-de.users.dhbw.site`) and `syncPolicy.automated`. The RFC2136 TSIG
   secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
@@ -394,12 +407,9 @@ here once those exist instead of leaving this section stale.
   doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
   sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
   originally written against — fixed (all other fields matched `kubectl explain` against the
-  real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ and a schema registry
-  (also Carlos' scope per the team's task split) are deliberately **not** part of this yet —
-  separate follow-up, registry implementation undecided.
-- **Not started:** `gitops/apps/keda.yaml`, `gitops/projects/ticketflow-project.yaml`,
-  `charts/ticketflow/templates/{catalog-api,reservation-worker,notification-worker,frontend,
-  database,config,monitoring}/`, AKHQ, schema registry, all `src/*` application code,
+  real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ now exists (see
+  `gitops/apps/akhq.yaml` below); a schema registry (also Carlos' scope) is still **not** part of
+  this yet — separate follow-up, registry implementation undecided.
 - **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
   Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
   single-node) and a headless-Chromium click-through:** `src/catalog-api/` (Go 1.25 + `chi`,
@@ -411,16 +421,14 @@ here once those exist instead of leaving this section stale.
   (`demo-konzert`, 30 seats) for both. catalog-api deliberately never writes to `reservations` —
   only the (not-yet-built) `reservation-worker` will; `GET /reservations/{id}` reports `pending`
   from an in-memory cache until that row exists, so the full `pending`→`confirmed`/`rejected`
-  transition can't complete locally yet (confirmed as expected during testing, not a bug). The
-  `ReservationRequested` Kafka payload (see `src/catalog-api/README.md` ## Kafka-Event-Schema) is
-  a **draft**, not yet aligned with whoever builds `reservation-worker`. `docker-compose.yml`
+  transition can't complete locally yet (confirmed as expected during testing, not a bug) until
+  `reservation-worker` (see below) is actually deployed alongside it. The `ReservationRequested`
+  Kafka payload (see `src/catalog-api/README.md` ## Kafka-Event-Schema) is now matched
+  1:1 by `reservation-worker`'s `event.Requested`. `docker-compose.yml`
   includes a `kafka-init` one-shot job that pre-creates the topic — without it, the *first*
   request after a fresh stack start fails (`Unknown Topic Or Partition`) because Kafka's
   auto-topic-creation-on-first-produce is asynchronous to that same produce call; found live
   during E2E testing.
-- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`,
-  `reservation-worker`, `notification-worker`, `load-generator` application code,
 - **Done:** `src/notification-worker/` — first implemented service in the repo (Go), the second,
   independent Kafka consumer group off `RESULT_TOPIC`. `github.com/segmentio/kafka-go`
   (pure-Go, no cgo, needed for the distroless build). Config entirely via env vars
@@ -446,9 +454,149 @@ here once those exist instead of leaving this section stale.
   lint/template-only, not deployed via ArgoCD). Go deps and both Dockerfile base images
   (`golang`, `distroless/static-debian12`) are pinned to latest-stable and digest-pinned (not
   floating tags) — re-check before rebuilding long after this was written.
-- **Not started:** `gitops/apps/keda.yaml`, `ticketflow.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, `charts/ticketflow/templates/*`, remaining `src/*`
-  application code (`catalog-api`, `reservation-worker`, `frontend`, `load-generator`),
-  `observability/dashboards/` + `observability/alerts/` content.
+- **Done, verified locally (2026-09-14, Go 1.27: `go mod tidy && go vet ./... && go build ./...
+  && go test ./...` all pass, `go.sum` now committed):** `src/reservation-worker/` — the
+  second Kafka consumer in the repo, the one that does the actual booking (Carlos' "Kafka
+  Consumer" task, see root `README.md` ## ToDo). Consumes `RESERVATION_TOPIC`
+  (`event.Requested`, exactly `catalog-api`'s already-published schema), claims the seat via
+  **optimistic locking on `seats.status`** (`UPDATE ... WHERE status = 'free'`, no
+  `SELECT ... FOR UPDATE`, per the service's own README), writes `reservations` and publishes
+  `event.Result` to `RESULT_TOPIC` — exactly `notification-worker`'s already-defined consumer
+  schema (`internal/event/event.go`), so no schema was renegotiated, just matched on both ends.
+  Idempotent on `reservation_id` (redelivery after a crash between DB commit and offset commit
+  re-derives the same result instead of double-claiming a seat — see `internal/booking` package
+  doc). Builds its own DB schema at startup via embedded, versioned SQL migrations
+  (`internal/migrate`, `schema_migrations` table, `CREATE TABLE IF NOT EXISTS` so it's safe
+  against both an empty CNPG database and the already-seeded local `docker-compose` DB) instead
+  of a separate migration tool — this is the "DB Schema aufbauen und über Applikation
+  versionieren" part of the task. `/metrics`
+  (`reservations_processed_total{result}`, `reservation_processing_duration_seconds{result}`,
+  `reservation_processing_errors_total{stage}`), `/healthz`, `/readyz` (actively pings DB *and*
+  Kafka, like `catalog-api`, unlike `notification-worker`'s simpler always-ready-once-connected
+  check). Paired with its own standalone Helm chart `charts/reservation-worker/` (same
+  Deployment/ConfigMap/Secret/PodDisruptionBudget/PodMonitor/NetworkPolicy/`_helpers.tpl`/
+  `values.schema.json` pattern as `charts/notification-worker/`; `replicaCount: 1` +
+  `PodDisruptionBudget` disabled by default since KEDA — the eventual scaler for this exact
+  service, P6 — doesn't exist yet). No `gitops/apps/reservation-worker.yaml` yet, same
+  "chart-fertig, noch nicht deployt" state as `notification-worker`. **Known unresolved gap,
+  documented in `charts/README.md` and the service's own README, not silently worked around:**
+  `charts/postgres-cluster` only creates a `username`/`password` `Secret` in namespace
+  `application`, not a ready-to-use `DATABASE_URL`, and this chart deploys into `ticketflow` —
+  Kubernetes `Secret`s aren't cross-namespace-referenceable, so `secret.databaseUrl` stays a
+  manually-filled placeholder (same "real value via `--set`/External Secret at deploy time,
+  never committed" pattern as `notification-worker`'s SMTP/TLS secrets) until that's resolved.
+  Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
+  root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
+- **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
+  `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
+  Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
+  Kafka-platform tooling, not part of the TicketFlow app itself; cross-namespace access to the
+  bootstrap service in `ticketflow` is fine, only `Secret`s are namespace-scoped, not `Service`s).
+  `secrets.akhq.connections.ticketflow-kafka.properties.bootstrap.servers` points at the real
+  Strimzi bootstrap service. Public via a plain `Ingress` (`akhq.<zone>`) + `cert-manager.io/
+  cluster-issuer` annotation — deliberately simpler than the ArgoCD ingress: AKHQ speaks plain
+  HTTP, no TLS-passthrough `IngressRouteTCP` needed, so external-dns' already-enabled `ingress`
+  source (`charts/external-dns/values.yaml`) picks up the host automatically once Traefik
+  assigns the Ingress a `LoadBalancer` address — no `traefik-config`-style workaround required.
+  Secured with basic-auth (`micronaut.security.enabled` + `akhq.security`), RBAC roles adapted
+  from AKHQ's own `application.example.yml` but restricted to the `*-read` roles only (no
+  `*-admin` roles with CREATE/UPDATE/DELETE), matching root `README.md` ## Entscheidungen (B2)'s
+  explicit "AKHQ (schreibgeschützt konfiguriert)" claim — discovered while building this that the
+  root README already documents a whole **B2 elective topic** (per-service `KafkaUser` CRs with
+  SCRAM-SHA-512 + narrow `type: simple` ACLs, one per service, plus read-only AKHQ as the
+  Kafka-ops UI) that doesn't exist yet in the cluster (`charts/ticketflow` has no `KafkaUser`
+  resources — see that section above) and isn't listed in this file's "Chosen elective topics" at
+  the top (which only names W1/W2) — **flagged to the user, not resolved**: unclear whether B2 is
+  a live commitment needing implementation (KafkaUser/ACLs are Carlos' scope, same as the Kafka
+  cluster itself) or aspirational text to revise down; update both this file and the "Chosen
+  elective topics" line once that's settled. `default-group: no-roles` (not the upstream
+  example's `admin`) so anonymous visitors get no access at all; the basic-auth password is a
+  `CHANGE_ME` placeholder (same pattern as `charts/postgres-cluster` `database.password`) that
+  must be set via `--helm-set` before the first real sync. `helm dependency update`/`lint`/
+  `template` all pass (verified locally 2026-09-14 once Docker was available) and the rendered
+  Secret/ConfigMap/Deployment/Ingress all look correct — but this only proves the chart renders,
+  not that AKHQ actually enforces the RBAC config as intended; the RBAC block itself is still
+  copied from docs, not tested against a running instance — check login + role behavior in the
+  AKHQ UI after the first real sync.
+- **Done:** `.github/workflows/build-images.yml` now actually builds and pushes (previously just
+  a `docker build`-only TODO stub — all four matrix Dockerfiles already existed, only the push
+  target was missing). Pushes to **ghcr.io** (GitHub Container Registry) as
+  `ghcr.io/<owner-lowercase>/ticketflow-<service>:<git-short-sha>`, auth via the built-in
+  `GITHUB_TOKEN` (`packages: write` permission, no extra secret) — chosen over a self-hosted
+  in-cluster registry: ghcr.io is explicitly covered by "container registries/package sources are
+  permitted external dependencies" (see What this repo is above), needs no public ingress/auth of
+  its own for GitHub's external runners to push to, and decouples image lifecycle from cluster
+  rebuilds (a self-hosted registry's images would be lost on rebuild same as the cluster). Owner
+  is lowercased via `${GITHUB_REPOSITORY_OWNER,,}` (ghcr.io requires lowercase image names,
+  the repo owner `Engelhan` is mixed-case). **Deliberately public, not private** — pure build
+  artifacts, no reason to gate them, and public avoids needing a cluster-side `imagePullSecret`
+  entirely. **Manual one-time step still needed**, not automatable via `GITHUB_TOKEN`: after the
+  first successful run, set each of the four packages' visibility to "Public" in GitHub's package
+  settings (defaults to the repo's private visibility otherwise) — until then pods get
+  `ImagePullBackOff` even with a correct tag. `charts/reservation-worker/values.yaml` and
+  `charts/notification-worker/values.yaml` `image.repository` defaults now point at the real
+  ghcr.io path (previously a fake placeholder `ticketflow/<service>`); `catalog-api`/`frontend`
+  have no chart yet so nothing to update there. `scripts/personalize.py` does **not** cover the
+  image registry path yet (only repoURL/DNS/ACME/TSIG) — a fork under a different GitHub owner
+  would need to hand-edit these two `image.repository` values, unlike everything personalize.py
+  already rewrites.
+- **Done, deliberately kept red in ArgoCD:** `gitops/apps/reservation-worker.yaml`
+  (`automated`/`selfHeal`, namespace `ticketflow`, inline `helm.values` — no `values-dev.yaml`/
+  `values-prod.yaml` split for this chart, unlike `charts/ticketflow`). `config.kafkaBrokers` and
+  `image.repository` are now real values (Strimzi bootstrap service, ghcr.io path — see
+  `build-images.yml` above); `image.tag` and `secret.databaseUrl` are still intentionally wrong
+  placeholder strings (`REPLACE-ME-*`), not real values, because both underlying gaps are still
+  open: no `build-images.yml` run has completed yet (no real git-short-sha tag exists to point
+  at), and `charts/postgres-cluster`'s DB secret lives in namespace `application` while this
+  deploys into `ticketflow` — Kubernetes secrets aren't cross-namespace-referenceable (same gap
+  documented in `charts/reservation-worker/values.yaml`). The Application will sync but stay
+  Degraded (`ImagePullBackOff`/DB-connect failure) until both are replaced with real values (e.g.
+  `argocd app set reservation-worker --helm-set ...`, then commit) — chosen deliberately over
+  *not* creating the Application (as was done for `notification-worker`) so the gap stays visible
+  in the ArgoCD UI instead of silently postponed. `helm lint`/`template` with the exact same
+  override values as the Application's inline `helm.values` verified locally 2026-09-14 (once
+  Docker was available) — renders cleanly, `image.repository` resolves to the real
+  `ghcr.io/engelhan/ticketflow-reservation-worker` path with the placeholder tag appended as
+  expected. Also confirmed `docker build src/reservation-worker` succeeds locally, de-risking
+  tomorrow's first real `build-images.yml` run against this Dockerfile.
+- **Done, `helm lint`/`template` clean, full local end-to-end verified via `docker compose`
+  against a real Apicurio instance — not yet live on a cluster (no cluster available):** Apicurio
+  Registry integration (full wire-format scope, decided 2026-09-15 — see memory
+  `project-schema-registry-next` for the decision history; this deliberately touches
+  `catalog-api`/Philipp's and `notification-worker`/Niklas's code, not just Carlos' own scope,
+  flag to the team before merging branch `apicurio-schema-registry`). `charts/apicurio/` is a
+  **fully custom chart** (Deployment/Service/ConfigMap), not the originally-planned wrapper
+  around `eshepelyuk/apicurio-registry-helm` — that OCI package returns 403 Forbidden on every
+  pull (verified via Docker and directly against ghcr.io's token endpoint; ghcr.io itself works
+  fine for other packages), apparently no longer public since its archival; see
+  `charts/README.md` ## apicurio for the full story including a second, independent finding that
+  the chart was built for Apicurio 2.x's per-storage-image/env-var scheme, not 3.x's unified
+  image + `APICURIO_STORAGE_KIND` env var. Storage is `kafkasql` (a Kafka topic + in-memory H2,
+  no extra Postgres/cross-namespace-secret dependency). The two canonical JSON Schemas live at
+  `charts/ticketflow/files/schemas/*.schema.json` and are registered idempotently by a new
+  `post-install,post-upgrade` Helm hook Job in `charts/ticketflow/templates/schema-registry/`
+  (`ifExists=FIND_OR_CREATE_VERSION&canonical=true`) — verified live: registered cleanly against
+  a real registry, and confirmed the exact `globalId` response field name/casing that was only
+  assumed beforehand. Each of the three Go services carries its own `internal/schemareg/` package
+  (hand-rolled REST client + `github.com/santhosh-tekuri/jsonschema/v6` local validation,
+  duplicated per service like `internal/event` already is, not a shared module) that wraps
+  outgoing / unwraps incoming Kafka message payloads with a Confluent-compatible header (`0x0`
+  magic byte + 4-byte big-endian `globalId`) and validates against a schema embedded in the
+  binary via `go:embed` — no per-message registry round-trip, only `Resolve`/`Ping` (wired into
+  each service's existing `/readyz`) hit the registry. A schema-invalid or malformed-frame message
+  reuses each service's pre-existing poison-pill/DLT handling, no new failure path. Full local
+  `docker compose up --build` run confirmed the entire flow end-to-end: a real reservation went
+  `pending` → `confirmed` through all three services with schema validation/framing active, zero
+  errors. `docker-compose.yml` also gained the previously-missing `notification-worker` service
+  (had no entry at all before this) and an `apicurio`/`apicurio-init` pair mirroring the cluster
+  setup. Known unverified-live gaps: `charts/apicurio`'s rendered Service DNS
+  (`apicurio.kafka.svc:8080`) assumes the ArgoCD Application release name equals the Application
+  name, same assumption pattern as every other addon chart here — not checked against a real
+  cluster sync yet.
+- **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
+  `gitops/projects/ticketflow-project.yaml`, Helm charts for `catalog-api`/`frontend` (both have
+  working `src/*` code but no chart yet), all `src/load-generator` code,
+  `observability/dashboards/` + `observability/alerts/` content, and the cross-namespace
+  `DATABASE_URL` wiring described above (blocking `reservation-worker`'s real deploy, see above).
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.

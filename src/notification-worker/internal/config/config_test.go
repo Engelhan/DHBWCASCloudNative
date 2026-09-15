@@ -7,6 +7,7 @@ func baseEnv(t *testing.T) {
 	t.Setenv("KAFKA_BROKERS", "broker-1:9092,broker-2:9092")
 	t.Setenv("RESULT_TOPIC", "reservation-results")
 	t.Setenv("CONSUMER_GROUP", "notification-worker")
+	t.Setenv("REGISTRY_URL", "http://apicurio.kafka.svc:8080/apis/registry/v3")
 }
 
 func TestLoad_Defaults(t *testing.T) {

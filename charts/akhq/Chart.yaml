@@ -1,0 +1,9 @@
+apiVersion: v2
+name: akhq
+description: Wrapper-Chart um den Upstream-AKHQ-Chart (Kafka-Web-UI) mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: akhq
+    version: "0.28.0"
+    repository: "https://akhq.io/"

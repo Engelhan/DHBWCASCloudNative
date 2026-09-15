@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "apicurio.fullname" . }}
+  labels:
+    {{- include "apicurio.labels" . | nindent 4 }}
+data:
+  APICURIO_STORAGE_KIND: {{ .Values.config.storageKind | quote }}
+  APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | quote }}
