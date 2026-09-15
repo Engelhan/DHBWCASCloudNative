@@ -79,12 +79,21 @@ Anfrage als `pending`.
 
 | Variable | Quelle | Bedeutung |
 |---|---|---|
-| `DATABASE_URL` | Secret | Connection-String zum CNPG-Cluster |
+| `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres (z.B. `<cluster>-rw.<namespace>.svc`) |
+| `DB_PORT` | ConfigMap | Postgres-Port, Default `5432` |
+| `DB_NAME` | ConfigMap | Datenbankname |
+| `DB_SSLMODE` | ConfigMap | z.B. `disable` (lokal) / `require` (Cluster) |
+| `DB_USER` | Secret | Postgres-Benutzername |
+| `DB_PASSWORD` | Secret | Postgres-Passwort |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Topic für `ReservationRequested` |
 | `LOG_LEVEL` | ConfigMap | z.B. `info` |
 | `PORT` | ConfigMap | HTTP-Port, Default `8080` |
 | `CORS_ALLOWED_ORIGIN` | ConfigMap | Origin des Frontends, Default `*` (nur für lokale Entwicklung sinnvoll) |
+
+catalog-api baut den Postgres-Connection-String selbst aus diesen Einzelteilen zusammen (Team-
+Entscheidung), statt ein fertiges `DATABASE_URL`-Secret zu erwarten – CNPG-Cluster (siehe
+`charts/postgres-cluster`) liefern ohnehin nur `username`/`password` getrennt.
 
 ## Lokal starten
 

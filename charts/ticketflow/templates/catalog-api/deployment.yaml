@@ -49,11 +49,16 @@ spec:
             - configMapRef:
                 name: ticketflow-catalog-api
           env:
-            - name: DATABASE_URL
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.catalogApi.databaseSecretName }}
-                  key: DATABASE_URL
+                  name: {{ .Values.catalogApi.database.credentialsSecretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.catalogApi.database.credentialsSecretName }}
+                  key: password
           livenessProbe:
             httpGet:
               path: /healthz

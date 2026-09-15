@@ -66,7 +66,7 @@
     },
     "catalogApi": {
       "type": "object",
-      "required": ["replicas", "image", "service", "resources", "env", "databaseSecretName"],
+      "required": ["replicas", "image", "service", "resources", "env", "database"],
       "properties": {
         "replicas": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
@@ -87,7 +87,17 @@
             "corsAllowedOrigin": { "type": "string" }
           }
         },
-        "databaseSecretName": { "type": "string", "minLength": 1 },
+        "database": {
+          "type": "object",
+          "required": ["host", "port", "name", "sslMode", "credentialsSecretName"],
+          "properties": {
+            "host": { "type": "string", "minLength": 1 },
+            "port": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "sslMode": { "type": "string", "minLength": 1 },
+            "credentialsSecretName": { "type": "string", "minLength": 1 }
+          }
+        },
         "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },
         "serviceMonitor": {
           "type": "object",

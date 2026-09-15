@@ -39,13 +39,15 @@ ticketflow/
                                             # kube-prometheus-stack, siehe Root-README
 ```
 
-**Bekannte offene Abhängigkeit:** `catalogApi.databaseSecretName` (Default
-`ticketflow-database-url`) erwartet ein Secret mit Key `DATABASE_URL` (fertiger
-Postgres-Connection-String) im Namespace `ticketflow`. `charts/postgres-cluster` (Namespace
-`application`) liefert aktuell nur ein Secret mit getrennten `username`/`password`-Feldern und
-einer DB namens `postgres` statt `ticketflow` — dieses Secret muss noch manuell angelegt oder
-`charts/postgres-cluster` entsprechend erweitert werden, bevor `catalog-api` im Cluster wirklich
-`/readyz`-grün wird (der Pod crasht dabei nicht, bleibt aber "not ready").
+**Bekannte offene Abhängigkeit:** `catalog-api` baut den Connection-String selbst aus
+`catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + `catalogApi.database.
+credentialsSecretName` (Secret, Keys `username`/`password`) zusammen — Team-Entscheidung, siehe
+`src/catalog-api/README.md` ## Konfiguration. Das Secret muss aber im **selben Namespace**
+(`ticketflow`) liegen wie `catalog-api` (Kubernetes erlaubt kein `secretKeyRef` über
+Namespace-Grenzen), `charts/postgres-cluster` legt sein Secret aber in Namespace `application`
+an. `scripts/copy-database-credentials-secret.sh` kopiert es unverändert herüber, bis das
+Team-seitig sauberer gelöst ist (z.B. External Secret/Reflector). DB-Name ist aktuell `postgres`
+(Default von `charts/postgres-cluster`), nicht `ticketflow`.
 
 ## values-dev.yaml vs. values-prod.yaml — worin sie sich unterscheiden
 

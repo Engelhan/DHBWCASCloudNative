@@ -126,13 +126,20 @@ catalogApi:
     # templates/frontend/ingress.yaml) kein CORS.
     corsAllowedOrigin: ""
 
-  # WICHTIG - noch ungeloeste Team-Abhaengigkeit (siehe Root-README/CLAUDE.md): charts/postgres-cluster
-  # (Namespace "application", DB-Name "postgres", Secret mit getrennten username/password-Feldern)
-  # liefert aktuell KEIN Secret mit dieser Form. Bis das gekaert ist, muss dieses Secret manuell
-  # angelegt werden (z.B. `kubectl -n ticketflow create secret generic ticketflow-database-url
-  # --from-literal=DATABASE_URL=postgres://...`), sonst bleibt der Pod im readyz-Fehler haengen
-  # (DB-Ping schlaegt fehl) - crasht aber nicht, siehe readinessProbe.
-  databaseSecretName: ticketflow-database-url
+  # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
+  # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
+  # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
+  # credentialsSecretName referenziert ein Secret mit den Keys "username"/"password" IM
+  # NAMESPACE DIESES CHARTS (Kubernetes erlaubt kein secretKeyRef ueber Namespace-Grenzen) -
+  # charts/postgres-cluster legt sein Secret aber in Namespace "application" an. Bis das
+  # Team-seitig geloest ist (z.B. External Secret/Reflector), kopiert
+  # scripts/copy-database-credentials-secret.sh das Secret unveraendert (gleiche Keys) hierher.
+  database:
+    host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
+    port: "5432"
+    name: "postgres"
+    sslMode: "require"
+    credentialsSecretName: ticketflow-postgres-credentials
 
   podDisruptionBudget:
     enabled: true
