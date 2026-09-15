@@ -17,8 +17,13 @@ zeigen.
 
 Reines HTML/CSS/JS (`index.html`, `style.css`, `app.js`), kein Build-Step, kein Framework – deckt
 den kompletten Screencast-Bedarf (Sitzplan, Buchungsformular, Live-Status) ohne zusätzliche
-Komplexität ab. `API_BASE_URL` wird per Inline-`<script>` in `index.html` gesetzt (kein
-Build-Step für Env-Injection vorhanden).
+Komplexität ab. `API_BASE_URL` wird in einer eigenen `config.js` gesetzt (kein Build-Step für
+Env-Injection vorhanden) – lokal per fest eingebautem Default (`http://localhost:8080`), im
+Cluster überschreibt ein ConfigMap-Mount (`charts/ticketflow/templates/frontend/configmap.yaml`)
+diese Datei mit einem leeren String: das Ingress routet `/events` und `/reservations` bereits auf
+derselben Origin an `catalog-api` weiter (siehe `templates/frontend/ingress.yaml`), ein leerer
+`API_BASE_URL` macht die `fetch()`-Aufrufe damit zu relativen Same-Origin-Requests – kein CORS,
+kein hartkodierter Cluster-Hostname im Image.
 
 ## Ablauf
 
