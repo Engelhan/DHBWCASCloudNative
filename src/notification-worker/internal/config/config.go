@@ -32,6 +32,12 @@ type Config struct {
 	NotifyMaxRetries   int
 	NotifyRetryBackoff time.Duration
 
+	// RegistryURL is Apicurio Registry's v3 REST API root, e.g.
+	// "http://apicurio.kafka.svc:8080/apis/registry/v3" (no trailing slash). See
+	// internal/schemareg.
+	RegistryURL     string
+	RegistryGroupID string
+
 	LogLevel string
 	HTTPAddr string
 
@@ -57,6 +63,8 @@ func Load() (Config, error) {
 		ResultTopic:        os.Getenv("RESULT_TOPIC"),
 		ConsumerGroup:      os.Getenv("CONSUMER_GROUP"),
 		DLTTopic:           os.Getenv("DLT_TOPIC"),
+		RegistryURL:        os.Getenv("REGISTRY_URL"),
+		RegistryGroupID:    getenvDefault("REGISTRY_GROUP_ID", "ticketflow"),
 		LogLevel:           getenvDefault("LOG_LEVEL", "info"),
 		HTTPAddr:           getenvDefault("HTTP_ADDR", ":8080"),
 		KafkaTLSCACert:     os.Getenv("KAFKA_TLS_CA_CERT"),
@@ -109,6 +117,9 @@ func (c Config) validate() error {
 	}
 	if c.ConsumerGroup == "" {
 		return fmt.Errorf("CONSUMER_GROUP is required")
+	}
+	if c.RegistryURL == "" {
+		return fmt.Errorf("REGISTRY_URL is required")
 	}
 	if c.NotifyMaxRetries < 0 {
 		return fmt.Errorf("NOTIFY_MAX_RETRIES must be >= 0")

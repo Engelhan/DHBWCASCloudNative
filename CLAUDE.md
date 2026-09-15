@@ -559,6 +559,40 @@ commands here once these gaps close instead of leaving this section stale.
   `ghcr.io/engelhan/ticketflow-reservation-worker` path with the placeholder tag appended as
   expected. Also confirmed `docker build src/reservation-worker` succeeds locally, de-risking
   tomorrow's first real `build-images.yml` run against this Dockerfile.
+- **Done, `helm lint`/`template` clean, full local end-to-end verified via `docker compose`
+  against a real Apicurio instance — not yet live on a cluster (no cluster available):** Apicurio
+  Registry integration (full wire-format scope, decided 2026-09-15 — see memory
+  `project-schema-registry-next` for the decision history; this deliberately touches
+  `catalog-api`/Philipp's and `notification-worker`/Niklas's code, not just Carlos' own scope,
+  flag to the team before merging branch `apicurio-schema-registry`). `charts/apicurio/` is a
+  **fully custom chart** (Deployment/Service/ConfigMap), not the originally-planned wrapper
+  around `eshepelyuk/apicurio-registry-helm` — that OCI package returns 403 Forbidden on every
+  pull (verified via Docker and directly against ghcr.io's token endpoint; ghcr.io itself works
+  fine for other packages), apparently no longer public since its archival; see
+  `charts/README.md` ## apicurio for the full story including a second, independent finding that
+  the chart was built for Apicurio 2.x's per-storage-image/env-var scheme, not 3.x's unified
+  image + `APICURIO_STORAGE_KIND` env var. Storage is `kafkasql` (a Kafka topic + in-memory H2,
+  no extra Postgres/cross-namespace-secret dependency). The two canonical JSON Schemas live at
+  `charts/ticketflow/files/schemas/*.schema.json` and are registered idempotently by a new
+  `post-install,post-upgrade` Helm hook Job in `charts/ticketflow/templates/schema-registry/`
+  (`ifExists=FIND_OR_CREATE_VERSION&canonical=true`) — verified live: registered cleanly against
+  a real registry, and confirmed the exact `globalId` response field name/casing that was only
+  assumed beforehand. Each of the three Go services carries its own `internal/schemareg/` package
+  (hand-rolled REST client + `github.com/santhosh-tekuri/jsonschema/v6` local validation,
+  duplicated per service like `internal/event` already is, not a shared module) that wraps
+  outgoing / unwraps incoming Kafka message payloads with a Confluent-compatible header (`0x0`
+  magic byte + 4-byte big-endian `globalId`) and validates against a schema embedded in the
+  binary via `go:embed` — no per-message registry round-trip, only `Resolve`/`Ping` (wired into
+  each service's existing `/readyz`) hit the registry. A schema-invalid or malformed-frame message
+  reuses each service's pre-existing poison-pill/DLT handling, no new failure path. Full local
+  `docker compose up --build` run confirmed the entire flow end-to-end: a real reservation went
+  `pending` → `confirmed` through all three services with schema validation/framing active, zero
+  errors. `docker-compose.yml` also gained the previously-missing `notification-worker` service
+  (had no entry at all before this) and an `apicurio`/`apicurio-init` pair mirroring the cluster
+  setup. Known unverified-live gaps: `charts/apicurio`'s rendered Service DNS
+  (`apicurio.kafka.svc:8080`) assumes the ArgoCD Application release name equals the Application
+  name, same assumption pattern as every other addon chart here — not checked against a real
+  cluster sync yet.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
   `gitops/projects/ticketflow-project.yaml`, Helm charts for `catalog-api`/`frontend` (both have
   working `src/*` code but no chart yet), all `src/load-generator` code,

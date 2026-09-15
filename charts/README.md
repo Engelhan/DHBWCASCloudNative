@@ -100,6 +100,50 @@ helm dependency update charts/longhorn   # zieht den Upstream-Chart nach charts/
 helm template charts/longhorn
 ```
 
+## `apicurio` — volleigener Chart, kein Wrapper (ursprünglich anders geplant)
+
+[`apicurio/`](apicurio/) deployt Apicurio Registry (JSON-Schema-Registry für die
+Kafka-Event-Contracts `ReservationRequested`/`ReservationResult`, siehe
+`ticketflow/files/schemas/`). War ursprünglich als neunter Wrapper-Chart um
+`eshepelyuk/apicurio-registry-helm` (`oci://ghcr.io/eshepelyuk/helm/apicurio-registry`) geplant —
+dasselbe Muster wie unten. Dessen ghcr.io-OCI-Paket liefert aber **403 Forbidden** auf jeden
+anonymen Pull-Versuch (verifiziert sowohl über `docker run ... helm dependency update` als auch
+direkt gegen `https://ghcr.io/token?...`; ghcr.io selbst ist erreichbar, ein anderes, unabhängiges
+Paket dort liefert 200), vermutlich eine Folge von dessen Archivierung am 2024-11-13 — das Paket
+ist offenbar nicht mehr öffentlich, nicht nur unmaintained. Keine der geprüften Alternativen
+(`apicurio.github.io/apicurio-registry-helm-chart` → 404, `touk/apicurio-registry` → erreichbar,
+aber noch veralteter, appVersion max. `2.2.5.Final`, letztes Update 2022) war brauchbar; der
+offizielle Weg wäre der Apicurio-Registry-Operator, der aber OLM voraussetzt — ein in diesem
+Projekt bewusst nicht genutzter Mechanismus (CNPG/Strimzi installieren beide über reine
+Helm-Charts, siehe oben). Deshalb: volleigener, schlanker Chart (Deployment/Service/ConfigMap,
+`_helpers.tpl`, kein `values.schema.json` – Umfang zu klein), analog zu
+[`cert-manager-config/`](cert-manager-config/)/[`argocd-ingress/`](argocd-ingress/) oben, nicht zu
+den App-Charts (`notification-worker`/`reservation-worker`) mit ihren fünf Ressourcen.
+
+**Zusätzlicher Fallstrick, der die Wrapper-Idee ohnehin erschwert hätte:** der
+`eshepelyuk`-Chart ist für Apicurio Registry **2.x** gebaut, nicht 3.x — sein
+`registry.image.persistenceSuffix`-Mechanismus hängt dem Image-*Repository* (nicht dem Tag) einen
+Storage-Suffix an (`-kafkasql`/`-sql`/`-mem`, siehe dessen `_helpers.tpl`), weil 2.x pro
+Storage-Variante ein eigenes Image veröffentlichte; die `registry.kafka`/`registry.sql`-Value-Blöcke
+setzen entsprechend 2.x-Variablennamen (`KAFKA_BOOTSTRAP_SERVERS`, `REGISTRY_DATASOURCE_URL`).
+Apicurio 3.x ist dagegen **ein** Image für alle Storage-Varianten, Auswahl über
+`APICURIO_STORAGE_KIND`/`APICURIO_KAFKASQL_BOOTSTRAP_SERVERS` (verifiziert gegen die
+3.1.x-Doku "Installing Apicurio Registry using Docker") — selbst mit einem funktionierenden
+ghcr.io-Zugriff hätte der Wrapper diese Variablen von Hand über `extraEnv` setzen und
+`persistenceSuffix: false` erzwingen müssen. Der jetzige eigene Chart setzt sie direkt (siehe
+`apicurio/values.yaml` → `config.storageKind`/`config.kafkaBootstrapServers`, gerendert in
+`templates/configmap.yaml`).
+
+Storage-Backend: `kafkasql` (Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer
+eigenen Postgres-Instanz) — vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die
+aktuell `reservation-worker`s echten Deploy blockiert (siehe oben). Kein bestätigter
+Health-Endpoint für 3.x gefunden (evtl. separater Management-Port statt 8080) — Liveness-/
+Readiness-Probes nutzen deshalb die echte REST-API (`GET /apis/registry/v3/groups`) statt eines
+geratenen Health-Pfads; dieselbe Begründung gilt für die Wartelogik im
+`schema-registrar`-Job in `ticketflow/templates/schema-registry/`. Noch **kein**
+`gitops/apps/apicurio.yaml`-Sync live verifiziert (kein Cluster verfügbar) — `helm lint`/
+`template` lokal sauber.
+
 ## Resource-Limits, Security-Context, NetworkPolicy
 
 Alle acht Wrapper-Charts oben setzen durchgehend `resources.requests`/`resources.limits`

@@ -51,6 +51,40 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists
         --topic reservation-result --partitions 1 --replication-factor 1
 
+  # kafkasql-Storage (schemas landen in einem Kafka-Topic + In-Memory-H2) - dieselbe
+  # Konfiguration wie charts/apicurio/values.yaml, kein zusaetzlicher DB-Container noetig, da
+  # Kafka hier bereits laeuft.
+  apicurio:
+    image: quay.io/apicurio/apicurio-registry:3.3.3
+    ports:
+      - "8083:8080"
+    environment:
+      APICURIO_STORAGE_KIND: kafkasql
+      APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  # Registriert die beiden kanonischen Schemas lokal - dieselbe curl/jq-Logik wie
+  # charts/ticketflow/templates/schema-registry/register-job.yaml, siehe dessen Kommentar fuer
+  # die Begruendung. Mountet die Schemas direkt aus charts/ticketflow statt einer lokalen Kopie.
+  apicurio-init:
+    image: alpine:3.20
+    depends_on:
+      - apicurio
+    volumes:
+      - ./charts/ticketflow/files/schemas:/schemas:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        apk add --no-cache curl jq >/dev/null &&
+        until curl -sf http://apicurio:8080/apis/registry/v3/groups >/dev/null 2>&1; do sleep 1; done &&
+        for pair in reservation-requested-value:/schemas/reservation-requested.schema.json reservation-result-value:/schemas/reservation-result.schema.json; do
+        id="$${pair%%:*}"; file="$${pair#*:}";
+        body=$$(jq -n --arg id "$$id" --rawfile content "$$file" '{artifactId:$$id, artifactType:"JSON", firstVersion:{content:{content:$$content, contentType:"application/json"}}}');
+        curl -sf -X POST "http://apicurio:8080/apis/registry/v3/groups/ticketflow/artifacts?ifExists=FIND_OR_CREATE_VERSION&canonical=true" -H "Content-Type: application/json" --data "$$body";
+        done
+
   catalog-api:
     build: ./src/catalog-api
     ports:
@@ -59,12 +93,16 @@ services:
       DATABASE_URL: postgres://ticketflow:ticketflow@postgres:5432/ticketflow?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       RESERVATION_TOPIC: reservation-requested
+      REGISTRY_URL: http://apicurio:8080/apis/registry/v3
+      REGISTRY_GROUP_ID: ticketflow
       LOG_LEVEL: info
       CORS_ALLOWED_ORIGIN: http://localhost:8081
     depends_on:
       postgres:
         condition: service_healthy
       kafka-init:
+        condition: service_completed_successfully
+      apicurio-init:
         condition: service_completed_successfully
 
   reservation-worker:
@@ -77,11 +115,34 @@ services:
       RESERVATION_TOPIC: reservation-requested
       RESULT_TOPIC: reservation-result
       CONSUMER_GROUP: reservation-worker
+      REGISTRY_URL: http://apicurio:8080/apis/registry/v3
+      REGISTRY_GROUP_ID: ticketflow
       LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
       kafka-init:
+        condition: service_completed_successfully
+      apicurio-init:
+        condition: service_completed_successfully
+
+  # Bislang fehlte notification-worker hier komplett - ohne ihn liess sich die
+  # Konsumenten-Seite (jetzt inkl. Schema-Validierung) nicht lokal end-to-end testen.
+  notification-worker:
+    build: ./src/notification-worker
+    ports:
+      - "8084:8080"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      RESULT_TOPIC: reservation-result
+      CONSUMER_GROUP: notification-worker
+      REGISTRY_URL: http://apicurio:8080/apis/registry/v3
+      REGISTRY_GROUP_ID: ticketflow
+      LOG_LEVEL: info
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      apicurio-init:
         condition: service_completed_successfully
 
   frontend:

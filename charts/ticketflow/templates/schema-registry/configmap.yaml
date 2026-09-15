@@ -1,0 +1,16 @@
+# Traegt die beiden kanonischen JSON-Schemas (files/schemas/) in den Cluster, damit
+# register-job.yaml sie ohne eigenes Image/Checkout registrieren kann. .Files.Get liest nur
+# innerhalb dieses Charts - deshalb liegen die Schemas hier unter files/schemas/ und nicht z.B.
+# in charts/apicurio (das kennt sie nicht und braucht sie auch nicht, siehe dessen Chart.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.kafka.metadata.name }}-schemas
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: ticketflow
+data:
+  reservation-requested.schema.json: |
+{{ .Files.Get "files/schemas/reservation-requested.schema.json" | indent 4 }}
+  reservation-result.schema.json: |
+{{ .Files.Get "files/schemas/reservation-result.schema.json" | indent 4 }}

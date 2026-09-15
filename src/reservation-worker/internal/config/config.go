@@ -22,6 +22,12 @@ type Config struct {
 	ProcessMaxRetries   int
 	ProcessRetryBackoff time.Duration
 
+	// RegistryURL is Apicurio Registry's v3 REST API root, e.g.
+	// "http://apicurio.kafka.svc:8080/apis/registry/v3" (no trailing slash). See
+	// internal/schemareg.
+	RegistryURL     string
+	RegistryGroupID string
+
 	LogLevel string
 	HTTPAddr string
 }
@@ -35,6 +41,8 @@ func Load() (Config, error) {
 		ReservationTopic: os.Getenv("RESERVATION_TOPIC"),
 		ResultTopic:      os.Getenv("RESULT_TOPIC"),
 		ConsumerGroup:    os.Getenv("CONSUMER_GROUP"),
+		RegistryURL:      os.Getenv("REGISTRY_URL"),
+		RegistryGroupID:  getenvDefault("REGISTRY_GROUP_ID", "ticketflow"),
 		LogLevel:         getenvDefault("LOG_LEVEL", "info"),
 		HTTPAddr:         getenvDefault("HTTP_ADDR", ":8080"),
 	}
@@ -76,6 +84,9 @@ func (c Config) validate() error {
 	}
 	if c.ConsumerGroup == "" {
 		return fmt.Errorf("CONSUMER_GROUP is required")
+	}
+	if c.RegistryURL == "" {
+		return fmt.Errorf("REGISTRY_URL is required")
 	}
 	if c.ProcessMaxRetries < 0 {
 		return fmt.Errorf("PROCESS_MAX_RETRIES must be >= 0")

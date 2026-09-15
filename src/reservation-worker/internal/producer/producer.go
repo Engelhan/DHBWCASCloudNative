@@ -8,14 +8,16 @@ import (
 	"github.com/segmentio/kafka-go"
 
 	"ticketflow/reservation-worker/internal/event"
+	"ticketflow/reservation-worker/internal/schemareg"
 )
 
 type Producer struct {
 	writer      *kafka.Writer
 	firstBroker string
+	schema      *schemareg.Client
 }
 
-func New(brokers []string, topic string) *Producer {
+func New(brokers []string, topic string, schema *schemareg.Client) *Producer {
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:  kafka.TCP(brokers...),
@@ -27,6 +29,7 @@ func New(brokers []string, topic string) *Producer {
 			AllowAutoTopicCreation: true, // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
 		},
 		firstBroker: brokers[0],
+		schema:      schema,
 	}
 }
 
@@ -44,9 +47,13 @@ func (p *Producer) Publish(ctx context.Context, result event.Result) error {
 	if err != nil {
 		return err
 	}
+	framed, err := p.schema.Wrap(value)
+	if err != nil {
+		return err
+	}
 	return p.writer.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(result.ReservationID),
-		Value: value,
+		Value: framed,
 	})
 }
 

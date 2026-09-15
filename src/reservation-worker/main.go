@@ -18,6 +18,7 @@ import (
 	"ticketflow/reservation-worker/internal/kafkaconsumer"
 	"ticketflow/reservation-worker/internal/migrate"
 	"ticketflow/reservation-worker/internal/producer"
+	"ticketflow/reservation-worker/internal/schemareg"
 	"ticketflow/reservation-worker/internal/server"
 )
 
@@ -44,11 +45,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	publisher := producer.New(cfg.KafkaBrokers, cfg.ResultTopic)
+	reqSchema, err := schemareg.New(schemareg.Config{
+		BaseURL:    cfg.RegistryURL,
+		GroupID:    cfg.RegistryGroupID,
+		ArtifactID: "reservation-requested-value",
+		Logger:     logger,
+	}, schemareg.RequestedSchemaJSON)
+	if err != nil {
+		logger.Error("compile embedded reservation-requested schema failed", "error", err)
+		os.Exit(1)
+	}
+	resultSchema, err := schemareg.New(schemareg.Config{
+		BaseURL:    cfg.RegistryURL,
+		GroupID:    cfg.RegistryGroupID,
+		ArtifactID: "reservation-result-value",
+		Logger:     logger,
+	}, schemareg.ResultSchemaJSON)
+	if err != nil {
+		logger.Error("compile embedded reservation-result schema failed", "error", err)
+		os.Exit(1)
+	}
+	if err := reqSchema.Resolve(connectCtx); err != nil {
+		logger.Error("resolve reservation-requested schema globalId failed", "error", err)
+		os.Exit(1)
+	}
+	if err := resultSchema.Resolve(connectCtx); err != nil {
+		logger.Error("resolve reservation-result schema globalId failed", "error", err)
+		os.Exit(1)
+	}
+
+	publisher := producer.New(cfg.KafkaBrokers, cfg.ResultTopic, resultSchema)
 	defer publisher.Close()
 
-	srv := server.New(cfg.HTTPAddr, database, publisher)
-	consumer := kafkaconsumer.New(cfg, database, publisher, logger)
+	srv := server.New(cfg.HTTPAddr, database, publisher, reqSchema, resultSchema)
+	consumer := kafkaconsumer.New(cfg, database, publisher, reqSchema, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

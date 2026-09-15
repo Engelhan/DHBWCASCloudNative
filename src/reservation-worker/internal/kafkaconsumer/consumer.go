@@ -29,6 +29,7 @@ import (
 	"ticketflow/reservation-worker/internal/event"
 	"ticketflow/reservation-worker/internal/metrics"
 	"ticketflow/reservation-worker/internal/producer"
+	"ticketflow/reservation-worker/internal/schemareg"
 )
 
 const (
@@ -43,12 +44,13 @@ type Consumer struct {
 	brokers    []string
 	db         *db.DB
 	publisher  *producer.Producer
+	schema     *schemareg.Client
 	maxRetries int
 	backoff    time.Duration
 	logger     *slog.Logger
 }
 
-func New(cfg config.Config, database *db.DB, publisher *producer.Producer, logger *slog.Logger) *Consumer {
+func New(cfg config.Config, database *db.DB, publisher *producer.Producer, schema *schemareg.Client, logger *slog.Logger) *Consumer {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
@@ -64,6 +66,7 @@ func New(cfg config.Config, database *db.DB, publisher *producer.Producer, logge
 		brokers:    cfg.KafkaBrokers,
 		db:         database,
 		publisher:  publisher,
+		schema:     schema,
 		maxRetries: cfg.ProcessMaxRetries,
 		backoff:    cfg.ProcessRetryBackoff,
 		logger:     logger,
@@ -112,7 +115,11 @@ func (c *Consumer) waitForBroker(ctx context.Context) error {
 func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 	start := time.Now()
 
-	req, err := event.UnmarshalRequested(msg.Value)
+	payload, err := c.schema.Unwrap(msg.Value)
+	var req event.Requested
+	if err == nil {
+		req, err = event.UnmarshalRequested(payload)
+	}
 	if err == nil {
 		err = req.Validate()
 	}

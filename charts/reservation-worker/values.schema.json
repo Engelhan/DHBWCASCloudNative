@@ -23,7 +23,7 @@
     },
     "config": {
       "type": "object",
-      "required": ["kafkaBrokers", "reservationTopic", "resultTopic", "consumerGroup"],
+      "required": ["kafkaBrokers", "reservationTopic", "resultTopic", "consumerGroup", "registryUrl"],
       "properties": {
         "kafkaBrokers": { "type": "string", "minLength": 1 },
         "reservationTopic": { "type": "string", "minLength": 1 },
@@ -31,6 +31,8 @@
         "consumerGroup": { "type": "string", "minLength": 1 },
         "processMaxRetries": { "type": "integer", "minimum": 0 },
         "processRetryBackoff": { "type": "string", "minLength": 1 },
+        "registryUrl": { "type": "string", "minLength": 1 },
+        "registryGroupId": { "type": "string", "minLength": 1 },
         "logLevel": { "type": "string" },
         "httpAddr": { "type": "string" }
       }

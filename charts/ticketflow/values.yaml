@@ -89,3 +89,11 @@ kafka:
       config:
         retention.ms: "604800000"
         cleanup.policy: delete
+
+# Apicurio Registry (charts/apicurio, Namespace "kafka"), siehe templates/schema-registry/ und
+# charts/README.md ## apicurio. URL ist die vom Apicurio-Chart selbst gerenderte Service-DNS
+# (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml metadata.name) - noch nicht live
+# gegen einen echten Sync geprueft (kein Cluster verfuegbar).
+schemaRegistry:
+  url: http://apicurio.kafka.svc:8080/apis/registry/v3
+  groupId: ticketflow

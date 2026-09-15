@@ -38,6 +38,16 @@ veröffentlichen:
 Pflicht, wenn SMTP aktiv ist (Log-Only-Pfad funktioniert auch ohne). `reason` nur bei
 `ReservationRejected` relevant (z.B. `"SOLD_OUT"`).
 
+**Wire-Format seit der Apicurio-Integration:** der Message-`Value` ist nicht mehr reines JSON,
+sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId`
++ das obige JSON als Payload. Das kanonische Schema (JSON Schema, identisch zum obigen Contract)
+liegt unter `charts/ticketflow/files/schemas/reservation-result.schema.json` und wird bei jedem
+Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; notification-worker validiert
+lokal dagegen (embedded, siehe `internal/schemareg`) vor der Verarbeitung - kein
+Registry-Roundtrip pro Nachricht. Eine Nachricht, die die Rahmung/Validierung nicht besteht,
+durchläuft denselben Poison-Pill-Pfad wie ein nicht parsebares JSON (siehe ## Zustell-Semantik).
+Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
+
 ## Konfiguration
 
 | Variable | Quelle | Default | Bedeutung |
@@ -48,6 +58,8 @@ Pflicht, wenn SMTP aktiv ist (Log-Only-Pfad funktioniert auch ohne). `reason` nu
 | `DLT_TOPIC` | ConfigMap | leer | Dead-Letter-Topic für Nachrichten, die alle Zustellversuche ausgeschöpft haben (leer = kein DLT-Publish) |
 | `NOTIFY_MAX_RETRIES` | ConfigMap | `3` | Zustellversuche pro Nachricht, bevor sie auf dem DLT landet |
 | `NOTIFY_RETRY_BACKOFF` | ConfigMap | `2s` | Pause zwischen Versuchen (Go-Duration-String) |
+| `REGISTRY_URL` | ConfigMap | – (Pflicht) | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
+| `REGISTRY_GROUP_ID` | ConfigMap | `ticketflow` | – |
 | `LOG_LEVEL` | ConfigMap | `info` | – |
 | `HTTP_ADDR` | ConfigMap | `:8080` | – |
 | `KAFKA_TLS_ENABLED` | ConfigMap | `false` | aktiviert mTLS zum Kafka-Broker |

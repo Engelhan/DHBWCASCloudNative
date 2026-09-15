@@ -27,6 +27,7 @@ import (
 	"ticketflow/notification-worker/internal/event"
 	"ticketflow/notification-worker/internal/metrics"
 	"ticketflow/notification-worker/internal/notify"
+	"ticketflow/notification-worker/internal/schemareg"
 )
 
 const channelUnmarshal = "unmarshal"
@@ -41,13 +42,14 @@ type Consumer struct {
 	// channel (e.g. SMTP) exhausts all retries, so there is always at
 	// least a log record of what was attempted.
 	logFallback notify.Notifier
+	schema      *schemareg.Client
 	maxRetries  int
 	backoff     time.Duration
 	logger      *slog.Logger
 	ready       *atomic.Bool
 }
 
-func New(cfg config.Config, tlsConfig *tls.Config, dispatcher *notify.Dispatcher, logFallback notify.Notifier, logger *slog.Logger, ready *atomic.Bool) *Consumer {
+func New(cfg config.Config, tlsConfig *tls.Config, dispatcher *notify.Dispatcher, logFallback notify.Notifier, schema *schemareg.Client, logger *slog.Logger, ready *atomic.Bool) *Consumer {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, TLS: tlsConfig}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
@@ -74,6 +76,7 @@ func New(cfg config.Config, tlsConfig *tls.Config, dispatcher *notify.Dispatcher
 		brokers:     cfg.KafkaBrokers,
 		dispatcher:  dispatcher,
 		logFallback: logFallback,
+		schema:      schema,
 		maxRetries:  cfg.NotifyMaxRetries,
 		backoff:     cfg.NotifyRetryBackoff,
 		logger:      logger,
@@ -129,7 +132,11 @@ func (c *Consumer) waitForBroker(ctx context.Context) error {
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
-	e, err := event.Unmarshal(msg.Value)
+	payload, err := c.schema.Unwrap(msg.Value)
+	var e event.Event
+	if err == nil {
+		e, err = event.Unmarshal(payload)
+	}
 	if err == nil {
 		err = e.Validate(c.dispatcher.Channel == notify.ChannelSMTP)
 	}
