@@ -70,8 +70,8 @@ Four layers, each owning a distinct concern — don't blur them:
    entry, with our values in its own `values.yaml` (see `charts/README.md`); ArgoCD resolves the
    dependency via `helm dependency build` at sync time. `app-of-apps.yaml` +
    Longhorn/cert-manager/cert-manager-issuer/external-dns/argocd-ingress/cnpg-operator/
-   strimzi-operator/kube-prometheus-stack/loki/tempo are written; KEDA and `ticketflow.yaml` are
-   still **not implemented** (build them the same wrapper-chart way). CNPG/Strimzi/
+   strimzi-operator/kube-prometheus-stack/loki/tempo/akhq/apicurio/kafka-cluster/ticketflow-app
+   are written; KEDA is still **not implemented** (build it the same wrapper-chart way). CNPG/Strimzi/
    kube-prometheus-stack all bundle CRDs over the 262144-byte annotation limit (CNPG's `poolers`
    CRD >650KB, Strimzi's `Kafka` CRD >330KB, kube-prometheus-stack's `Prometheus` CRD >800KB) —
    their Applications need `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install
@@ -84,12 +84,12 @@ Four layers, each owning a distinct concern — don't blur them:
    Observability-Stack.
    See
    `gitops/README.md` for the DNS/ACME activation flow.
-4. **`charts/ticketflow/`** — Kafka + schema-registry chart (Carlos' scope). `templates/messaging/`
+4. **`charts/kafka-cluster/`** — Kafka + schema-registry chart (Carlos' scope). `templates/messaging/`
    (Strimzi `Kafka` CR in KRaft mode plus separate `broker`/`controller` `KafkaNodePool`s — not
    combined-role, matching a real Strimzi setup the user provided as reference — two
    `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) plus
    `templates/schema-registry/` (registers `files/schemas/*.schema.json` into Apicurio) is written
-   and deployed via `gitops/apps/ticketflow.yaml` (merged to `main`). **`catalog-api`+`frontend`
+   and deployed via `gitops/apps/kafka-cluster.yaml` (merged to `main`). **`catalog-api`+`frontend`
    are deliberately NOT part of this chart** — team decision, they must not be deployed in the
    same Application as Kafka — they live in their own chart, `charts/ticketflow-app/`, deployed
    via `gitops/apps/ticketflow-app.yaml`. Both charts share the `ticketflow` Kubernetes namespace
@@ -388,7 +388,7 @@ commands here once these gaps close instead of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
-- **Done, merged to `main`:** `charts/ticketflow` Kafka
+- **Done, merged to `main`:** `charts/kafka-cluster` Kafka
   cluster — `Chart.yaml`/`values.yaml`/`values-dev.yaml`/`values-prod.yaml`/`values.schema.json`
   (schema currently only validates the `kafka.*` section; extensible for later sections) +
   `templates/messaging/`: `Kafka` CR in KRaft mode (no ZooKeeper, `strimzi.io/kraft: enabled`,
@@ -407,7 +407,7 @@ commands here once these gaps close instead of leaving this section stale.
   follow-up once `catalog-api`/`reservation-worker`/`notification-worker` exist),
   `inter.broker.protocol.version` (ZK-era field, meaningless under pure KRaft),
   `message.max.bytes: 200MB` (no justification for our small JSON events, left at the Kafka
-  default). `gitops/apps/ticketflow.yaml` (`targetRevision: main`, namespace
+  default). `gitops/apps/kafka-cluster.yaml` (`targetRevision: main`, namespace
   `ticketflow`, syncs `values-dev.yaml`). Strimzi chart version is pinned as `1.1.0`, which
   doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
   sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
@@ -515,7 +515,7 @@ commands here once these gaps close instead of leaving this section stale.
   explicit "AKHQ (schreibgeschützt konfiguriert)" claim — discovered while building this that the
   root README already documents a whole **B2 elective topic** (per-service `KafkaUser` CRs with
   SCRAM-SHA-512 + narrow `type: simple` ACLs, one per service, plus read-only AKHQ as the
-  Kafka-ops UI) that doesn't exist yet in the cluster (`charts/ticketflow` has no `KafkaUser`
+  Kafka-ops UI) that doesn't exist yet in the cluster (`charts/kafka-cluster` has no `KafkaUser`
   resources — see that section above) and isn't listed in this file's "Chosen elective topics" at
   the top (which only names W1/W2) — **flagged to the user, not resolved**: unclear whether B2 is
   a live commitment needing implementation (KafkaUser/ACLs are Carlos' scope, same as the Kafka
@@ -553,7 +553,7 @@ commands here once these gaps close instead of leaving this section stale.
   already rewrites.
 - **`gitops/apps/reservation-worker.yaml` status (updated 2026-09-15):** `automated`/`selfHeal`,
   namespace `ticketflow`, no `helm.values` override — no `values-dev.yaml`/`values-prod.yaml`
-  split for this chart either, unlike `charts/ticketflow`/`charts/kafka-cluster`; all values come
+  split for this chart either, unlike `charts/kafka-cluster`/`charts/kafka-cluster`; all values come
   from `charts/reservation-worker/values.yaml` defaults directly. `image.repository`/`image.tag`/
   `config.kafkaBrokers`/`database.*` are all real values now (ghcr.io path + a real,
   ghcr.io-verified git-short-sha tag, Strimzi bootstrap service, real CNPG host/port/name/
@@ -585,8 +585,8 @@ commands here once these gaps close instead of leaving this section stale.
   the chart was built for Apicurio 2.x's per-storage-image/env-var scheme, not 3.x's unified
   image + `APICURIO_STORAGE_KIND` env var. Storage is `kafkasql` (a Kafka topic + in-memory H2,
   no extra Postgres/cross-namespace-secret dependency). The two canonical JSON Schemas live at
-  `charts/ticketflow/files/schemas/*.schema.json` and are registered idempotently by a new
-  `post-install,post-upgrade` Helm hook Job in `charts/ticketflow/templates/schema-registry/`
+  `charts/kafka-cluster/files/schemas/*.schema.json` and are registered idempotently by a new
+  `post-install,post-upgrade` Helm hook Job in `charts/kafka-cluster/templates/schema-registry/`
   (`ifExists=FIND_OR_CREATE_VERSION&canonical=true`) — verified live: registered cleanly against
   a real registry, and confirmed the exact `globalId` response field name/casing that was only
   assumed beforehand. Each of the three Go services carries its own `internal/schemareg/` package
@@ -608,9 +608,9 @@ commands here once these gaps close instead of leaving this section stale.
 - **Done:** `charts/ticketflow-app` — standalone Helm chart for `catalog-api`+`frontend`
   (Deployment/Service/ConfigMap/ServiceMonitor/PodDisruptionBudget for catalog-api, same plus
   Ingress for frontend), deployed via `gitops/apps/ticketflow-app.yaml` (`targetRevision: main`,
-  namespace `ticketflow`, shared with `charts/ticketflow`'s Kafka so catalog-api reaches the
+  namespace `ticketflow`, shared with `charts/kafka-cluster`'s Kafka so catalog-api reaches the
   bootstrap service by short in-namespace DNS). Team decision: catalog-api/frontend must NOT be
-  deployed in the same Application as Kafka — this chart was split out of `charts/ticketflow`
+  deployed in the same Application as Kafka — this chart was split out of `charts/kafka-cluster`
   (which originally held both) for exactly that reason; `lint`/`template`/kubeconform all pass
   for both charts post-split.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,

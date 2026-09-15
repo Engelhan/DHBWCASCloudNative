@@ -1,21 +1,26 @@
 ---
-# TicketFlow-Messaging-Ebene: Kafka + Schema-Registry-Registrierung (Carlos' Scope). Eigener
-# Chart ../../charts/ticketflow (kein Wrapper - volleigene Custom Resources, siehe
-# charts/ticketflow/Chart.yaml). catalog-api/frontend sind bewusst NICHT hier drin - eigener
+# Kafka-Cluster-Instanz + Apicurio-Schema-Registrierung (Carlos' Scope). Eigener Chart
+# ../../charts/kafka-cluster (kein Wrapper - volleigene Custom Resources, siehe
+# charts/kafka-cluster/Chart.yaml). catalog-api/frontend sind bewusst NICHT hier drin - eigener
 # Chart/eigene Application, siehe gitops/apps/ticketflow-app.yaml (Team-Entscheidung: nicht in
 # derselben Application wie Kafka deployen). reservation-worker/notification-worker/CNPG-Cluster
 # sind ebenfalls eigene, volleigenstaendige Charts, siehe charts/README.md.
+#
+# Chart/Application hiessen urspruenglich "ticketflow", am 2026-09-16 auf "kafka-cluster"
+# umbenannt (git mv, Inhalt unveraendert), um Verwechslungen mit charts/ticketflow-app zu
+# vermeiden - destination.namespace bleibt "ticketflow" (Team-Entscheidung fuer den gemeinsamen
+# Namespace, unabhaengig vom Chart-/Application-Namen).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ticketflow
+  name: kafka-cluster
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
     targetRevision: main
-    path: charts/ticketflow
+    path: charts/kafka-cluster
     helm:
       valueFiles:
         - values-dev.yaml

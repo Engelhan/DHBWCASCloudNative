@@ -19,7 +19,7 @@ Kafka-Consumer, der die eigentliche Buchungslogik ausführt. Dies ist der Servic
   `reservation_processing_errors_total{stage="unmarshal|db|publish"}`. Consumer-Lag für KEDA
   (P6) wird nicht von diesem Service selbst exportiert, sondern von KEDAs eigenem
   `kafka`-Scaler direkt gegen den Kafka-Cluster ermittelt (siehe
-  [`charts/ticketflow/`](../../charts/ticketflow/)).
+  [`charts/kafka-cluster/`](../../charts/kafka-cluster/)).
 - `/healthz` (liveness) und `/readyz` (readiness: prüft DB- und Kafka-Erreichbarkeit, analog zu
   [`catalog-api`](../catalog-api/)).
 
@@ -82,7 +82,7 @@ stand nicht im Scope dieser ersten Implementierung.
 **Wire-Format seit der Apicurio-Integration:** beide Message-`Value`s sind nicht mehr reines
 JSON, sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId`
 + das jeweilige JSON als Payload. Die kanonischen Schemas (JSON Schema, identisch zu den obigen
-Contracts) liegen unter `charts/ticketflow/files/schemas/` und werden bei jedem Helm-Sync in
+Contracts) liegen unter `charts/kafka-cluster/files/schemas/` und werden bei jedem Helm-Sync in
 Apicurio Registry (`charts/apicurio`) registriert; `reservation-worker` validiert lokal dagegen
 (embedded, siehe `internal/schemareg`) - kein Registry-Roundtrip pro Nachricht. Siehe
 `charts/README.md` ## apicurio für Details/offene Punkte.

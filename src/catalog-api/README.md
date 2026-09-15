@@ -70,7 +70,7 @@ sobald der Service existiert.
 **Wire-Format seit der Apicurio-Integration:** der Message-`Value` ist nicht mehr reines JSON,
 sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId` +
 das obige JSON als Payload. Das kanonische Schema (JSON Schema, identisch zum obigen Contract)
-liegt unter `charts/ticketflow/files/schemas/reservation-requested.schema.json` und wird bei
+liegt unter `charts/kafka-cluster/files/schemas/reservation-requested.schema.json` und wird bei
 jedem Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; catalog-api validiert
 lokal dagegen (embedded, siehe `internal/schemareg`) vor jedem Publish - kein Registry-Roundtrip
 pro Nachricht. Siehe `charts/README.md` ## apicurio für Details/offene Punkte.

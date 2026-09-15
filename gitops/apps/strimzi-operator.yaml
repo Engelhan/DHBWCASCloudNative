@@ -2,7 +2,7 @@
 # Strimzi-Kafka-Operator. Wrapper-Chart ../../charts/strimzi-operator (Dependency auf den
 # Upstream-Chart, Werte in dessen values.yaml) - einheitliches Muster fuer alle Addon-Charts,
 # siehe charts/README.md. Die eigentliche Kafka-/KafkaTopic-CR kommt spaeter aus
-# charts/ticketflow (noch nicht geschrieben) als eigene Application.
+# charts/kafka-cluster (noch nicht geschrieben) als eigene Application.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

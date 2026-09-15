@@ -26,7 +26,7 @@ gitops/
     ├── loki.yaml               # Log-Aggregation, Wrapper-Chart ../charts/loki
     ├── tempo.yaml              # Trace-Aggregation, Wrapper-Chart ../charts/tempo
     ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
-    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow
+    └── kafka-cluster.yaml      # Kafka-Cluster-Instanz, eigener Chart ../charts/kafka-cluster
 ```
 
 Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
@@ -183,16 +183,26 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
-## ticketflow (Kafka-Cluster)
+## kafka-cluster / ticketflow-app
 
-`gitops/apps/ticketflow.yaml` zeigt (wie `strimzi-operator.yaml`) bewusst auf
-`targetRevision: strimzi-setup`, nicht `main` — Iterieren am Kafka-Teil ohne Merge-Zwang, siehe
-`CLAUDE.md`-Memory `project-strimzi-branch-tracking`. `helm.valueFiles: [values-dev.yaml]` fährt
-auf dem Lab-Cluster bewusst die kleine Variante (1 Broker) statt `values-prod.yaml`. Destination-
-Namespace `ticketflow`, per `CreateNamespace=true` — getrennt vom Strimzi-Operator-Namespace
-`kafka`. Bisher nur der Kafka-Cluster (`charts/ticketflow/templates/messaging/`); `catalog-api`/
-`frontend`/`notification-worker`/CNPG-Cluster folgen als eigene Templates im selben Chart.
+`gitops/apps/kafka-cluster.yaml` und `gitops/apps/ticketflow-app.yaml` zeigen beide auf
+`targetRevision: main`. Beide nutzen `helm.valueFiles: [values-dev.yaml]` — auf dem Lab-Cluster
+bewusst die kleine Variante (1 Kafka-Broker, 1 Replica je App-Service) statt `values-prod.yaml`.
+Destination-Namespace für beide `ticketflow`, per `CreateNamespace=true` — getrennt vom
+Strimzi-Operator-Namespace `kafka` (dort laufen nur Operator/AKHQ/Apicurio als
+Plattform-Tooling, nicht die Kafka-Cluster-Instanz selbst).
+
+`charts/kafka-cluster/` (Kafka-CR, KafkaNodePools, KafkaTopics, Apicurio-Schema-Registrierung)
+und `charts/ticketflow-app/` (catalog-api + frontend) sind bewusst zwei getrennte Charts/
+Applications (Team-Entscheidung: nicht gemeinsam deployen, damit ein Sync/Rollback des einen den
+anderen nicht anfasst) — beide laufen im selben Kubernetes-Namespace `ticketflow`, damit
+catalog-api den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
+`charts/kafka-cluster/` hieß ursprünglich `charts/ticketflow/` (bis 2026-09-16, umbenannt um
+Verwechslungen mit `charts/ticketflow-app/` zu vermeiden — reiner `git mv`, keine
+Inhaltsänderung). `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** Teil von
+`kafka-cluster` oder `ticketflow-app` — eigene, volleigenständige Charts
+(`charts/notification-worker/`, `charts/postgres-cluster/`) mit eigenen Applications.
 
 `TODO`: `keda.yaml` (mit eigenem Wrapper-Chart unter `../charts/`, analog zu allen anderen
-Addons) und `projects/ticketflow-project.yaml` fehlen noch — `ticketflow.yaml` läuft bislang mit
-`project: default` wie alle anderen Applications.
+Addons) und `projects/ticketflow-project.yaml` fehlen noch — alle Applications laufen bislang mit
+`project: default`.

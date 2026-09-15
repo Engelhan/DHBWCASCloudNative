@@ -10,8 +10,8 @@ Service(-paar) hat einen eigenen, standalone Chart nach demselben Muster.
 [`ticketflow-app/`](ticketflow-app/) bündelt `catalog-api` und `frontend` (Philipps Scope) in
 einem gemeinsamen Chart — anders als `notification-worker`/`reservation-worker` (je ein Service
 pro Chart), weil `frontend` ausschließlich mit `catalog-api` spricht und sich mit ihm eine
-Ingress-Route/Origin teilt. Team-Entscheidung: bewusst nicht Teil von `charts/ticketflow`
-(Kafka) — zwei getrennte ArgoCD-`Application`s (`gitops/apps/ticketflow.yaml` für Kafka,
+Ingress-Route/Origin teilt. Team-Entscheidung: bewusst nicht Teil von `charts/kafka-cluster`
+(Kafka) — zwei getrennte ArgoCD-`Application`s (`gitops/apps/kafka-cluster.yaml` für Kafka,
 `gitops/apps/ticketflow-app.yaml` für diesen Chart), damit ein Sync/Rollback des einen den
 anderen nicht anfasst. Beide laufen im selben Kubernetes-Namespace (`ticketflow`), damit
 `catalog-api` den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
@@ -29,12 +29,12 @@ anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes ge
 Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
 Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als
 einer von zwei Charts im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an
-das noch nicht vollständige `charts/ticketflow` gebunden, siehe root-README `##
+das noch nicht vollständige `charts/kafka-cluster` gebunden, siehe root-README `##
 Entscheidungen` zu W1) sowie `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
 `gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
 ArgoCD deployt. **Hinweis:** `values.yaml` → `config.resultTopic` default `"reservation-results"`
-(Plural) weicht vom tatsächlichen, per `charts/ticketflow` angelegten Kafka-Topic
-`reservation-result` (Singular, siehe `charts/ticketflow/values.yaml`) ab — noch nicht
+(Plural) weicht vom tatsächlichen, per `charts/kafka-cluster` angelegten Kafka-Topic
+`reservation-result` (Singular, siehe `charts/kafka-cluster/values.yaml`) ab — noch nicht
 korrigiert/live relevant, da der Chart noch nicht deployt ist, aber vor dem ersten echten Deploy
 gegenzuprüfen.
 
@@ -217,5 +217,5 @@ gegenprüfen, statt der Struktur eines anderen Charts blind zu folgen.
 NetworkPolicies wurden bewusst **nicht** auf konkrete Pod-/Namespace-Selektoren verengt
 (Chart-Default-Regeln reichen, `enabled: true` genügt) — die genauen Cross-Namespace-Verkehrsflüsse
 (z.B. welche Namespaces Prometheus scrapen darf) stehen erst fest, sobald
-`charts/ticketflow` existiert; eine zu früh verengte Policy würde sonst später stillschweigend
+`charts/kafka-cluster` existiert; eine zu früh verengte Policy würde sonst später stillschweigend
 Metrics-/Log-/Trace-Sammlung blockieren, ohne dass ein Fehler sichtbar wird.

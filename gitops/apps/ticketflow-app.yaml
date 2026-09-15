@@ -1,10 +1,10 @@
 ---
 # TicketFlow-Anwendungsebene: catalog-api + frontend (Philipps Scope). Eigener Chart
 # ../../charts/ticketflow-app (kein Wrapper - volleigene Custom Resources, siehe
-# charts/ticketflow-app/Chart.yaml). Bewusst NICHT Teil von gitops/apps/ticketflow.yaml
+# charts/ticketflow-app/Chart.yaml). Bewusst NICHT Teil von gitops/apps/kafka-cluster.yaml
 # (Kafka + Schema-Registry, Carlos' Scope) - Team-Entscheidung, catalog-api/frontend nicht in
 # derselben Application wie Kafka deployen. Selber Kubernetes-Namespace ("ticketflow") wie
-# ticketflow.yaml, damit catalog-api den Kafka-Bootstrap-Service per kurzem
+# kafka-cluster.yaml, damit catalog-api den Kafka-Bootstrap-Service per kurzem
 # In-Namespace-DNS-Namen erreicht.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

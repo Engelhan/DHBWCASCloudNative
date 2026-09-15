@@ -28,7 +28,7 @@ kube-prometheus-stack:
           memory: 1Gi
     # Chart-eigene NetworkPolicy mit sinnvollen Default-Regeln - nicht auf konkrete
     # Pod-/Namespace-Selektoren verengt, siehe cert-manager/values.yaml fuer die Begruendung
-    # (charts/ticketflow existiert noch nicht, genaue Cross-Namespace-Scrape-Ziele stehen noch
+    # (charts/kafka-cluster existiert noch nicht, genaue Cross-Namespace-Scrape-Ziele stehen noch
     # nicht fest).
     networkPolicy:
       enabled: true

@@ -116,7 +116,7 @@ flowchart TB
    (`topology.ticketflow/region`) und bootstrapt ArgoCD — siehe [`infra/ansible/`](infra/ansible/).
 3. ArgoCD übernimmt ab hier per GitOps (App-of-Apps) den Rest: CNPG-Operator, Strimzi-Operator,
    KEDA, kube-prometheus-stack und den TicketFlow-Helm-Chart selbst — siehe
-   [`gitops/`](gitops/) und [`charts/ticketflow/`](charts/ticketflow/).
+   [`gitops/`](gitops/) und [`charts/kafka-cluster/`](charts/kafka-cluster/).
 4. `catalog-api` nimmt Reservierungsanfragen entgegen und veröffentlicht sie als Event auf Kafka,
    statt synchron in die Datenbank zu schreiben.
 5. `reservation-worker` konsumiert diese Events, sperrt den Sitzplatz transaktional in CNPG-Postgres
@@ -299,7 +299,7 @@ Log-Grepping. Eine unbenutzte `Service`-Ressource nur für den Scraper wäre rei
 Alert-Regel macht zusätzlich sichtbar, ab wann die Lastspitze geschäftlich relevant wird
 (Kunden warten spürbar), nicht nur technisch (Lag-Zahl steigt).
 
-**W1 – Packaging (Helm).** *Wahl:* ein Umbrella-Chart `charts/ticketflow` mit
+**W1 – Packaging (Helm).** *Wahl:* ein Umbrella-Chart `charts/kafka-cluster` mit
 `values-dev.yaml`, `values-prod.yaml` und `values.schema.json` (Muster bereits im ersten
 Service-Chart etabliert, siehe [`charts/notification-worker/values.schema.json`](charts/notification-worker/values.schema.json)).
 *Alternative:* Kustomize mit Base+Overlays. *Begründung:* Kustomize kennt kein Werte-Schema — ein

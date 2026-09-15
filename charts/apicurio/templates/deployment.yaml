@@ -32,7 +32,7 @@ spec:
           # Kein dediziertes Health-Endpoint in der 3.x-Doku bestaetigt (moeglicherweise auf
           # einem separaten Management-Port statt 8080, siehe charts/README.md). Nutzt
           # stattdessen die echte, immer erreichbare REST-API selbst als Probe - dieselbe
-          # Begruendung wie der Wartelogik im schema-registrar-Job in charts/ticketflow.
+          # Begruendung wie der Wartelogik im schema-registrar-Job in charts/kafka-cluster.
           livenessProbe:
             httpGet:
               path: /apis/registry/v3/groups

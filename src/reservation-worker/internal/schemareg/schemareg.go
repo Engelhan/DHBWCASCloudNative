@@ -7,7 +7,7 @@
 // registry availability once a Client has successfully resolved once.
 //
 // Not a general-purpose Apicurio client: it only implements the two calls this repo's services
-// need (create-or-update is done by the charts/ticketflow schema-registrar Job, not from app
+// need (create-or-update is done by the charts/kafka-cluster schema-registrar Job, not from app
 // code -- see that Job's comment for why). Duplicated per service rather than shared via a Go
 // module, same convention as internal/event.
 package schemareg

@@ -2,17 +2,17 @@
 # values-dev.yaml/values-prod.yaml.
 #
 # catalog-api + frontend (Philipps Scope) - bewusst eigener Chart, getrennt von
-# charts/ticketflow (Kafka + Schema-Registry, Carlos' Scope), siehe Chart.yaml-Beschreibung und
+# charts/kafka-cluster (Kafka + Schema-Registry, Carlos' Scope), siehe Chart.yaml-Beschreibung und
 # charts/README.md.
 
-# Namespace fuer alle Ressourcen dieses Charts - derselbe Namespace wie charts/ticketflow
+# Namespace fuer alle Ressourcen dieses Charts - derselbe Namespace wie charts/kafka-cluster
 # (Kafka), damit catalog-api den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen
 # erreicht (siehe catalogApi.env.kafkaBrokers unten). Zwei Helm-Releases im selben Kubernetes-
 # Namespace sind unproblematisch. Wird von gitops/apps/ticketflow-app.yaml als
 # destination.namespace gesetzt (CreateNamespace=true).
 namespace: ticketflow
 
-# Apicurio Registry (charts/apicurio, Namespace "kafka", ueber charts/ticketflow/templates/
+# Apicurio Registry (charts/apicurio, Namespace "kafka", ueber charts/kafka-cluster/templates/
 # schema-registry/ mit den kanonischen Schemas befuellt). URL ist die vom Apicurio-Chart selbst
 # gerenderte Service-DNS (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml
 # metadata.name) - noch nicht live gegen einen echten Sync geprueft (kein Cluster verfuegbar).
@@ -47,7 +47,7 @@ catalogApi:
     logLevel: info
     port: "8080"
     reservationTopic: reservation-requested
-    # Bootstrap-Service des Kafka-Clusters aus charts/ticketflow (kafka.metadata.name dort),
+    # Bootstrap-Service des Kafka-Clusters aus charts/kafka-cluster (kafka.metadata.name dort),
     # Port 9092 ist Strimzi's Standard-Plaintext-Listener.
     kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
     # Nur fuer Requests ausserhalb des Ingress-Pfads relevant (z.B. direkter Aufruf durch

@@ -1,8 +1,0 @@
-apiVersion: v2
-name: ticketflow
-description: >-
-  Umbrella-Chart fuer die gesamte TicketFlow-Anwendungsebene (Services, CNPG-Cluster-CR,
-  Strimzi-Kafka-CR). Volleigene Custom Resources, kein Wrapper um einen Upstream-Chart -
-  analog zu charts/cert-manager-config, nur fuer die Anwendungsebene statt den Addon-Layer.
-type: application
-version: 0.1.0

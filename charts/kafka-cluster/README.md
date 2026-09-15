@@ -1,4 +1,4 @@
-# Chart: ticketflow
+# Chart: kafka-cluster
 
 Eigenständiger Chart für Kafka (Messaging) sowie die Registrierung der kanonischen Kafka-Event-
 Schemas in Apicurio Registry (Carlos' Scope). `catalog-api`/`frontend` haben einen eigenen Chart
@@ -11,7 +11,7 @@ und der CNPG-Postgres-Cluster sind ebenfalls eigene, eigenständige Charts
 ## Struktur
 
 ```
-ticketflow/
+kafka-cluster/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte
 ├── values-dev.yaml          # kleine Replica-/Ressourcenwerte, 1 Kafka-Broker
@@ -39,9 +39,9 @@ ticketflow/
 ## Verwendung
 
 ```bash
-helm lint charts/ticketflow -f charts/ticketflow/values-dev.yaml
-helm template ticketflow charts/ticketflow -f charts/ticketflow/values-dev.yaml
+helm lint charts/kafka-cluster -f charts/kafka-cluster/values-dev.yaml
+helm template kafka-cluster charts/kafka-cluster -f charts/kafka-cluster/values-dev.yaml
 ```
 
-Deployment läuft indirekt über ArgoCD (`gitops/apps/ticketflow.yaml`, `targetRevision: main`,
+Deployment läuft indirekt über ArgoCD (`gitops/apps/kafka-cluster.yaml`, `targetRevision: main`,
 Namespace `ticketflow`).

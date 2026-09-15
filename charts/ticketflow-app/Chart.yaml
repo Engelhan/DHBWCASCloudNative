@@ -2,7 +2,7 @@ apiVersion: v2
 name: ticketflow-app
 description: >-
   Eigener Chart fuer catalog-api + frontend (Philipps Scope). Bewusst NICHT Teil von
-  charts/ticketflow (das enthaelt nur noch Kafka + Schema-Registry, Carlos' Scope) - Team-
+  charts/kafka-cluster (das enthaelt nur noch Kafka + Schema-Registry, Carlos' Scope) - Team-
   Entscheidung, dieselbe eigenstaendige Chart-pro-Service-Linie wie charts/reservation-worker
   und charts/notification-worker. catalog-api/frontend teilen sich hier einen Chart (statt je
   einen eigenen), da frontend ausschliesslich mit catalog-api spricht und sich mit ihm eine

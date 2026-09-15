@@ -1,7 +1,7 @@
 # Chart: ticketflow-app
 
 Eigenständiger Chart für `catalog-api` + `frontend` (Philipps Scope). Bewusst NICHT Teil von
-`charts/ticketflow` (Kafka + Schema-Registry, Carlos' Scope) — Team-Entscheidung, catalog-api/
+`charts/kafka-cluster` (Kafka + Schema-Registry, Carlos' Scope) — Team-Entscheidung, catalog-api/
 frontend nicht in derselben Application wie Kafka deployen, siehe
 `gitops/apps/ticketflow-app.yaml`. catalog-api und frontend teilen sich hier einen Chart (statt
 je einen eigenen wie `charts/reservation-worker`/`charts/notification-worker`), da frontend
@@ -31,12 +31,12 @@ ticketflow-app/
         └── poddisruptionbudget.yaml
 ```
 
-**Schnittstelle zu `charts/ticketflow` (Kafka):** `catalogApi.env.kafkaBrokers` referenziert den
+**Schnittstelle zu `charts/kafka-cluster` (Kafka):** `catalogApi.env.kafkaBrokers` referenziert den
 Kafka-Bootstrap-Service aus diesem anderen Chart/derselben Application-Gruppe per fest
 verdrahtetem Service-DNS-Namen (`ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092`) — beide
 Charts laufen im selben Kubernetes-Namespace (`ticketflow`), auch wenn sie getrennte
 Helm-Releases/ArgoCD-Applications sind. Ändert sich der Kafka-Cluster-Name in
-`charts/ticketflow/values.yaml`, muss dieser Wert hier manuell nachgezogen werden (kein
+`charts/kafka-cluster/values.yaml`, muss dieser Wert hier manuell nachgezogen werden (kein
 `--set-file`/Cross-Chart-Referencing).
 
 **Datenbank-Zugangsdaten:** `catalog-api` baut den Postgres-Connection-String selbst aus

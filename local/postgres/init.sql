@@ -1,5 +1,5 @@
 -- Lokales Dev-Seeding fuer docker-compose (lokal, nicht Teil des Terraform/Ansible/ArgoCD/Helm-Pfads).
--- Im Cluster legt spaeter charts/ticketflow/templates/database/cnpg-cluster.yaml die DB an; das
+-- Im Cluster legt spaeter charts/postgres-cluster/templates/postgres-cluster.yaml die DB an; das
 -- Schema hier ist der aktuelle Entwurf, den catalog-api (lesend) und reservation-worker
 -- (schreibend, noch nicht implementiert) gegen echtes Postgres/Kafka lokal ausprobieren koennen.
 

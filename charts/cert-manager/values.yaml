@@ -45,7 +45,7 @@ cert-manager:
 
   # Chart-eigene NetworkPolicy-Ressourcen mit sinnvollen Default-Regeln (siehe Upstream-
   # values.yaml: Ingress nur auf Metrics-/Healthz-Ports, Egress auf 80/443/53) - nicht weiter
-  # auf konkrete Pod-/Namespace-Selektoren verengt, da charts/ticketflow (der eigentliche
+  # auf konkrete Pod-/Namespace-Selektoren verengt, da charts/kafka-cluster (der eigentliche
   # Consumer von Zertifikaten) noch nicht existiert und die genauen Cross-Namespace-Flows noch
   # nicht feststehen.
   networkPolicy:

@@ -6,7 +6,7 @@ image:
 # Mehrere Consumer-Instanzen derselben CONSUMER_GROUP teilen sich die Partitionen von
 # config.resultTopic automatisch (Kafka-Consumer-Group-Rebalancing) - die Partitionsanzahl des
 # Topics sollte >= replicaCount sein, sonst bleiben ueberzaehlige Replicas ungenutzt. Das Topic
-# selbst entsteht erst mit Strimzi/charts/ticketflow, ausserhalb des Scopes dieses Charts.
+# selbst entsteht erst mit Strimzi/charts/kafka-cluster, ausserhalb des Scopes dieses Charts.
 replicaCount: 3
 
 resources:
@@ -40,7 +40,7 @@ config:
   dltTopic: ""
   notifyMaxRetries: 3
   notifyRetryBackoff: "2s"
-  # Apicurio Registry (charts/apicurio), siehe charts/ticketflow/values.yaml schemaRegistry.* fuer
+  # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
   # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
   registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
   registryGroupId: "ticketflow"
@@ -60,7 +60,7 @@ config:
 secret:
   create: true # false = ein extern (z.B. External Secret) bereitgestelltes Secret gleichen Namens wird erwartet
   # Platzhalter-Struktur; echte Werte via --set/--set-file/External Secret zur Deploy-Zeit, nie im
-  # Repo committen (gleiches Muster wie charts/ticketflow/README.md config/secret.yaml).
+  # Repo committen (gleiches Muster wie charts/kafka-cluster/README.md config/secret.yaml).
   smtpUsername: ""
   smtpPassword: ""
   kafkaTlsCaCert: ""

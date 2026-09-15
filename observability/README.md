@@ -1,7 +1,7 @@
 # observability/ – Dashboard und Alert-Regel als Code (P7)
 
 Ergänzt die `/metrics`-Endpunkte und `ServiceMonitor`-Ressourcen aus
-[`charts/ticketflow/templates/monitoring/`](../charts/ticketflow/templates/monitoring/) um die
+[`charts/kafka-cluster/templates/monitoring/`](../charts/kafka-cluster/templates/monitoring/) um die
 eigentlichen Inhalte:
 
 - [`dashboards/`](dashboards/): Grafana-Dashboard-JSON, wird über eine ConfigMap

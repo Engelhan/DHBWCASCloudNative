@@ -170,7 +170,7 @@ Fehlt `argocd_deploy_key` bzw. `secrets.yml` (oder enthält sie noch den Platzha
 
 - Kein eigenes Ingress/LoadBalancer-Handling: k3s installiert standardmäßig Traefik und
   ServiceLB mit. Ob das für die spätere Anwendung passt oder abgeschaltet wird, entscheidet sich
-  beim Schreiben des Helm-Charts ([`../../charts/ticketflow/`](../../charts/ticketflow/)).
+  beim Schreiben des Helm-Charts ([`../../charts/kafka-cluster/`](../../charts/kafka-cluster/)).
 - `become` setzt passwortlosen `sudo` für den in `hosts.ini` hinterlegten SSH-User voraus – auf
   den üblichen Cloud-Images (z.B. Ubuntu-Cloud-Images mit vorbereitetem `ubuntu`-User) ist das
   der Standard.

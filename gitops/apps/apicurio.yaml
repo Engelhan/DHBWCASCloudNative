@@ -3,7 +3,7 @@
 # charts/apicurio/values.yaml. Liegt im Namespace "kafka" (zusammen mit Strimzi-Operator/AKHQ,
 # siehe akhq.yaml/strimzi-operator.yaml) statt "ticketflow" - Registry ist Kafka-Plattform-
 # Tooling, kein Teil der TicketFlow-Anwendung selbst. Kein Ingress (nur intern erreichbar, anders
-# als AKHQ). Registriert werden die Schemas durch einen eigenen Job in charts/ticketflow (siehe
+# als AKHQ). Registriert werden die Schemas durch einen eigenen Job in charts/kafka-cluster (siehe
 # templates/schema-registry/), nicht hier - dieser Chart deployt nur die Registry selbst.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

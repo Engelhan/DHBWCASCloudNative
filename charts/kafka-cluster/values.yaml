@@ -15,7 +15,7 @@
 
 # Namespace fuer alle Ressourcen dieses Charts - getrennt vom Strimzi-Operator-Namespace "kafka"
 # (siehe charts/strimzi-operator), analog zu cnpg-operator (Namespace cnpg-system) vs. dieser
-# App-Namespace. Wird von gitops/apps/ticketflow.yaml als destination.namespace gesetzt
+# App-Namespace. Wird von gitops/apps/kafka-cluster.yaml als destination.namespace gesetzt
 # (CreateNamespace=true).
 namespace: ticketflow
 

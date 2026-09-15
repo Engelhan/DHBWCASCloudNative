@@ -17,7 +17,7 @@ spec:
   ingress:
     # Nur Prometheus-Scraping aus dem monitoring-Namespace erlauben. Egress bleibt offen: den
     # Kafka-Broker und einen beliebigen externen SMTP-Relay aus diesem Chart heraus sicher
-    # einzugrenzen ist ohne die Netzwerktopologie von charts/ticketflow nicht sinnvoll planbar.
+    # einzugrenzen ist ohne die Netzwerktopologie von charts/kafka-cluster nicht sinnvoll planbar.
     - from:
         - namespaceSelector:
             matchLabels:
