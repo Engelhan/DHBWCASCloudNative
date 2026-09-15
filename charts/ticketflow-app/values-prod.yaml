@@ -1,0 +1,10 @@
+# HA-Werte - siehe README ## values-dev.yaml vs. values-prod.yaml. 3 Replicas je Service, damit
+# topologySpreadConstraints (maxSkew: 1) tatsaechlich etwas zu verteilen hat - eine simulierte
+# Region kann komplett ausfallen, ohne dass catalog-api/frontend komplett weg sind
+# (P4/P5-Begruendung).
+
+catalogApi:
+  replicas: 3
+
+frontend:
+  replicas: 3

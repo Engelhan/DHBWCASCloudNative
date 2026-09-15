@@ -1,10 +1,20 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource
-(CNPG-`Cluster` folgt dort noch, siehe dessen `Chart.yaml`). `catalog-api`, `notification-worker`
-und `reservation-worker` sind bewusst **kein** Teil davon — jeder hat einen eigenen, standalone
-Chart nach demselben Muster, siehe unten (catalog-api-Chart existiert noch nicht,
-`notification-worker`/`reservation-worker` schon).
+Enthält den eigenen Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource plus
+Schema-Registry-Registrierung. `catalog-api`+`frontend` (gemeinsam in einem Chart, siehe unten),
+`notification-worker` und `reservation-worker` sind bewusst **kein** Teil davon — jeder(s)
+Service(-paar) hat einen eigenen, standalone Chart nach demselben Muster.
+
+## `ticketflow-app` — eigenständiger Chart für `catalog-api` + `frontend`
+
+[`ticketflow-app/`](ticketflow-app/) bündelt `catalog-api` und `frontend` (Philipps Scope) in
+einem gemeinsamen Chart — anders als `notification-worker`/`reservation-worker` (je ein Service
+pro Chart), weil `frontend` ausschließlich mit `catalog-api` spricht und sich mit ihm eine
+Ingress-Route/Origin teilt. Team-Entscheidung: bewusst nicht Teil von `charts/ticketflow`
+(Kafka) — zwei getrennte ArgoCD-`Application`s (`gitops/apps/ticketflow.yaml` für Kafka,
+`gitops/apps/ticketflow-app.yaml` für diesen Chart), damit ein Sync/Rollback des einen den
+anderen nicht anfasst. Beide laufen im selben Kubernetes-Namespace (`ticketflow`), damit
+`catalog-api` den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
 
 ## `notification-worker` — eigenständiger Chart statt Teil des Umbrella-Charts
 
