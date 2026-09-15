@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketflow-frontend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: ticketflow
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/part-of: ticketflow
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/part-of: ticketflow
+    spec:
+      {{- if .Values.frontend.topologySpreadConstraint.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.frontend.topologySpreadConstraint.maxSkew }}
+          topologyKey: topology.ticketflow/region
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+              app.kubernetes.io/part-of: ticketflow
+      {{- end }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          # Kein readOnlyRootFilesystem/runAsNonRoot: nginx:1.27-alpine startet als root (bindet
+          # Port 80, schreibt PID-File), delegiert Worker-Prozesse intern an den nginx-User -
+          # gleiche Art von dokumentierter, begruendeter Ausnahme wie Longhorn in
+          # charts/longhorn, siehe charts/README.md ## Resource-Limits, Security-Context,
+          # NetworkPolicy.
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: ticketflow-frontend-config

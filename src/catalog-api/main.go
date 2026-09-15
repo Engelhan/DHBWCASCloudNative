@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,13 +20,13 @@ import (
 func main() {
 	setupLogger(getenv("LOG_LEVEL", "info"))
 
-	databaseURL := requireEnv("DATABASE_URL")
+	databaseURL := buildDatabaseURL()
 	kafkaBrokers := strings.Split(requireEnv("KAFKA_BROKERS"), ",")
 	reservationTopic := requireEnv("RESERVATION_TOPIC")
 	corsOrigin := getenv("CORS_ALLOWED_ORIGIN", "*")
 	port := getenv("PORT", "8080")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	database, err := db.Connect(ctx, databaseURL)
@@ -33,6 +35,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer database.Close()
+
+	if err := database.Migrate(ctx); err != nil {
+		slog.Error("database migration failed", "error", err)
+		os.Exit(1)
+	}
 
 	producer := reservation.NewProducer(kafkaBrokers, reservationTopic)
 	defer producer.Close()
@@ -71,4 +78,28 @@ func requireEnv(key string) string {
 		os.Exit(1)
 	}
 	return v
+}
+
+// buildDatabaseURL setzt den Connection-String aus Einzelteilen zusammen, statt einen fertigen
+// DATABASE_URL-String zu erwarten - CNPG-Cluster (siehe charts/postgres-cluster) liefern nur ein
+// Secret mit getrennten username/password-Feldern, kein zusammengesetztes Connection-String-Secret
+// (Team-Entscheidung: das baut sich jede Anwendung selbst, da das Format je Anwendung/Treiber
+// unterschiedlich sein kann). DB_USER/DB_PASSWORD kommen aus einem Secret, DB_HOST/DB_PORT/
+// DB_NAME/DB_SSLMODE aus einer ConfigMap (kein Geheimnis).
+func buildDatabaseURL() string {
+	host := requireEnv("DB_HOST")
+	port := getenv("DB_PORT", "5432")
+	name := requireEnv("DB_NAME")
+	user := requireEnv("DB_USER")
+	password := requireEnv("DB_PASSWORD")
+	sslMode := getenv("DB_SSLMODE", "disable")
+
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(user, password),
+		Host:     fmt.Sprintf("%s:%s", host, port),
+		Path:     "/" + name,
+		RawQuery: "sslmode=" + sslMode,
+	}
+	return u.String()
 }

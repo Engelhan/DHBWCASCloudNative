@@ -1,0 +1,46 @@
+# Ein Ingress fuer Frontend + catalog-api auf derselben Origin/demselben Host - vermeidet damit
+# komplett CORS zwischen Browser und catalog-api (siehe src/frontend/README.md ## Stack und
+# catalogApi.env.corsAllowedOrigin in values.yaml). /events und /reservations sind die einzigen
+# vom Frontend-JS aufgerufenen catalog-api-Pfade (siehe src/frontend/app.js) - bewusst NICHT
+# /healthz, /readyz, /metrics oeffentlich geroutet, die bleiben rein cluster-intern
+# (Kubelet-Probes bzw. ServiceMonitor). Alles andere (/) faellt auf das Frontend zurueck.
+{{- if .Values.frontend.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketflow
+  namespace: {{ .Values.namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.frontend.ingress.clusterIssuerName }}
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{ .Values.frontend.ingress.host | quote }}
+      secretName: {{ .Values.frontend.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.frontend.ingress.host | quote }}
+      http:
+        paths:
+          - path: /events
+            pathType: Prefix
+            backend:
+              service:
+                name: ticketflow-catalog-api
+                port:
+                  number: {{ .Values.catalogApi.service.port }}
+          - path: /reservations
+            pathType: Prefix
+            backend:
+              service:
+                name: ticketflow-catalog-api
+                port:
+                  number: {{ .Values.catalogApi.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ticketflow-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

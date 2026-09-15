@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketflow-catalog-api
+  namespace: {{ .Values.namespace }}
+data:
+  LOG_LEVEL: {{ .Values.catalogApi.env.logLevel | quote }}
+  PORT: {{ .Values.catalogApi.env.port | quote }}
+  RESERVATION_TOPIC: {{ .Values.catalogApi.env.reservationTopic | quote }}
+  KAFKA_BROKERS: {{ .Values.catalogApi.env.kafkaBrokers | quote }}
+  CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.env.corsAllowedOrigin | quote }}
+  DB_HOST: {{ .Values.catalogApi.database.host | quote }}
+  DB_PORT: {{ .Values.catalogApi.database.port | quote }}
+  DB_NAME: {{ .Values.catalogApi.database.name | quote }}
+  DB_SSLMODE: {{ .Values.catalogApi.database.sslMode | quote }}

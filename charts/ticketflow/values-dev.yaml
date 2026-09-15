@@ -30,3 +30,11 @@ kafka:
       config:
         retention.ms: "604800000"
         cleanup.policy: delete
+
+# Ein Replica reicht fuer Funktionstests - PodDisruptionBudget (minAvailable: 1) waere damit
+# de-facto wirkungslos, bleibt aber aktiv (kein Sonderfall im Template noetig).
+catalogApi:
+  replicas: 1
+
+frontend:
+  replicas: 1

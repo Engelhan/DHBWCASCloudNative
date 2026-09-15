@@ -1,0 +1,16 @@
+{{- if .Values.catalogApi.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticketflow-catalog-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: catalog-api
+    app.kubernetes.io/part-of: ticketflow
+spec:
+  minAvailable: {{ .Values.catalogApi.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-api
+      app.kubernetes.io/part-of: ticketflow
+{{- end }}
