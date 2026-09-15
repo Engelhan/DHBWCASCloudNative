@@ -1,6 +1,10 @@
 image:
   repository: ghcr.io/engelhan/ticketflow-reservation-worker # siehe .github/workflows/build-images.yml
-  tag: "latest" # Pflichtfeld beim Deploy (Git-Short-SHA aus build-images.yml, kein Default, nie :latest, siehe P3)
+  # Git-Short-SHA aus build-images.yml, kein :latest (siehe P3) - a0acfac6 ist der neueste
+  # tatsaechlich existierende, gegen ghcr.io verifizierte Tag (kein src/reservation-worker-Commit
+  # seither, siehe git log a0acfac..HEAD -- src/). Bei jedem neuen build-images.yml-Lauf, der
+  # src/reservation-worker aendert, hier den dann aktuellen Tag eintragen.
+  tag: "a0acfac6"
   pullPolicy: IfNotPresent
 
 # Statischer Default fuer jetzt - der eigentliche Skalierungs-Trigger (KEDA auf
