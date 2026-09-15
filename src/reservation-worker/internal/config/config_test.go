@@ -9,6 +9,7 @@ func baseEnv(t *testing.T) {
 	t.Setenv("RESERVATION_TOPIC", "reservation-requested")
 	t.Setenv("RESULT_TOPIC", "reservation-result")
 	t.Setenv("CONSUMER_GROUP", "reservation-worker")
+	t.Setenv("REGISTRY_URL", "http://apicurio.kafka.svc:8080/apis/registry/v3")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -38,7 +39,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 func TestLoad_MissingRequired(t *testing.T) {
 	tests := []string{
-		"DATABASE_URL", "KAFKA_BROKERS", "RESERVATION_TOPIC", "RESULT_TOPIC", "CONSUMER_GROUP",
+		"DATABASE_URL", "KAFKA_BROKERS", "RESERVATION_TOPIC", "RESULT_TOPIC", "CONSUMER_GROUP", "REGISTRY_URL",
 	}
 
 	for _, missing := range tests {

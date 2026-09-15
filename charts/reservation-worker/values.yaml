@@ -39,6 +39,10 @@ config:
   consumerGroup: "reservation-worker"
   processMaxRetries: 3
   processRetryBackoff: "2s"
+  # Apicurio Registry (charts/apicurio), siehe charts/ticketflow/values.yaml schemaRegistry.* fuer
+  # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
+  registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
+  registryGroupId: "ticketflow"
   logLevel: "info"
   httpAddr: ":8080"
 

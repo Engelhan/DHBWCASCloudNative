@@ -19,32 +19,34 @@ type Server struct {
 	httpServer *http.Server
 }
 
-// New builds the server. /readyz actively checks DB and Kafka reachability
-// on every request (mirrors catalog-api's readyz, see
+// New builds the server. /readyz actively checks DB, Kafka and both schema-registry artifacts'
+// reachability on every request (mirrors catalog-api's readyz, see
 // src/catalog-api/internal/api ## handleReadyz) -- there's no cheap
 // always-true default here since, unlike notification-worker, this service
 // has no long stretches where "no traffic yet" is expected/normal.
-func New(addr string, db, kafka Pinger) *Server {
+func New(addr string, db, kafka, reqSchema, resultSchema Pinger) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		handleReadyz(w, r, db, kafka)
+		handleReadyz(w, r, db, kafka, reqSchema, resultSchema)
 	})
 
 	return &Server{httpServer: &http.Server{Addr: addr, Handler: mux}}
 }
 
-func handleReadyz(w http.ResponseWriter, r *http.Request, db, kafka Pinger) {
+func handleReadyz(w http.ResponseWriter, r *http.Request, db, kafka, reqSchema, resultSchema Pinger) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
 	dbErr := db.Ping(ctx)
 	kafkaErr := kafka.Ping(ctx)
+	reqSchemaErr := reqSchema.Ping(ctx)
+	resultSchemaErr := resultSchema.Ping(ctx)
 
-	ready := dbErr == nil && kafkaErr == nil
+	ready := dbErr == nil && kafkaErr == nil && reqSchemaErr == nil && resultSchemaErr == nil
 	status := http.StatusOK
 	if !ready {
 		status = http.StatusServiceUnavailable
@@ -53,8 +55,10 @@ func handleReadyz(w http.ResponseWriter, r *http.Request, db, kafka Pinger) {
 	writeJSON(w, status, map[string]any{
 		"status": readyString(ready),
 		"checks": map[string]bool{
-			"database": dbErr == nil,
-			"kafka":    kafkaErr == nil,
+			"database":              dbErr == nil,
+			"kafka":                 kafkaErr == nil,
+			"schemaRegistryRequest": reqSchemaErr == nil,
+			"schemaRegistryResult":  resultSchemaErr == nil,
 		},
 	})
 }
