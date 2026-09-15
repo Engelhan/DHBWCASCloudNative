@@ -19,7 +19,7 @@
     },
     "catalogApi": {
       "type": "object",
-      "required": ["replicas", "image", "service", "resources", "env", "database"],
+      "required": ["replicas", "image", "service", "resources", "env", "database", "databaseSecret"],
       "properties": {
         "replicas": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
@@ -49,6 +49,15 @@
             "name": { "type": "string", "minLength": 1 },
             "sslMode": { "type": "string", "minLength": 1 },
             "credentialsSecretName": { "type": "string", "minLength": 1 }
+          }
+        },
+        "databaseSecret": {
+          "type": "object",
+          "required": ["create", "username", "password"],
+          "properties": {
+            "create": { "type": "boolean" },
+            "username": { "type": "string" },
+            "password": { "type": "string" }
           }
         },
         "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },

@@ -60,15 +60,24 @@ catalogApi:
   # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
   # credentialsSecretName referenziert ein Secret mit den Keys "username"/"password" IM
   # NAMESPACE DIESES CHARTS (Kubernetes erlaubt kein secretKeyRef ueber Namespace-Grenzen) -
-  # charts/postgres-cluster legt sein Secret aber in Namespace "application" an. Bis das
-  # Team-seitig geloest ist (z.B. External Secret/Reflector), kopiert
-  # scripts/copy-database-credentials-secret.sh das Secret unveraendert (gleiche Keys) hierher.
+  # charts/postgres-cluster legt sein Secret aber in Namespace "application" an. Deshalb legt
+  # dieser Chart selbst ein Secret an (siehe databaseSecret unten), analog zu
+  # charts/notification-worker/templates/secret.yaml, statt es per Skript nachtraeglich zu
+  # kopieren.
   database:
     host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
     port: "5432"
     name: "postgres"
     sslMode: "require"
     credentialsSecretName: ticketflow-postgres-credentials
+
+  # Platzhalter-Struktur; echte Werte via --set/--set-file zur Deploy-Zeit, nie im Repo committen
+  # (siehe charts/notification-worker/values.yaml fuer dieselbe Konvention). Muss mit
+  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen.
+  databaseSecret:
+    create: true
+    username: "CHANGE_ME"
+    password: "CHANGE_ME"
 
   podDisruptionBudget:
     enabled: true

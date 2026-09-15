@@ -39,15 +39,18 @@ Helm-Releases/ArgoCD-Applications sind. Ändert sich der Kafka-Cluster-Name in
 `charts/ticketflow/values.yaml`, muss dieser Wert hier manuell nachgezogen werden (kein
 `--set-file`/Cross-Chart-Referencing).
 
-**Bekannte offene Abhängigkeit:** `catalog-api` baut den Postgres-Connection-String selbst aus
-`catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + `catalogApi.database.
-credentialsSecretName` (Secret, Keys `username`/`password`) zusammen — Team-Entscheidung, siehe
-`src/catalog-api/README.md` ## Konfiguration. Das Secret muss aber im **selben Namespace**
-(`ticketflow`) liegen wie `catalog-api` (Kubernetes erlaubt kein `secretKeyRef` über
-Namespace-Grenzen), `charts/postgres-cluster` legt sein Secret aber in Namespace `application`
-an. `scripts/copy-database-credentials-secret.sh` kopiert es unverändert herüber, bis das
-Team-seitig sauberer gelöst ist (z.B. External Secret/Reflector). DB-Name ist aktuell `postgres`
-(Default von `charts/postgres-cluster`), nicht `ticketflow`.
+**Datenbank-Zugangsdaten:** `catalog-api` baut den Postgres-Connection-String selbst aus
+`catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + einem Secret (Keys `username`/
+`password`) zusammen — Team-Entscheidung, siehe `src/catalog-api/README.md` ## Konfiguration.
+Das Secret muss im **selben Namespace** (`ticketflow`) liegen wie `catalog-api` (Kubernetes
+erlaubt kein `secretKeyRef` über Namespace-Grenzen), `charts/postgres-cluster` legt sein eigenes
+Secret aber in Namespace `application` an — deshalb legt **dieser Chart selbst** ein Secret an
+(`templates/catalog-api/secret.yaml`, analog zu `charts/notification-worker/templates/
+secret.yaml`), gesteuert über `catalogApi.databaseSecret.{create,username,password}`. Die
+Platzhalter-Werte (`CHANGE_ME`) müssen beim Deploy per `--set`/`--set-file` überschrieben werden
+und **manuell mit `charts/postgres-cluster` values.yaml `database.owner`/`.password`
+übereinstimmen** (kein automatisches Auslesen über Namespace-Grenzen) — nie im Repo committen.
+DB-Name ist aktuell `postgres` (Default von `charts/postgres-cluster`), nicht `ticketflow`.
 
 ## values-dev.yaml vs. values-prod.yaml — worin sie sich unterscheiden
 
