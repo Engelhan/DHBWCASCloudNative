@@ -30,8 +30,15 @@ spec:
               app.kubernetes.io/name: catalog-api
               app.kubernetes.io/part-of: ticketflow
       {{- end }}
+      # runAsUser/runAsGroup explizit als Zahl noetig: das Image (distroless/static-debian12:
+      # nonroot) setzt den Container-User nur als NAMEN ("nonroot"), Kubernetes kann Namen aber
+      # nicht auflösen und verweigert mit runAsNonRoot: true sonst den Start ("cannot verify
+      # user is non-root"). 65532 ist Distroless' Standard-nonroot-UID/GID, siehe
+      # src/catalog-api/Dockerfile.
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: catalog-api
           image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
