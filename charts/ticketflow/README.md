@@ -1,9 +1,13 @@
 # Chart: ticketflow
 
-Umbrella-Helm-Chart für Kafka (Messaging) sowie `catalog-api`/`frontend`. `notification-worker`
-und der CNPG-Postgres-Cluster haben eigene, eigenständige Charts (`charts/notification-worker/`,
-`charts/postgres-cluster/`) statt Teil dieses Umbrella-Charts zu sein — siehe `../README.md`.
-`reservation-worker` folgt hier als eigenes Template, sobald der Service existiert.
+Umbrella-Helm-Chart für `catalog-api`/`frontend`. `notification-worker`, der CNPG-Postgres-Cluster
+und der Kafka-Cluster haben eigene, eigenständige Charts (`charts/notification-worker/`,
+`charts/postgres-cluster/`, `charts/kafka-cluster/`) statt Teil dieses Umbrella-Charts zu sein —
+siehe `../README.md`. Kafka/Apicurio-Schema-Registrierung lagen ursprünglich hier im selben
+Helm-Release wie `catalog-api`/`frontend`, wurden aber am 2026-09-15 nach `charts/kafka-cluster/`
+ausgelagert (unabhängige Deploybarkeit, analog zu `charts/postgres-cluster/` vs.
+`charts/cnpg-operator/`). `reservation-worker` folgt hier als eigenes Template, sobald der Service
+existiert.
 
 ## Struktur
 
@@ -11,16 +15,10 @@ und der CNPG-Postgres-Cluster haben eigene, eigenständige Charts (`charts/notif
 ticketflow/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte
-├── values-dev.yaml          # kleine Replica-/Ressourcenwerte, 1 Kafka-Broker
-├── values-prod.yaml         # HA: 3 Kafka-Broker, 3 catalog-api-/frontend-Replicas
+├── values-dev.yaml          # kleine Replica-/Ressourcenwerte
+├── values-prod.yaml         # HA: 3 catalog-api-/frontend-Replicas
 ├── values.schema.json       # JSON-Schema: Pflichtfelder, Typen
 └── templates/
-    ├── messaging/                         # Strimzi Kafka (KRaft, kein ZooKeeper)
-    │   ├── kafka-broker-nodepool.yaml
-    │   ├── kafka-controller-nodepool.yaml
-    │   ├── kafka-cluster.yaml
-    │   ├── kafka-metrics-configmap.yaml   # JMX-Prometheus-Exporter-Regeln (P7)
-    │   └── kafka-topics.yaml              # aus .Values.kafka.topics generiert
     ├── catalog-api/
     │   ├── deployment.yaml                # DATABASE_URL aus Secret, Rest aus ConfigMap
     │   ├── service.yaml
@@ -53,8 +51,9 @@ Team-seitig sauberer gelöst ist (z.B. External Secret/Reflector). DB-Name ist a
 
 | Wert | dev | prod | Begründung |
 |---|---|---|---|
-| `kafka.controller/broker.replicas` | 1 | 3 | dev: ein Broker reicht für Funktionstests; prod: Ausfallsicherheit (P5) |
 | `catalogApi.replicas` / `frontend.replicas` | 1 | 3 | prod: `topologySpreadConstraints` (P4) verteilen erst ab mehreren Replicas sichtbar über die drei simulierten Regionen |
+
+(Kafka-Werte: siehe `charts/kafka-cluster/README.md` ## values-dev.yaml vs. values-prod.yaml.)
 
 ## Verwendung
 

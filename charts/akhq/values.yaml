@@ -43,7 +43,7 @@ akhq:
   # application.example.yml), aber bewusst NUR die *-read-Rollen uebernommen (keine
   # */-admin-Rollen mit CREATE/UPDATE/DELETE) - root README.md ## Entscheidungen (B2) legt AKHQ
   # explizit als "schreibgeschuetzt konfiguriert" fest (Topics/ACLs werden deklarativ ueber
-  # charts/ticketflow bzw. kuenftige KafkaUser-CRs verwaltet, nicht ad-hoc per UI). Kafka-Connect-
+  # charts/kafka-cluster bzw. kuenftige KafkaUser-CRs verwaltet, nicht ad-hoc per UI). Kafka-Connect-
   # Rollen (connect-admin/connect-cluster-read) komplett weggelassen - es existiert kein Kafka-
   # Connect-Cluster in diesem Projekt. default-group auf eine leere Gruppe ("no-roles") statt
   # "reader" wie fuer eingeloggte Nutzer, damit nicht eingeloggte Besucher:innen ueber die

@@ -1,10 +1,11 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource
-(CNPG-`Cluster` folgt dort noch, siehe dessen `Chart.yaml`). `catalog-api`, `notification-worker`
-und `reservation-worker` sind bewusst **kein** Teil davon — jeder hat einen eigenen, standalone
-Chart nach demselben Muster, siehe unten (catalog-api-Chart existiert noch nicht,
-`notification-worker`/`reservation-worker` schon).
+Enthält den eigenen Umbrella-Chart [`ticketflow/`](ticketflow/) für `catalog-api`/`frontend`.
+Der Strimzi-`Kafka`-Cluster lag ursprünglich im selben Chart/Release, wurde aber nach
+[`kafka-cluster/`](kafka-cluster/) ausgelagert (siehe dessen Abschnitt unten) — genau wie der
+CNPG-`Cluster` in [`postgres-cluster/`](postgres-cluster/) liegt, nicht in `ticketflow/`.
+`notification-worker` und `reservation-worker` sind ebenfalls bewusst **kein** Teil des
+Umbrella-Charts — jeder hat einen eigenen, standalone Chart nach demselben Muster, siehe unten.
 
 ## `notification-worker` — eigenständiger Chart statt Teil des Umbrella-Charts
 
@@ -23,8 +24,8 @@ das noch nicht vollständige `charts/ticketflow` gebunden, siehe root-README `##
 Entscheidungen` zu W1) sowie `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
 `gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
 ArgoCD deployt. **Hinweis:** `values.yaml` → `config.resultTopic` default `"reservation-results"`
-(Plural) weicht vom tatsächlichen, per `charts/ticketflow` angelegten Kafka-Topic
-`reservation-result` (Singular, siehe `charts/ticketflow/values.yaml`) ab — noch nicht
+(Plural) weicht vom tatsächlichen, per `charts/kafka-cluster` angelegten Kafka-Topic
+`reservation-result` (Singular, siehe `charts/kafka-cluster/values.yaml`) ab — noch nicht
 korrigiert/live relevant, da der Chart noch nicht deployt ist, aber vor dem ersten echten Deploy
 gegenzuprüfen.
 
@@ -52,6 +53,21 @@ eine gemeinsame Namespace-Entscheidung mit `postgres-cluster`), bleibt
 `gitops/apps/reservation-worker.yaml` — gleicher "chart-fertig, noch nicht deployt"-Zustand wie
 bei `notification-worker`.
 
+## `kafka-cluster` — ausgelagert aus `ticketflow`
+
+[`kafka-cluster/`](kafka-cluster/) enthält die Strimzi-`Kafka`-Cluster-Instanz (Kafka-CR,
+KafkaNodePools, KafkaTopics) sowie die Apicurio-Schema-Registrierung (`templates/schema-registry/`
++ `files/schemas/`). Lag ursprünglich im selben Helm-Release wie `catalog-api`/`frontend`
+(`charts/ticketflow`), wurde aber am 2026-09-15 auf expliziten Wunsch ausgelagert — dasselbe
+Operator-vs.-Instanz-Muster wie `charts/cnpg-operator` vs. `charts/postgres-cluster`: unabhängige
+Deploybarkeit vom App-Layer, eigenes ArgoCD-`Application` (`gitops/apps/kafka-cluster.yaml`,
+Namespace weiterhin `ticketflow`, unverändert gegenüber vorher). Kein Git-Verlust bei der
+Auslagerung — die Dateien wurden per `git mv` verschoben, nicht neu geschrieben. Andere Services
+referenzieren den Kafka-Bootstrap-Service weiterhin über den festen String
+`ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092` statt eines Helm-Cross-Chart-Lookups —
+die Auslagerung ändert daran nichts. Details zu `values-dev.yaml`/`values-prod.yaml` siehe
+[`kafka-cluster/README.md`](kafka-cluster/README.md).
+
 ## Addon-Charts
 
 Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns, CNPG-Operator,
@@ -77,9 +93,10 @@ Zwei Varianten:
   drei bündeln einzelne CRDs über dem 262144-Byte-Annotationslimit der Kubernetes-API.
   `kube-prometheus-stack`, `loki` und `tempo` bilden zusammen den Observability-Stack (siehe
   `../gitops/README.md` ## Observability-Stack) – Persistenz durchgehend über Longhorn.
-- **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – analog zur
-  CNPG-`Cluster`-CR in `ticketflow/`, nur eben nicht Teil des ticketflow-Charts, weil sie zum
-  Addon-Layer statt zur TicketFlow-Anwendung gehören:
+- **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – vom Muster her wie
+  [`postgres-cluster/`](postgres-cluster/) (CNPG-`Cluster`-CR) oder [`kafka-cluster/`](kafka-cluster/)
+  (Strimzi-`Kafka`-CR, siehe deren eigene Abschnitte), aber diese hier gehören zum Addon-/
+  Plattform-Layer statt zur TicketFlow-Anwendung selbst:
   - [`cert-manager-config/`](cert-manager-config/): `ClusterIssuer` fürs ACME/DNS-01-Setup.
     Siehe [`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die nötige
     TSIG-Secret-Voraussetzung (das Secret selbst steht bewusst nicht im Repo).
@@ -104,7 +121,7 @@ helm template charts/longhorn
 
 [`apicurio/`](apicurio/) deployt Apicurio Registry (JSON-Schema-Registry für die
 Kafka-Event-Contracts `ReservationRequested`/`ReservationResult`, siehe
-`ticketflow/files/schemas/`). War ursprünglich als neunter Wrapper-Chart um
+[`kafka-cluster/files/schemas/`](kafka-cluster/files/schemas/)). War ursprünglich als neunter Wrapper-Chart um
 `eshepelyuk/apicurio-registry-helm` (`oci://ghcr.io/eshepelyuk/helm/apicurio-registry`) geplant —
 dasselbe Muster wie unten. Dessen ghcr.io-OCI-Paket liefert aber **403 Forbidden** auf jeden
 anonymen Pull-Versuch (verifiziert sowohl über `docker run ... helm dependency update` als auch
@@ -140,7 +157,8 @@ aktuell `reservation-worker`s echten Deploy blockiert (siehe oben). Kein bestät
 Health-Endpoint für 3.x gefunden (evtl. separater Management-Port statt 8080) — Liveness-/
 Readiness-Probes nutzen deshalb die echte REST-API (`GET /apis/registry/v3/groups`) statt eines
 geratenen Health-Pfads; dieselbe Begründung gilt für die Wartelogik im
-`schema-registrar`-Job in `ticketflow/templates/schema-registry/`. Noch **kein**
+`schema-registrar`-Job in [`kafka-cluster/templates/schema-registry/`](kafka-cluster/templates/schema-registry/)
+(siehe dessen eigenen Abschnitt unten für die Auslagerung aus `ticketflow`). Noch **kein**
 `gitops/apps/apicurio.yaml`-Sync live verifiziert (kein Cluster verfügbar) — `helm lint`/
 `template` lokal sauber.
 

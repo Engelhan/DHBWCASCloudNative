@@ -26,7 +26,8 @@ gitops/
     ├── loki.yaml               # Log-Aggregation, Wrapper-Chart ../charts/loki
     ├── tempo.yaml              # Trace-Aggregation, Wrapper-Chart ../charts/tempo
     ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
-    └── ticketflow.yaml         # unser eigener Chart aus ../charts/ticketflow
+    ├── kafka-cluster.yaml      # Kafka-Cluster-Instanz, eigener Chart ../charts/kafka-cluster
+    └── ticketflow.yaml         # catalog-api/frontend, eigener Chart aus ../charts/ticketflow
 ```
 
 Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
@@ -183,16 +184,25 @@ argocd app get longhorn
 argocd app get cert-manager
 ```
 
-## ticketflow (Kafka-Cluster)
+## ticketflow / kafka-cluster
 
-`gitops/apps/ticketflow.yaml` zeigt (wie `strimzi-operator.yaml`) bewusst auf
-`targetRevision: strimzi-setup`, nicht `main` — Iterieren am Kafka-Teil ohne Merge-Zwang, siehe
-`CLAUDE.md`-Memory `project-strimzi-branch-tracking`. `helm.valueFiles: [values-dev.yaml]` fährt
-auf dem Lab-Cluster bewusst die kleine Variante (1 Broker) statt `values-prod.yaml`. Destination-
-Namespace `ticketflow`, per `CreateNamespace=true` — getrennt vom Strimzi-Operator-Namespace
-`kafka`. Bisher nur der Kafka-Cluster (`charts/ticketflow/templates/messaging/`); `catalog-api`/
-`frontend`/`notification-worker`/CNPG-Cluster folgen als eigene Templates im selben Chart.
+`gitops/apps/ticketflow.yaml` und `gitops/apps/kafka-cluster.yaml` zeigen beide auf
+`targetRevision: main` (das frühere Iterieren auf einem eigenen `strimzi-setup`-Branch ist seit
+dessen Merge am 2026-09-08 hinfällig, siehe `CLAUDE.md`-Memory `project-strimzi-branch-tracking`).
+Beide nutzen `helm.valueFiles: [values-dev.yaml]` — auf dem Lab-Cluster bewusst die kleine
+Variante (1 Kafka-Broker, 1 Replica je App-Service) statt `values-prod.yaml`. Destination-Namespace
+für beide `ticketflow`, per `CreateNamespace=true` — getrennt vom Strimzi-Operator-Namespace
+`kafka` (dort laufen nur Operator/AKHQ/Apicurio als Plattform-Tooling, nicht die Kafka-Cluster-
+Instanz selbst).
+
+Der Kafka-Cluster (`charts/kafka-cluster/`: Kafka-CR, KafkaNodePools, KafkaTopics, Apicurio-
+Schema-Registrierung) lag ursprünglich im selben Chart/Release wie `catalog-api`/`frontend`
+(`charts/ticketflow/`), wurde aber am 2026-09-15 in ein eigenes Chart + eigene Application
+ausgelagert — unabhängige Deploybarkeit, siehe `charts/README.md` ## `kafka-cluster` für die
+Details. `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** Teil von `ticketflow` —
+eigene, volleigenständige Charts (`charts/notification-worker/`, `charts/postgres-cluster/`) mit
+eigenen Applications.
 
 `TODO`: `keda.yaml` (mit eigenem Wrapper-Chart unter `../charts/`, analog zu allen anderen
-Addons) und `projects/ticketflow-project.yaml` fehlen noch — `ticketflow.yaml` läuft bislang mit
-`project: default` wie alle anderen Applications.
+Addons) und `projects/ticketflow-project.yaml` fehlen noch — alle Applications laufen bislang mit
+`project: default`.

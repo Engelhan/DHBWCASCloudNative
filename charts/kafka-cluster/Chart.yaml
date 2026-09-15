@@ -1,0 +1,11 @@
+apiVersion: v2
+name: kafka-cluster
+description: >-
+  Volleigener Chart fuer die Strimzi-Kafka-Cluster-Instanz (Kafka-CR, KafkaNodePools,
+  KafkaTopics) sowie die Apicurio-Schema-Registrierung. Getrennt vom Operator
+  (charts/strimzi-operator) und vom App-Layer (charts/ticketflow) - analog zu
+  charts/postgres-cluster, das genauso vom CNPG-Operator (charts/cnpg-operator) getrennt ist.
+  Ausgelagert aus charts/ticketflow (2026-09-15), das urspruenglich Kafka + catalog-api/frontend
+  in einem Helm-Release buendelte.
+type: application
+version: 0.1.0

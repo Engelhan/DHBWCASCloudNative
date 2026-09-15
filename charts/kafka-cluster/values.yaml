@@ -1,0 +1,97 @@
+# Gemeinsame Basiswerte fuer alle Umgebungen. dev/prod-spezifische Overrides in
+# values-dev.yaml/values-prod.yaml (siehe README ## values-dev.yaml vs. values-prod.yaml).
+#
+# Struktur (getrennte broker-/controller-NodePools statt Combined-Role, metricsConfig,
+# kafkaExporter, entityOperator-Resources) orientiert sich an einem realen Strimzi-Setup, das der
+# Nutzer als Referenz aus seinem Arbeitsumfeld bereitgestellt hat - siehe die Kommentare in den
+# jeweiligen Templates fuer die Stellen, an denen bewusst abgewichen wurde (z.B. kein externer
+# Listener/keine Auth, da wir noch keine Client-Identitaeten haben; kein message.max.bytes-Override,
+# da unsere JSON-Events klein sind).
+
+# Namespace fuer alle Ressourcen dieses Charts - bewusst weiterhin "ticketflow" (nicht "kafka",
+# das bleibt dem Strimzi-Operator/AKHQ/Apicurio als Plattform-Tooling vorbehalten, siehe
+# charts/README.md ## Addon-Charts) - der Kafka-Cluster selbst ist Teil der App-Deployment-Einheit,
+# nur eben ein eigenes Helm-Release/eine eigene Application seit der Auslagerung aus
+# charts/ticketflow. Wird von gitops/apps/kafka-cluster.yaml als destination.namespace gesetzt
+# (CreateNamespace=true).
+namespace: ticketflow
+
+kafka:
+  metadata:
+    name: ticketflow-kafka
+    namespace: ticketflow
+
+  # Kafka-Version, die der gepinnte Strimzi-Operator (charts/strimzi-operator, Chart-Version
+  # 1.1.0, existiert real nicht) unterstuetzt - live gegen den Kafka.status-Fehler geprueft
+  # (Operator meldete beim ersten Sync-Versuch "Unsupported Kafka.spec.kafka.version: 4.0.0.
+  # Supported versions are: [4.2.0, 4.2.1, 4.3.0]"), 4.3.0 gewaehlt als neueste unterstuetzte.
+  # Kein metadataVersion gesetzt - siehe Kommentar in templates/kafka-cluster.yaml.
+  version: "4.3.0"
+
+  # Getrennte Pools statt Combined-Role (anders als unser erster Entwurf) - orientiert an der
+  # realen Referenz. Braucht mehr Pods als Combined-Role, aber ist die im Referenz-Setup
+  # tatsaechlich genutzte Aufteilung.
+  controller:
+    replicas: 1
+    storage:
+      type: persistent-claim
+      size: 2Gi
+    resources:
+      requests:
+        memory: 512Mi
+      limits:
+        memory: 512Mi
+
+  broker:
+    replicas: 1
+    storage:
+      type: persistent-claim
+      size: 5Gi
+    resources:
+      requests:
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+  # Von values-dev.yaml/values-prod.yaml passend zur jeweiligen Replica-Zahl ueberschrieben -
+  # bei replicas: 1 muss der Replication-Factor ebenfalls 1 sein, sonst bleiben interne Topics
+  # dauerhaft under-replicated.
+  config:
+    offsetsTopicReplicationFactor: 1
+    transactionStateLogReplicationFactor: 1
+    transactionStateLogMinIsr: 1
+    defaultReplicationFactor: 1
+    minInsyncReplicas: 1
+
+  entityOperator:
+    topicOperator:
+      resource:
+        memoryLimit: 256Mi
+    userOperator:
+      resource:
+        memoryLimit: 256Mi
+
+  # RESERVATION_TOPIC (catalog-api -> reservation-worker) und RESULT_TOPIC
+  # (reservation-worker -> notification-worker), siehe src/*/README.md ## Konfiguration.
+  # replicationFactor darf weder controller.replicas noch broker.replicas uebersteigen.
+  topics:
+    - name: reservation-requested
+      partitions: 3
+      replicationFactor: 1
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete
+    - name: reservation-result
+      partitions: 3
+      replicationFactor: 1
+      config:
+        retention.ms: "604800000"
+        cleanup.policy: delete
+
+# Apicurio Registry (charts/apicurio, Namespace "kafka"), siehe templates/schema-registry/ und
+# charts/README.md ## apicurio. URL ist die vom Apicurio-Chart selbst gerenderte Service-DNS
+# (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml metadata.name) - noch nicht live
+# gegen einen echten Sync geprueft (kein Cluster verfuegbar).
+schemaRegistry:
+  url: http://apicurio.kafka.svc:8080/apis/registry/v3
+  groupId: ticketflow

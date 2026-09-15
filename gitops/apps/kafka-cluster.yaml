@@ -1,0 +1,32 @@
+---
+# Kafka-Cluster-Instanz (Kafka-CR/KafkaNodePools/KafkaTopics) + Apicurio-Schema-Registrierung,
+# siehe charts/kafka-cluster/. Ausgelagert aus charts/ticketflow (2026-09-15) - analog zu
+# gitops/apps/postgres-cluster.yaml, das genauso vom Operator (strimzi-operator.yaml bzw.
+# cnpg-operator.yaml) getrennt ist. Namespace bleibt "ticketflow" (unveraendert gegenueber vorher),
+# nicht "kafka" - der Cluster selbst ist Teil der App-Deployment-Einheit, nur ein eigenes
+# Helm-Release/eine eigene Application. Andere Services referenzieren den Bootstrap-Service ueber
+# den festen String "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092", nicht ueber einen
+# Helm-Cross-Chart-Lookup - die Auslagerung aendert daran nichts.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka-cluster
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+    targetRevision: main
+    path: charts/kafka-cluster
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ticketflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

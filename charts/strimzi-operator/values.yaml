@@ -3,9 +3,9 @@
 strimzi-kafka-operator:
   # Chart-Default beobachtet nur den eigenen Install-Namespace (watchAnyNamespace: false) -
   # cluster-wide statt dessen, analog zum CNPG-Operator (der bereits Default cluster-wide
-  # ist), da der Namespace der eigentlichen Kafka-CR
-  # (charts/ticketflow/templates/messaging/kafka-cluster.yaml, noch nicht geschrieben) noch
-  # nicht feststeht.
+  # ist). Die eigentliche Kafka-CR liegt in charts/kafka-cluster/templates/kafka-cluster.yaml
+  # (urspruenglich in charts/ticketflow geplant, siehe dessen Git-Historie), Namespace
+  # "ticketflow" - getrennt vom Operator-Namespace "kafka" hier.
   watchAnyNamespace: true
 
   # resources hat der Chart schon sinnvoll vorbelegt (limits 1000m/384Mi, requests 200m/384Mi) -

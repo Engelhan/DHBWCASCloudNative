@@ -66,14 +66,14 @@ services:
         condition: service_completed_successfully
 
   # Registriert die beiden kanonischen Schemas lokal - dieselbe curl/jq-Logik wie
-  # charts/ticketflow/templates/schema-registry/register-job.yaml, siehe dessen Kommentar fuer
-  # die Begruendung. Mountet die Schemas direkt aus charts/ticketflow statt einer lokalen Kopie.
+  # charts/kafka-cluster/templates/schema-registry/register-job.yaml, siehe dessen Kommentar fuer
+  # die Begruendung. Mountet die Schemas direkt aus charts/kafka-cluster statt einer lokalen Kopie.
   apicurio-init:
     image: alpine:3.20
     depends_on:
       - apicurio
     volumes:
-      - ./charts/ticketflow/files/schemas:/schemas:ro
+      - ./charts/kafka-cluster/files/schemas:/schemas:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
