@@ -107,8 +107,8 @@ akhq:
     annotations:
       cert-manager.io/cluster-issuer: certificate-cluster-issuer
     hosts:
-      - akhq.cas420134-at-cas-dhbw-de.users.dhbw.site
+      - akhq.cas438007-at-cas-dhbw-de.users.dhbw.site
     tls:
       - secretName: akhq-tls
         hosts:
-          - akhq.cas420134-at-cas-dhbw-de.users.dhbw.site
+          - akhq.cas438007-at-cas-dhbw-de.users.dhbw.site

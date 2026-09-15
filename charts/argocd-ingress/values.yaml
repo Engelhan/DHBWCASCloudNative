@@ -1,7 +1,7 @@
 # Aendern, falls ein anderer Hostname gewuenscht ist - muss innerhalb der aktivierten
 # RFC2136-Zone liegen (siehe charts/cert-manager-config/values.yaml rfc2136.zone), sonst kann
 # weder cert-manager (dns01) noch external-dns dafuer einen Record/Zertifikat ausstellen.
-hostname: "argocd.cas420134-at-cas-dhbw-de.users.dhbw.site"
+hostname: "argocd.cas438007-at-cas-dhbw-de.users.dhbw.site"
 
 clusterIssuerName: certificate-cluster-issuer
 tlsSecretName: argocd-server-tls
@@ -25,4 +25,4 @@ traefikEntryPoint: websecure
 # problemlos automatisch aus dem Service-Status ableiten) - external-dns loest daraus ein
 # CNAME auf, das bei jedem VIP-Wechsel automatisch mitzieht. Muss mit
 # charts/traefik-config/values.yaml traefikHostname uebereinstimmen.
-externalDnsTarget: "traefik.cas420134-at-cas-dhbw-de.users.dhbw.site"
+externalDnsTarget: "traefik.cas438007-at-cas-dhbw-de.users.dhbw.site"

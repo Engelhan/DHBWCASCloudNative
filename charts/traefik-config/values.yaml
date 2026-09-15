@@ -3,4 +3,4 @@
 # routet (external-dns' traefik-proxy-Source kann Targets NICHT selbst aus dem
 # Service-Status ableiten, siehe charts/argocd-ingress/values.yaml). Muss innerhalb der
 # aktivierten RFC2136-Zone liegen (siehe charts/cert-manager-config/values.yaml rfc2136.zone).
-traefikHostname: "traefik.cas420134-at-cas-dhbw-de.users.dhbw.site"
+traefikHostname: "traefik.cas438007-at-cas-dhbw-de.users.dhbw.site"
