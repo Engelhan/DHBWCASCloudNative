@@ -28,3 +28,4 @@ COPY --from=builder /out/reservation-worker /reservation-worker
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/reservation-worker"]
+ 
