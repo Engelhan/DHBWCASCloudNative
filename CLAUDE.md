@@ -84,13 +84,18 @@ Four layers, each owning a distinct concern — don't blur them:
    Observability-Stack.
    See
    `gitops/README.md` for the DNS/ACME activation flow.
-4. **`charts/ticketflow/`** — the umbrella Helm chart for the app layer (services, CNPG
-   `Cluster` CR, Strimzi `Kafka` CR, ServiceMonitors, KEDA `ScaledObject`). `templates/messaging/`
+4. **`charts/ticketflow/`** — Kafka + schema-registry chart (Carlos' scope). `templates/messaging/`
    (Strimzi `Kafka` CR in KRaft mode plus separate `broker`/`controller` `KafkaNodePool`s — not
    combined-role, matching a real Strimzi setup the user provided as reference — two
-   `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) is
-   written and deployed via `gitops/apps/ticketflow.yaml` (merged to `main`) — the rest (services,
-   `database/`, `config/`, `monitoring/`) is still template-less.
+   `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) plus
+   `templates/schema-registry/` (registers `files/schemas/*.schema.json` into Apicurio) is written
+   and deployed via `gitops/apps/ticketflow.yaml` (merged to `main`). **`catalog-api`+`frontend`
+   are deliberately NOT part of this chart** — team decision, they must not be deployed in the
+   same Application as Kafka — they live in their own chart, `charts/ticketflow-app/`, deployed
+   via `gitops/apps/ticketflow-app.yaml`. Both charts share the `ticketflow` Kubernetes namespace
+   so `catalog-api` can reach Kafka's bootstrap service by short in-namespace DNS name. KEDA
+   `ScaledObject`/CNPG `Cluster` CR are not part of either chart (CNPG lives in its own
+   `charts/postgres-cluster`).
 
 Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
 add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
@@ -593,9 +598,16 @@ commands here once these gaps close instead of leaving this section stale.
   (`apicurio.kafka.svc:8080`) assumes the ArgoCD Application release name equals the Application
   name, same assumption pattern as every other addon chart here — not checked against a real
   cluster sync yet.
+- **Done:** `charts/ticketflow-app` — standalone Helm chart for `catalog-api`+`frontend`
+  (Deployment/Service/ConfigMap/ServiceMonitor/PodDisruptionBudget for catalog-api, same plus
+  Ingress for frontend), deployed via `gitops/apps/ticketflow-app.yaml` (`targetRevision: main`,
+  namespace `ticketflow`, shared with `charts/ticketflow`'s Kafka so catalog-api reaches the
+  bootstrap service by short in-namespace DNS). Team decision: catalog-api/frontend must NOT be
+  deployed in the same Application as Kafka — this chart was split out of `charts/ticketflow`
+  (which originally held both) for exactly that reason; `lint`/`template`/kubeconform all pass
+  for both charts post-split.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, Helm charts for `catalog-api`/`frontend` (both have
-  working `src/*` code but no chart yet), all `src/load-generator` code,
+  `gitops/projects/ticketflow-project.yaml`, all `src/load-generator` code,
   `observability/dashboards/` + `observability/alerts/` content, and the cross-namespace
   `DATABASE_URL` wiring described above (blocking `reservation-worker`'s real deploy, see above).
 - Commit history currently has a single large commit — the assignment explicitly penalizes

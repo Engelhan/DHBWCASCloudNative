@@ -13,3 +13,5 @@ data:
   DB_PORT: {{ .Values.catalogApi.database.port | quote }}
   DB_NAME: {{ .Values.catalogApi.database.name | quote }}
   DB_SSLMODE: {{ .Values.catalogApi.database.sslMode | quote }}
+  REGISTRY_URL: {{ .Values.schemaRegistry.url | quote }}
+  REGISTRY_GROUP_ID: {{ .Values.schemaRegistry.groupId | quote }}

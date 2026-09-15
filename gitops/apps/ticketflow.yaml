@@ -1,9 +1,10 @@
 ---
-# TicketFlow-Anwendungsebene. Eigener Chart ../../charts/ticketflow (kein Wrapper - volleigene
-# Custom Resources, siehe charts/ticketflow/Chart.yaml). Kafka-Cluster (KafkaNodePool/Kafka/
-# KafkaTopic) sowie catalog-api/frontend (Deployment/Service/ConfigMap/Ingress/ServiceMonitor),
-# siehe charts/ticketflow/templates/. reservation-worker folgt als eigenes Template;
-# notification-worker/CNPG-Cluster sind eigene, volleigenstaendige Charts, siehe charts/README.md.
+# TicketFlow-Messaging-Ebene: Kafka + Schema-Registry-Registrierung (Carlos' Scope). Eigener
+# Chart ../../charts/ticketflow (kein Wrapper - volleigene Custom Resources, siehe
+# charts/ticketflow/Chart.yaml). catalog-api/frontend sind bewusst NICHT hier drin - eigener
+# Chart/eigene Application, siehe gitops/apps/ticketflow-app.yaml (Team-Entscheidung: nicht in
+# derselben Application wie Kafka deployen). reservation-worker/notification-worker/CNPG-Cluster
+# sind ebenfalls eigene, volleigenstaendige Charts, siehe charts/README.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

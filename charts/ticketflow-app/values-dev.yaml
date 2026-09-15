@@ -1,0 +1,10 @@
+# Kleine Werte fuer Funktionstests auf den Lab-VMs - siehe README ## values-dev.yaml vs.
+# values-prod.yaml. Ein Replica reicht fuer Funktionstests - PodDisruptionBudget
+# (minAvailable: 1) waere damit de-facto wirkungslos, bleibt aber aktiv (kein Sonderfall im
+# Template noetig).
+
+catalogApi:
+  replicas: 1
+
+frontend:
+  replicas: 1

@@ -39,12 +39,3 @@ kafka:
         retention.ms: "604800000"
         cleanup.policy: delete
         min.insync.replicas: "2"
-
-# 3 Replicas je Service, damit topologySpreadConstraints (maxSkew: 1) tatsaechlich etwas zu
-# verteilen hat - eine Region kann komplett ausfallen, ohne dass catalog-api/frontend komplett weg
-# sind (P4/P5-Begruendung, analog zu Kafka oben).
-catalogApi:
-  replicas: 3
-
-frontend:
-  replicas: 3

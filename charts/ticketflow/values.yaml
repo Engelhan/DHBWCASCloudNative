@@ -1,10 +1,10 @@
 # Gemeinsame Basiswerte fuer alle Umgebungen. dev/prod-spezifische Overrides in
 # values-dev.yaml/values-prod.yaml (siehe README ## values-dev.yaml vs. values-prod.yaml).
 #
-# Kafka-/Messaging-Teil (P1 fuer Carlos' Scope) sowie catalogApi/frontend (Philipps Scope).
-# reservation-worker folgt als eigener Abschnitt, sobald der Service existiert;
-# notification-worker/CNPG-Postgres sind bewusst NICHT hier drin - eigene, volleigenstaendige
-# Charts (charts/notification-worker, charts/postgres-cluster), siehe charts/README.md.
+# Kafka-/Messaging-Teil + Schema-Registry-Registrierung (P1 fuer Carlos' Scope). catalog-api/
+# frontend, reservation-worker, notification-worker, CNPG-Postgres sind bewusst NICHT hier drin
+# - eigene, volleigenstaendige Charts (charts/ticketflow-app, charts/reservation-worker,
+# charts/notification-worker, charts/postgres-cluster), siehe charts/README.md.
 #
 # Struktur (getrennte broker-/controller-NodePools statt Combined-Role, metricsConfig,
 # kafkaExporter, entityOperator-Resources) orientiert sich an einem realen Strimzi-Setup, das der
@@ -98,109 +98,3 @@ kafka:
 schemaRegistry:
   url: http://apicurio.kafka.svc:8080/apis/registry/v3
   groupId: ticketflow
-catalogApi:
-  replicas: 2
-
-  image:
-    repository: ghcr.io/engelhan/ticketflow-catalog-api
-    # Git-Short-SHA, wird beim Deploy gesetzt (--set catalogApi.image.tag=<sha>), siehe P3 -
-    # kein :latest im Repo.
-    tag: "latest"
-    pullPolicy: IfNotPresent
-
-  service:
-    port: 8080
-
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 300m
-      memory: 128Mi
-
-  # -> ConfigMap (templates/catalog-api/configmap.yaml), siehe src/catalog-api/README.md
-  # ## Konfiguration fuer die Bedeutung jeder Variable.
-  env:
-    logLevel: info
-    port: "8080"
-    reservationTopic: reservation-requested
-    # Bootstrap-Service des Kafka-Clusters aus diesem selben Chart (kafka.metadata.name), Port
-    # 9092 ist Strimzi's Standard-Plaintext-Listener.
-    kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
-    # Nur fuer Requests ausserhalb des Ingress-Pfads relevant (z.B. direkter Aufruf durch
-    # load-generator) - das Frontend selbst braucht dank Same-Origin-Ingress (siehe
-    # templates/frontend/ingress.yaml) kein CORS.
-    corsAllowedOrigin: ""
-
-  # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
-  # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
-  # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
-  # credentialsSecretName referenziert ein Secret mit den Keys "username"/"password" IM
-  # NAMESPACE DIESES CHARTS (Kubernetes erlaubt kein secretKeyRef ueber Namespace-Grenzen) -
-  # charts/postgres-cluster legt sein Secret aber in Namespace "application" an. Bis das
-  # Team-seitig geloest ist (z.B. External Secret/Reflector), kopiert
-  # scripts/copy-database-credentials-secret.sh das Secret unveraendert (gleiche Keys) hierher.
-  database:
-    host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
-    port: "5432"
-    name: "postgres"
-    sslMode: "require"
-    credentialsSecretName: ticketflow-postgres-credentials
-
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
-
-  serviceMonitor:
-    enabled: true
-    interval: 30s
-    # Gleiche Annahme wie charts/notification-worker/values.yaml (nicht live verifiziert):
-    # kube-prometheus-stack hat keinen expliziten serviceMonitorSelector-Override im values.yaml
-    # dieses Repos -> Chart-Default "release: <helm-release-name>" (Release-Name = ArgoCD
-    # Application-Name "kube-prometheus-stack"). Falls falsch: nur dieses Label anpassen.
-    labels:
-      release: kube-prometheus-stack
-
-  # Weiche Verteilung ueber die drei simulierten Regionen (P4) - catalog-api ist stateless und
-  # horizontal skaliert, damit ein Ausfall einer Region waehrend eines Flash Sales nicht alle
-  # Replicas gleichzeitig verliert. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, weil
-  # values-dev.yaml mit replicas: 1 sonst auf einem Ein-Node-Dev-Setup haengen bleiben wuerde.
-  topologySpreadConstraint:
-    enabled: true
-    maxSkew: 1
-
-frontend:
-  replicas: 2
-
-  image:
-    repository: ghcr.io/engelhan/ticketflow-frontend
-    tag: "latest"
-    pullPolicy: IfNotPresent
-
-  service:
-    port: 80
-
-  resources:
-    requests:
-      cpu: 10m
-      memory: 16Mi
-    limits:
-      cpu: 100m
-      memory: 64Mi
-
-  ingress:
-    enabled: true
-    # Muss innerhalb der aktivierten RFC2136-Zone liegen, siehe
-    # charts/cert-manager-config/values.yaml rfc2136.zone.
-    host: "ticketflow.cas438007-at-cas-dhbw-de.users.dhbw.site"
-    clusterIssuerName: certificate-cluster-issuer
-    tlsSecretName: ticketflow-frontend-tls
-
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
-
-  topologySpreadConstraint:
-    enabled: true
-    maxSkew: 1

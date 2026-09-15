@@ -1,9 +1,12 @@
 # Chart: ticketflow
 
-Umbrella-Helm-Chart für Kafka (Messaging) sowie `catalog-api`/`frontend`. `notification-worker`
-und der CNPG-Postgres-Cluster haben eigene, eigenständige Charts (`charts/notification-worker/`,
-`charts/postgres-cluster/`) statt Teil dieses Umbrella-Charts zu sein — siehe `../README.md`.
-`reservation-worker` folgt hier als eigenes Template, sobald der Service existiert.
+Eigenständiger Chart für Kafka (Messaging) sowie die Registrierung der kanonischen Kafka-Event-
+Schemas in Apicurio Registry (Carlos' Scope). `catalog-api`/`frontend` haben einen eigenen Chart
+(`charts/ticketflow-app/`) — Team-Entscheidung, nicht in derselben Application wie Kafka
+deployen, siehe `gitops/apps/ticketflow-app.yaml`. `notification-worker`, `reservation-worker`
+und der CNPG-Postgres-Cluster sind ebenfalls eigene, eigenständige Charts
+(`charts/notification-worker/`, `charts/reservation-worker/`, `charts/postgres-cluster/`) — siehe
+`../README.md`.
 
 ## Struktur
 
@@ -12,8 +15,9 @@ ticketflow/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte
 ├── values-dev.yaml          # kleine Replica-/Ressourcenwerte, 1 Kafka-Broker
-├── values-prod.yaml         # HA: 3 Kafka-Broker, 3 catalog-api-/frontend-Replicas
+├── values-prod.yaml         # HA: 3 Kafka-Broker
 ├── values.schema.json       # JSON-Schema: Pflichtfelder, Typen
+├── files/schemas/            # kanonische JSON-Schemas (reservation-requested, reservation-result)
 └── templates/
     ├── messaging/                         # Strimzi Kafka (KRaft, kein ZooKeeper)
     │   ├── kafka-broker-nodepool.yaml
@@ -21,40 +25,16 @@ ticketflow/
     │   ├── kafka-cluster.yaml
     │   ├── kafka-metrics-configmap.yaml   # JMX-Prometheus-Exporter-Regeln (P7)
     │   └── kafka-topics.yaml              # aus .Values.kafka.topics generiert
-    ├── catalog-api/
-    │   ├── deployment.yaml                # DATABASE_URL aus Secret, Rest aus ConfigMap
-    │   ├── service.yaml
-    │   ├── configmap.yaml
-    │   ├── servicemonitor.yaml            # /metrics, P7
-    │   └── poddisruptionbudget.yaml
-    ├── frontend/
-    │   ├── deployment.yaml                # config.js-Override per ConfigMap-Volume-Mount
-    │   ├── service.yaml
-    │   ├── configmap.yaml                 # setzt API_BASE_URL="" (Same-Origin via Ingress)
-    │   ├── ingress.yaml                   # /events,/reservations -> catalog-api, / -> frontend
-    │   └── poddisruptionbudget.yaml
-    ├── reservation-worker/   # TODO, sobald der Service existiert
-    └── database/, config/, monitoring/    # nicht vorgesehen - CNPG-Cluster und Grafana/
-                                            # Alerts liegen in eigenen Charts bzw.
-                                            # kube-prometheus-stack, siehe Root-README
+    └── schema-registry/
+        ├── configmap.yaml
+        └── register-job.yaml               # registriert files/schemas/* in Apicurio (Helm-Hook)
 ```
-
-**Bekannte offene Abhängigkeit:** `catalog-api` baut den Connection-String selbst aus
-`catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + `catalogApi.database.
-credentialsSecretName` (Secret, Keys `username`/`password`) zusammen — Team-Entscheidung, siehe
-`src/catalog-api/README.md` ## Konfiguration. Das Secret muss aber im **selben Namespace**
-(`ticketflow`) liegen wie `catalog-api` (Kubernetes erlaubt kein `secretKeyRef` über
-Namespace-Grenzen), `charts/postgres-cluster` legt sein Secret aber in Namespace `application`
-an. `scripts/copy-database-credentials-secret.sh` kopiert es unverändert herüber, bis das
-Team-seitig sauberer gelöst ist (z.B. External Secret/Reflector). DB-Name ist aktuell `postgres`
-(Default von `charts/postgres-cluster`), nicht `ticketflow`.
 
 ## values-dev.yaml vs. values-prod.yaml — worin sie sich unterscheiden
 
 | Wert | dev | prod | Begründung |
 |---|---|---|---|
 | `kafka.controller/broker.replicas` | 1 | 3 | dev: ein Broker reicht für Funktionstests; prod: Ausfallsicherheit (P5) |
-| `catalogApi.replicas` / `frontend.replicas` | 1 | 3 | prod: `topologySpreadConstraints` (P4) verteilen erst ab mehreren Replicas sichtbar über die drei simulierten Regionen |
 
 ## Verwendung
 
