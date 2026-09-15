@@ -59,6 +59,14 @@ Topic: `RESERVATION_TOPIC` (env, lokal z.B. `reservation-requested`). Message-Ke
 
 `TODO`: mit dem `reservation-worker`-Owner abstimmen, bevor das Schema als endgültig gilt.
 
+**Wire-Format seit der Apicurio-Integration:** der Message-`Value` ist nicht mehr reines JSON,
+sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId` +
+das obige JSON als Payload. Das kanonische Schema (JSON Schema, identisch zum obigen Contract)
+liegt unter `charts/ticketflow/files/schemas/reservation-requested.schema.json` und wird bei
+jedem Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; catalog-api validiert
+lokal dagegen (embedded, siehe `internal/schemareg`) vor jedem Publish - kein Registry-Roundtrip
+pro Nachricht. Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
+
 ## Datenmodell (Postgres, siehe `local/postgres/init.sql`)
 
 `events`, `seats` (`row_number`, `seat_number`, `category` — `premium`/`parkett`/`balkon`,
@@ -74,6 +82,8 @@ Anfrage als `pending`.
 | `DATABASE_URL` | Secret | Connection-String zum CNPG-Cluster |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Topic für `ReservationRequested` |
+| `REGISTRY_URL` | ConfigMap | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
+| `REGISTRY_GROUP_ID` | ConfigMap | Registry-Group, Default `ticketflow` |
 | `LOG_LEVEL` | ConfigMap | z.B. `info` |
 | `PORT` | ConfigMap | HTTP-Port, Default `8080` |
 | `CORS_ALLOWED_ORIGIN` | ConfigMap | Origin des Frontends, Default `*` (nur für lokale Entwicklung sinnvoll) |

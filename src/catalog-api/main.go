@@ -13,6 +13,7 @@ import (
 	"ticketflow/catalog-api/internal/api"
 	"ticketflow/catalog-api/internal/db"
 	"ticketflow/catalog-api/internal/reservation"
+	"ticketflow/catalog-api/internal/schemareg"
 )
 
 func main() {
@@ -21,6 +22,8 @@ func main() {
 	databaseURL := requireEnv("DATABASE_URL")
 	kafkaBrokers := strings.Split(requireEnv("KAFKA_BROKERS"), ",")
 	reservationTopic := requireEnv("RESERVATION_TOPIC")
+	registryURL := requireEnv("REGISTRY_URL")
+	registryGroupID := getenv("REGISTRY_GROUP_ID", "ticketflow")
 	corsOrigin := getenv("CORS_ALLOWED_ORIGIN", "*")
 	port := getenv("PORT", "8080")
 
@@ -34,10 +37,25 @@ func main() {
 	}
 	defer database.Close()
 
-	producer := reservation.NewProducer(kafkaBrokers, reservationTopic)
+	schema, err := schemareg.New(schemareg.Config{
+		BaseURL:    registryURL,
+		GroupID:    registryGroupID,
+		ArtifactID: "reservation-requested-value",
+		Logger:     slog.Default(),
+	}, schemareg.RequestedSchemaJSON)
+	if err != nil {
+		slog.Error("compile embedded reservation-requested schema failed", "error", err)
+		os.Exit(1)
+	}
+	if err := schema.Resolve(ctx); err != nil {
+		slog.Error("resolve reservation-requested schema globalId failed", "error", err)
+		os.Exit(1)
+	}
+
+	producer := reservation.NewProducer(kafkaBrokers, reservationTopic, schema)
 	defer producer.Close()
 
-	a := api.New(database, producer, corsOrigin)
+	a := api.New(database, producer, schema, corsOrigin)
 
 	router := a.Routes()
 	router.Handle("/metrics", promhttp.Handler())
