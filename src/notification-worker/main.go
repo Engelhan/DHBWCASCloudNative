@@ -16,6 +16,7 @@ import (
 
 	"ticketflow/notification-worker/internal/config"
 	"ticketflow/notification-worker/internal/kafkaconsumer"
+	"ticketflow/notification-worker/internal/kafkasasl"
 	"ticketflow/notification-worker/internal/kafkatls"
 	"ticketflow/notification-worker/internal/notify"
 	"ticketflow/notification-worker/internal/schemareg"
@@ -33,6 +34,12 @@ func main() {
 	tlsConfig, err := kafkatls.Build(cfg)
 	if err != nil {
 		logger.Error("invalid kafka TLS configuration", "error", err)
+		os.Exit(1)
+	}
+
+	kafkaSASL, err := kafkasasl.Build(cfg)
+	if err != nil {
+		logger.Error("invalid kafka SASL configuration", "error", err)
 		os.Exit(1)
 	}
 
@@ -65,7 +72,7 @@ func main() {
 
 	var ready atomic.Bool
 	srv := server.New(cfg.HTTPAddr, &ready, schema)
-	consumer := kafkaconsumer.New(cfg, tlsConfig, dispatcher, logFallback, schema, logger, &ready)
+	consumer := kafkaconsumer.New(cfg, tlsConfig, kafkaSASL, dispatcher, logFallback, schema, logger, &ready)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

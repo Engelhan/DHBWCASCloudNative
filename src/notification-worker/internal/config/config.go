@@ -46,6 +46,14 @@ type Config struct {
 	KafkaTLSClientCert string
 	KafkaTLSClientKey  string
 
+	// SASL/SCRAM-SHA-512 auth against the Strimzi-managed KafkaUser "notification-worker" (see
+	// charts/kafka-cluster templates/messaging/kafka-users.yaml). Independent of the mTLS config
+	// above (our listener is SASL_PLAINTEXT, not SASL_SSL) -- optional, local docker-compose has
+	// no Strimzi listener/ACLs so this defaults to false there.
+	KafkaSASLEnabled  bool
+	KafkaSASLUsername string
+	KafkaSASLPassword string
+
 	SMTPEnabled  bool
 	SMTPHost     string
 	SMTPPort     int
@@ -70,6 +78,8 @@ func Load() (Config, error) {
 		KafkaTLSCACert:     os.Getenv("KAFKA_TLS_CA_CERT"),
 		KafkaTLSClientCert: os.Getenv("KAFKA_TLS_CLIENT_CERT"),
 		KafkaTLSClientKey:  os.Getenv("KAFKA_TLS_CLIENT_KEY"),
+		KafkaSASLUsername:  os.Getenv("KAFKA_SASL_USERNAME"),
+		KafkaSASLPassword:  os.Getenv("KAFKA_SASL_PASSWORD"),
 		SMTPTLSMode:        TLSMode(getenvDefault("SMTP_TLS_MODE", string(TLSModeStartTLS))),
 		SMTPHost:           os.Getenv("SMTP_HOST"),
 		SMTPFrom:           os.Getenv("SMTP_FROM"),
@@ -90,6 +100,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.KafkaTLSEnabled, err = getenvBool("KAFKA_TLS_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.KafkaSASLEnabled, err = getenvBool("KAFKA_SASL_ENABLED", false); err != nil {
 		return Config{}, err
 	}
 	if cfg.SMTPPort, err = getenvInt("SMTP_PORT", 587); err != nil {
@@ -145,6 +158,11 @@ func (c Config) validate() error {
 	if c.KafkaTLSEnabled {
 		if c.KafkaTLSCACert == "" || c.KafkaTLSClientCert == "" || c.KafkaTLSClientKey == "" {
 			return fmt.Errorf("KAFKA_TLS_CA_CERT, KAFKA_TLS_CLIENT_CERT and KAFKA_TLS_CLIENT_KEY are all required when KAFKA_TLS_ENABLED=true")
+		}
+	}
+	if c.KafkaSASLEnabled {
+		if c.KafkaSASLUsername == "" || c.KafkaSASLPassword == "" {
+			return fmt.Errorf("KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD are both required when KAFKA_SASL_ENABLED=true")
 		}
 	}
 

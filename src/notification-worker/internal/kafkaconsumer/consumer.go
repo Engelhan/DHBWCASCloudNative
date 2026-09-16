@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
 
 	"ticketflow/notification-worker/internal/config"
 	"ticketflow/notification-worker/internal/event"
@@ -49,8 +50,8 @@ type Consumer struct {
 	ready       *atomic.Bool
 }
 
-func New(cfg config.Config, tlsConfig *tls.Config, dispatcher *notify.Dispatcher, logFallback notify.Notifier, schema *schemareg.Client, logger *slog.Logger, ready *atomic.Bool) *Consumer {
-	dialer := &kafka.Dialer{Timeout: 10 * time.Second, TLS: tlsConfig}
+func New(cfg config.Config, tlsConfig *tls.Config, saslMechanism sasl.Mechanism, dispatcher *notify.Dispatcher, logFallback notify.Notifier, schema *schemareg.Client, logger *slog.Logger, ready *atomic.Bool) *Consumer {
+	dialer := &kafka.Dialer{Timeout: 10 * time.Second, TLS: tlsConfig, SASLMechanism: saslMechanism}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: cfg.KafkaBrokers,
@@ -65,7 +66,7 @@ func New(cfg config.Config, tlsConfig *tls.Config, dispatcher *notify.Dispatcher
 			Addr:      kafka.TCP(cfg.KafkaBrokers...),
 			Topic:     cfg.DLTTopic,
 			Balancer:  &kafka.LeastBytes{},
-			Transport: &kafka.Transport{TLS: tlsConfig},
+			Transport: &kafka.Transport{TLS: tlsConfig, SASL: saslMechanism},
 		}
 	}
 

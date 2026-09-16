@@ -32,8 +32,15 @@ securityContext:
     drop: ["ALL"]
 
 config:
-  kafkaBrokers: "" # Pflicht, z.B. "my-cluster-kafka-bootstrap.kafka.svc:9092"
-  resultTopic: "reservation-results"
+  # Echter Wert: Strimzi-Bootstrap-Service aus charts/kafka-cluster, gleicher Namespace
+  # "ticketflow" (dieser Chart ist noch nicht via gitops/apps/*.yaml deployed, siehe
+  # CLAUDE.md ## Current implementation status - Wert trotzdem schon real, nicht Platzhalter,
+  # damit er sofort zum kafkaSasl-Setup unten passt). Port 9092 = Strimzi's "plain"-Listener -
+  # seit B2 SASL_PLAINTEXT (SCRAM-Auth), Transport bleibt unverschluesselt.
+  kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+  # Muss zum echten Topic-Namen aus charts/kafka-cluster/values.yaml kafka.topics passen (war
+  # zuvor "reservation-results", ein Platzhalter-Tippfehler - siehe src/*/README.md ## Konfiguration).
+  resultTopic: "reservation-result"
   consumerGroup: "notification-worker"
   # Leer = kein Dead-Letter-Publish. Das "Offset nur bei tatsaechlichem Versand committen"-
   # Verhalten bleibt trotzdem bestehen, siehe internal/kafkaconsumer im Anwendungscode.
@@ -49,6 +56,17 @@ config:
 
   kafkaTls:
     enabled: false # optionales mTLS zum Kafka-Broker; Zertifikate kommen aus secret.kafkaTls*
+
+  # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
+  # Operator verwaltete KafkaUser "notification-worker" (siehe charts/kafka-cluster values.yaml
+  # kafka.users) - unabhaengig vom optionalen mTLS oben (unser Listener ist SASL_PLAINTEXT, nicht
+  # SASL_SSL). secretName referenziert das vom User Operator AUTOMATISCH angelegte Secret (Keys
+  # "password"/"sasl.jaas.config") direkt per secretKeyRef - kein eigenes Secret noetig wie bei
+  # Postgres, weil dieser Chart und der Kafka-Cluster denselben Namespace "ticketflow" teilen.
+  kafkaSasl:
+    enabled: true
+    username: notification-worker
+    secretName: notification-worker
 
   smtp:
     enabled: false # Demo-sicherer Default: nur Log-Ausgabe, kein echter Mailversand

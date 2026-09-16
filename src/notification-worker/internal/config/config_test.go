@@ -93,6 +93,22 @@ func TestLoad_KafkaTLSEnabledRequiresAllThreeCerts(t *testing.T) {
 	}
 }
 
+func TestLoad_KafkaSASLEnabledRequiresUsernameAndPassword(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("KAFKA_SASL_ENABLED", "true")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when KAFKA_SASL_ENABLED=true without username/password")
+	}
+
+	t.Setenv("KAFKA_SASL_USERNAME", "notification-worker")
+	t.Setenv("KAFKA_SASL_PASSWORD", "secret")
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() unexpected error once username/password set: %v", err)
+	}
+}
+
 func TestLoad_InvalidTLSMode(t *testing.T) {
 	baseEnv(t)
 	t.Setenv("SMTP_TLS_MODE", "bogus")
