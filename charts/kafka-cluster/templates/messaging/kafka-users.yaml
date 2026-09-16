@@ -1,0 +1,35 @@
+# Eine KafkaUser-CR pro Client-Identitaet (SCRAM-SHA-512 + engst moegliche ACLs), siehe B2 in der
+# Root-README ## Entscheidungen und der Kommentar bei .Values.kafka.users. Gegen dieselbe
+# installierte CRD-apiVersion geprueft wie Kafka/KafkaTopic/KafkaNodePool (kafka.strimzi.io/v1,
+# nicht v1beta2 - siehe CLAUDE.md-Memory project-strimzi-branch-tracking).
+{{- range .Values.kafka.users }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.kafka.metadata.namespace }}
+  labels:
+    strimzi.io/cluster: {{ $.Values.kafka.metadata.name }}
+spec:
+  authentication:
+    type: scram-sha-512
+    {{- if .passwordSecretName }}
+    # Vorgegebenes statt vom User Operator generiertes Passwort - siehe Kommentar bei
+    # .Values.kafka.users (akhq-Eintrag) fuer den Cross-Namespace-Grund.
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: {{ .passwordSecretName }}
+          key: password
+    {{- end }}
+  authorization:
+    type: simple
+    acls:
+      {{- range .acls }}
+      - resource:
+          {{- toYaml .resource | nindent 10 }}
+        operations:
+          {{- toYaml .operations | nindent 10 }}
+      {{- end }}
+{{- end }}

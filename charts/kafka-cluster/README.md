@@ -22,9 +22,11 @@ kafka-cluster/
     ├── messaging/                         # Strimzi Kafka (KRaft, kein ZooKeeper)
     │   ├── kafka-broker-nodepool.yaml
     │   ├── kafka-controller-nodepool.yaml
-    │   ├── kafka-cluster.yaml
+    │   ├── kafka-cluster.yaml              # SCRAM-SHA-512-Auth + authorization: simple (B2)
     │   ├── kafka-metrics-configmap.yaml   # JMX-Prometheus-Exporter-Regeln (P7)
-    │   └── kafka-topics.yaml              # aus .Values.kafka.topics generiert
+    │   ├── kafka-topics.yaml              # aus .Values.kafka.topics generiert
+    │   ├── kafka-users.yaml               # aus .Values.kafka.users generiert (B2, KafkaUser+ACLs)
+    │   └── kafka-akhq-user-secret.yaml    # vorgegebenes SCRAM-Passwort fuer die akhq-KafkaUser
     └── schema-registry/
         ├── configmap.yaml
         └── register-job.yaml               # registriert files/schemas/* in Apicurio (Helm-Hook)

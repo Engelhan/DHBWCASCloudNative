@@ -91,6 +91,69 @@ kafka:
         retention.ms: "604800000"
         cleanup.policy: delete
 
+  # B2 (Root-README ## Entscheidungen): eine KafkaUser-CR (SCRAM-SHA-512 + engst moegliche ACLs)
+  # pro Client-Identitaet statt eines einzigen geteilten Credentials - siehe
+  # templates/messaging/kafka-users.yaml. name = KafkaUser-CR-Name = SASL-Username = Name des vom
+  # Strimzi User Operator angelegten Secrets (Keys "password"/"sasl.jaas.config"), das
+  # verbrauchende Charts direkt per secretKeyRef referenzieren (funktioniert nur, weil
+  # catalog-api/reservation-worker/notification-worker denselben Namespace "ticketflow" wie
+  # dieser Kafka-Cluster teilen - siehe charts/README.md). operations sind Kafka-ACL-Operationen
+  # (Read/Write/Describe/... - siehe `kubectl explain kafkauser.spec.authorization.acls.operations`);
+  # DESCRIBE ist bei WRITE/READ auf demselben Topic automatisch mit-erlaubt (Kafka-eigenes
+  # implizites Grant), daher hier nicht redundant aufgefuehrt.
+  users:
+    # catalog-api: darf ReservationRequested nur schreiben, nie lesen (siehe Root-README ## B2).
+    - name: catalog-api
+      acls:
+        - resource: { type: topic, name: reservation-requested, patternType: literal }
+          operations: [Write]
+    # reservation-worker: konsumiert ReservationRequested (eigene Consumer-Group "reservation-worker",
+    # muss zum Config-Wert config.consumerGroup in charts/reservation-worker/values.yaml passen)
+    # und publiziert das Ergebnis auf ReservationResult.
+    - name: reservation-worker
+      acls:
+        - resource: { type: topic, name: reservation-requested, patternType: literal }
+          operations: [Read]
+        - resource: { type: group, name: reservation-worker, patternType: literal }
+          operations: [Read]
+        - resource: { type: topic, name: reservation-result, patternType: literal }
+          operations: [Write]
+    # notification-worker: zweite, unabhaengige Consumer-Group auf demselben ReservationResult-Topic
+    # (Kafka als Bus mit Fan-out, siehe CLAUDE.md ## Domain model) - muss zu
+    # charts/notification-worker/values.yaml config.consumerGroup passen.
+    - name: notification-worker
+      acls:
+        - resource: { type: topic, name: reservation-result, patternType: literal }
+          operations: [Read]
+        - resource: { type: group, name: notification-worker, patternType: literal }
+          operations: [Read]
+    # akhq: schreibgeschuetzte Kafka-Ops-UI (siehe Root-README ## B2 "AKHQ schreibgeschuetzt
+    # konfiguriert") - braucht Sicht auf ALLE Topics/Consumer-Groups (nicht nur die beiden oben),
+    # deshalb Resource-Name "*" (Kafkas eingebauter ACL-Wildcard fuer "jede Resource dieses Typs",
+    # kein Praefix-Pattern). Passwort wird NICHT vom User Operator generiert, sondern explizit aus
+    # akhqUser.passwordSecretName vorgegeben (siehe kafka-akhq-user-secret.yaml) - AKHQ laeuft im
+    # Namespace "kafka", nicht "ticketflow", ein generiertes Secret koennte AKHQs Deployment per
+    # secretKeyRef also nicht direkt (Namespace-Grenze) erreichen. Passwort siehe akhqUser unten,
+    # muss mit charts/akhq/values.yaml kafkaSasl.password uebereinstimmen.
+    - name: akhq
+      passwordSecretName: akhq-kafka-user-password
+      acls:
+        - resource: { type: topic, name: "*", patternType: literal }
+          operations: [Describe, DescribeConfigs, Read]
+        - resource: { type: group, name: "*", patternType: literal }
+          operations: [Describe, Read]
+        - resource: { type: cluster }
+          operations: [Describe]
+
+  akhqUser:
+    passwordSecretName: akhq-kafka-user-password
+    # Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt statt CHANGE_ME/
+    # --set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - dasselbe Passwort wie
+    # charts/akhq/values.yaml secrets.akhq.security.basic-auth (dort schon so gehandhabt), aus
+    # Gruenden der einfachen Handhabung. Muss mit charts/akhq/values.yaml kafkaSasl.password
+    # uebereinstimmen.
+    password: "ticketflow"
+
 # Apicurio Registry (charts/apicurio, Namespace "kafka"), siehe templates/schema-registry/ und
 # charts/README.md ## apicurio. URL ist die vom Apicurio-Chart selbst gerenderte Service-DNS
 # (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml metadata.name) - noch nicht live

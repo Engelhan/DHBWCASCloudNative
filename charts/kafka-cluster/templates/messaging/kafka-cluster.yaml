@@ -4,12 +4,22 @@
 #
 # Struktur (metadataVersion, metricsConfig, kafkaExporter, entityOperator-Resources) orientiert
 # an einer realen Strimzi-Referenz aus dem Arbeitsumfeld des Nutzers - bewusst NICHT uebernommen:
-# externer Listener/TLS/SCRAM-Auth (kein externer Zugriff noetig, siehe Root-README
-# ## Entscheidungen), `authorization: type: simple` (kein Sinn ohne KafkaUser-Identitaeten -
-# folgt, sobald catalog-api/reservation-worker/notification-worker existieren und eigene
-# KafkaUser-CRs bekommen), `inter.broker.protocol.version` (ZK-Aera-Feld, in reinem KRaft-Betrieb
-# ohne Wirkung), `message.max.bytes: 200MB` (fuer unsere kleinen JSON-Reservierungs-Events nicht
-# begruendbar - Kafka-Default bleibt).
+# externer Listener/TLS (kein externer Zugriff noetig, siehe Root-README ## Entscheidungen),
+# `inter.broker.protocol.version` (ZK-Aera-Feld, in reinem KRaft-Betrieb ohne Wirkung),
+# `message.max.bytes: 200MB` (fuer unsere kleinen JSON-Reservierungs-Events nicht begruendbar -
+# Kafka-Default bleibt).
+#
+# B2 (Root-README ## Entscheidungen): SCRAM-SHA-512-Auth + `authorization: type: simple` sind
+# jetzt aktiv, seit catalog-api/reservation-worker/notification-worker existieren und eigene
+# KafkaUser-CRs bekommen (kafka-users.yaml) - vorher ergab Authorization ohne Client-Identitaeten
+# keinen Sinn. UNVERIFIZIERT (kein Cluster verfuegbar): Strimzi soll den Cluster-/Entity-Operator
+# (Topic-/User-Operator) beim Einschalten von `authorization: type: simple` automatisch als
+# Super-User autorisieren (eigene interne mTLS-Identitaet auf einem von Nutzern nicht
+# konfigurierbaren internen Listener, unabhaengig vom "plain"-Listener unten) - laut Strimzi-Doku
+# so vorgesehen, aber nie gegen einen echten Sync geprueft. Falls KafkaTopic-Reconciliation oder
+# KafkaUser-Provisionierung nach diesem Wechsel fehlschlaegt (Operator-Logs pruefen), ist das der
+# erste Verdacht - Fix waere ein expliziter `spec.kafka.authorization.superUsers`-Eintrag fuer die
+# Operator-Principal-CN.
 #
 # Gegen die echte installierte CRD geprueft (kubectl explain, siehe CLAUDE.md-Memory
 # project-strimzi-branch-tracking): apiVersion war v1 statt v1beta2, alle hier verwendeten Felder
@@ -33,13 +43,20 @@ spec:
     version: {{ .Values.kafka.version | quote }}
 
     listeners:
-      # Cluster-intern, kein TLS/Auth - kein externer Zugriff und keine
-      # Verschluesselungs-/Auth-Anforderung in P1-P7 dokumentiert (siehe Root-README
-      # ## Entscheidungen).
+      # Cluster-intern, kein TLS (kein externer Zugriff und keine
+      # Verschluesselungs-Anforderung in P1-P7 dokumentiert, siehe Root-README
+      # ## Entscheidungen) - aber seit B2 mit SCRAM-SHA-512-Auth: SASL_PLAINTEXT statt
+      # PLAINTEXT (Transport bleibt unverschluesselt, nur der Client-Login ist jetzt
+      # authentifiziert). Name "plain" bewusst unveraendert gelassen, um die
+      # Bootstrap-Service-DNS (<cluster>-kafka-bootstrap) fuer alle bestehenden Referenzen
+      # (charts/ticketflow-app, charts/reservation-worker, charts/akhq values.yaml) stabil zu
+      # halten - der Listener-Name selbst hat darauf keinen Einfluss.
       - name: plain
         port: 9092
         type: internal
         tls: false
+        authentication:
+          type: scram-sha-512
 
     config:
       offsets.topic.replication.factor: {{ .Values.kafka.config.offsetsTopicReplicationFactor }}
@@ -66,6 +83,14 @@ spec:
         configMapKeyRef:
           name: kafka-metrics
           key: kafka-metrics-config.yml
+
+  # B2: engst moegliche ACLs statt eines geteilten Credentials fuer alle Clients - jeder Client
+  # (catalog-api/reservation-worker/notification-worker/akhq) authentifiziert sich als eigene
+  # KafkaUser-Identitaet (kafka-users.yaml) und bekommt nur die Rechte, die er tatsaechlich
+  # braucht. Ohne mindestens eine KafkaUser-ACL fuer eine Identitaet lehnt der Broker jeden
+  # Request dieser Identitaet ab (Default-Deny).
+  authorization:
+    type: simple
 
   # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
   # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber
