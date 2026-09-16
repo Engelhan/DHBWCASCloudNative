@@ -1,0 +1,67 @@
+# P6 (Root-README ## Entscheidungen): KEDA skaliert reservation-worker auf Basis des
+# Kafka-Consumer-Group-Lags statt CPU. Dieser Chart ist nur der Operator selbst (analog zu
+# charts/cnpg-operator/charts/strimzi-operator) - das eigentliche ScaledObject/
+# TriggerAuthentication fuer reservation-worker liegt in charts/reservation-worker (analog dazu,
+# wie die Postgres-Cluster-CR in charts/postgres-cluster liegt, nicht im cnpg-operator-Chart).
+#
+# Muss unter dem Dependency-Alias "keda" verschachtelt sein (siehe Chart.yaml), damit Helm die
+# Werte an das gewrappte Upstream-Chart durchreicht.
+keda:
+  # Chart-Default ist bereits cluster-wide (watchNamespace: "" beobachtet ScaledObjects/
+  # TriggerAuthentications in allen Namespaces) - kein Override noetig, da das ScaledObject fuer
+  # reservation-worker im Namespace "ticketflow" liegt, nicht "keda".
+
+  image:
+    keda:
+      tag: "2.20.2" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+    metricsApiServer:
+      tag: "2.20.2"
+    webhooks:
+      tag: "2.20.2"
+
+  # podSecurityContext/securityContext sind bereits Chart-Default gehaertet (runAsNonRoot,
+  # readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault, je Komponente:
+  # operator/metricServer/webhooks) - kein Override noetig.
+
+  resources:
+    operator:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    metricServer:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    webhooks:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  # Natives networkPolicy-Feld vorhanden (anders als CNPG/Strimzi) - "kubernetes"-Flavor statt
+  # "cilium" (kein Cilium im Cluster, siehe infra/ansible - Flannel/k3s-Standard-CNI). Gegen
+  # `helm template` geprueft: jede Komponente (operator/metricsServer/webhooks) bekommt ihre
+  # eigene, korrekt auf die eigenen Pods gescopte Policy, kein "Loki-Bug" mit leerem podSelector
+  # (siehe charts/README.md ## Resource-Limits, Security-Context, NetworkPolicy).
+  networkPolicy:
+    enabled: true
+    flavor: kubernetes
+
+  # kube-prometheus-stack ist inzwischen deployt - ServiceMonitor-CRD existiert also. KEDAs
+  # eigene Operator-Metriken (u.a. aktive Trigger/Scaler-Fehler) ergaenzen den
+  # Kafka-Consumer-Lag als zweites P7-Signal fuer die P6-Skalierungsdemo.
+  prometheus:
+    operator:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        additionalLabels:
+          release: kube-prometheus-stack
