@@ -51,8 +51,23 @@ keda:
   # `helm template` geprueft: jede Komponente (operator/metricsServer/webhooks) bekommt ihre
   # eigene, korrekt auf die eigenen Pods gescopte Policy, kein "Loki-Bug" mit leerem podSelector
   # (siehe charts/README.md ## Resource-Limits, Security-Context, NetworkPolicy).
+  #
+  # DOCH deaktiviert (2026-09-16, live auf einem echten Sync gefunden) - anderer Fehlerklasse
+  # als der Loki-Bug: der Chart-eigene egress-Eintrag fuer Port 443/6443 scoped sein `to:` auf
+  # `namespaceSelector: {}`, was NUR Pod-IPs matched. In diesem Cluster (k3s, kein Cilium) ist
+  # der "kubernetes"-API-Server-Endpoint aber keine Pod-IP, sondern direkt die Control-Plane-Node-
+  # IP (`kubectl get endpoints kubernetes -n default` zeigt die Node-IP, nicht eine Pod-IP) -
+  # `namespaceSelector: {}` matched das nie, die eingebaute k3s-NetworkPolicy-Durchsetzung
+  # blockt den Egress also komplett. Folge: keda-operator/keda-admission-webhooks canloopten mit
+  # "dial tcp [::1]:443: connect: connection refused" beim Scale-Client-Init. Zum Vergleich:
+  # charts/cert-manager's aequivalente Egress-Regel fuer Port 6443 hat gar kein `to:`-Feld (=
+  # matched jedes Ziel, Pod oder nicht) - genau dieser Unterschied macht dort denselben
+  # Verbindungsaufbau moeglich. Kein Sub-Toggle im Upstream-Chart, um nur diese eine Regel zu
+  # aendern, daher komplett aus - wie bei Loki gilt: vor einem Re-Enable-Versuch erst pruefen, ob
+  # eine neuere Chart-Version das egress `to:` auf "ohne Selector" oder einen expliziten ipBlock
+  # fuer die API-Server-IP umstellt.
   networkPolicy:
-    enabled: true
+    enabled: false
     flavor: kubernetes
 
   # kube-prometheus-stack ist inzwischen deployt - ServiceMonitor-CRD existiert also. KEDAs
