@@ -84,13 +84,19 @@ spec:
           name: kafka-metrics
           key: kafka-metrics-config.yml
 
-  # B2: engst moegliche ACLs statt eines geteilten Credentials fuer alle Clients - jeder Client
-  # (catalog-api/reservation-worker/notification-worker/akhq) authentifiziert sich als eigene
-  # KafkaUser-Identitaet (kafka-users.yaml) und bekommt nur die Rechte, die er tatsaechlich
-  # braucht. Ohne mindestens eine KafkaUser-ACL fuer eine Identitaet lehnt der Broker jeden
-  # Request dieser Identitaet ab (Default-Deny).
-  authorization:
-    type: simple
+    # B2: engst moegliche ACLs statt eines geteilten Credentials fuer alle Clients - jeder Client
+    # (catalog-api/reservation-worker/notification-worker/akhq) authentifiziert sich als eigene
+    # KafkaUser-Identitaet (kafka-users.yaml) und bekommt nur die Rechte, die er tatsaechlich
+    # braucht. Ohne mindestens eine KafkaUser-ACL fuer eine Identitaet lehnt der Broker jeden
+    # Request dieser Identitaet ab (Default-Deny). Muss unter spec.kafka liegen, nicht auf
+    # spec-Top-Level (anders als kafkaExporter/entityOperator unten) - eine fruehere Version
+    # hatte dies mit 2 statt 4 Leerzeichen eingerueckt, wodurch spec.authorization entstand
+    # (kein gueltiges Feld der Kafka-CRD, von der API beim Apply stillschweigend verworfen) statt
+    # spec.kafka.authorization; Strimzi lehnte danach jede KafkaUser-ACL-Reconciliation mit
+    # "Simple authorization ACL rules are configured but not supported in the Kafka cluster
+    # configuration" ab. Mit `kubectl explain kafka.spec.kafka.authorization` gegengeprueft.
+    authorization:
+      type: simple
 
   # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
   # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber
