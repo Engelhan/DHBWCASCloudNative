@@ -80,7 +80,7 @@ Zwei Varianten:
 - **Wrapper um einen Upstream-Chart** ([`longhorn/`](longhorn/), [`cert-manager/`](cert-manager/),
   [`external-dns/`](external-dns/), [`cnpg-operator/`](cnpg-operator/),
   [`strimzi-operator/`](strimzi-operator/), [`kube-prometheus-stack/`](kube-prometheus-stack/),
-  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/)): `Chart.yaml` deklariert den Upstream-Chart als
+  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/), [`keda/`](keda/)): `Chart.yaml` deklariert den Upstream-Chart als
   `dependencies`-Eintrag (Name/Version/Repository), `values.yaml` reicht unsere Werte unter dem
   Dependency-Alias (z.B. `longhorn:`) durch. ArgoCD baut die Dependency beim Sync automatisch
   (`helm dependency build`) – kein `Chart.lock`/`charts/*.tgz` im Repo (gitignored, siehe

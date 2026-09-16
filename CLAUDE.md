@@ -70,13 +70,18 @@ Four layers, each owning a distinct concern — don't blur them:
    entry, with our values in its own `values.yaml` (see `charts/README.md`); ArgoCD resolves the
    dependency via `helm dependency build` at sync time. `app-of-apps.yaml` +
    Longhorn/cert-manager/cert-manager-issuer/external-dns/argocd-ingress/cnpg-operator/
-   strimzi-operator/kube-prometheus-stack/loki/tempo/akhq/apicurio/kafka-cluster/ticketflow-app
-   are written; KEDA is still **not implemented** (build it the same wrapper-chart way). CNPG/Strimzi/
-   kube-prometheus-stack all bundle CRDs over the 262144-byte annotation limit (CNPG's `poolers`
-   CRD >650KB, Strimzi's `Kafka` CRD >330KB, kube-prometheus-stack's `Prometheus` CRD >800KB) —
-   their Applications need `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install
-   itself (see Ansible specifics below); apply this to KEDA too if its CRDs turn out large. Loki/
-   Tempo ship no CRDs, don't need it. Observability persistence goes through Longhorn
+   strimzi-operator/kube-prometheus-stack/loki/tempo/akhq/apicurio/kafka-cluster/ticketflow-app/keda
+   are written (see `charts/keda`/`gitops/apps/keda.yaml` and the `keda-scaledobject.yaml`
+   template in `charts/reservation-worker` under Current implementation status below — not yet
+   live-verified, `helm dependency update` for `charts/keda` itself is blocked locally by this
+   machine's TLS-interception proxy, same class of gap as the reservation-worker/notification-
+   worker/catalog-api docker-compose block noted elsewhere in this file). CNPG/Strimzi/
+   kube-prometheus-stack/KEDA all bundle CRDs over the 262144-byte annotation limit (CNPG's
+   `poolers` CRD >650KB, Strimzi's `Kafka` CRD >330KB, kube-prometheus-stack's `Prometheus` CRD
+   >800KB, KEDA's `scaledjobs` CRD >650KB) — their Applications need
+   `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install itself (see Ansible
+   specifics below). Loki/Tempo ship no CRDs, don't need it. Observability persistence goes
+   through Longhorn
    throughout (already the default StorageClass); Loki runs `SingleBinary` mode with a bundled
    MinIO as its S3-compatible chunk store, Tempo uses its local filesystem backend — both are
    PVC-backed. Grafana (from kube-prometheus-stack) gets Loki + Tempo wired in as
@@ -93,9 +98,11 @@ Four layers, each owning a distinct concern — don't blur them:
    are deliberately NOT part of this chart** — team decision, they must not be deployed in the
    same Application as Kafka — they live in their own chart, `charts/ticketflow-app/`, deployed
    via `gitops/apps/ticketflow-app.yaml`. Both charts share the `ticketflow` Kubernetes namespace
-   so `catalog-api` can reach Kafka's bootstrap service by short in-namespace DNS name. KEDA
-   `ScaledObject`/CNPG `Cluster` CR are not part of either chart (CNPG lives in its own
-   `charts/postgres-cluster`).
+   so `catalog-api` can reach Kafka's bootstrap service by short in-namespace DNS name. KEDA's
+   `ScaledObject`/CNPG's `Cluster` CR are not part of either chart — each lives with the workload
+   it targets instead (KEDA's `ScaledObject`/`TriggerAuthentication` in `charts/reservation-worker`,
+   analogous to how the Postgres `Cluster` CR lives in its own `charts/postgres-cluster`, not in
+   `charts/cnpg-operator`/`charts/keda`, the operator-only wrapper charts).
 
 Terraform → Ansible → ArgoCD → Helm chart is a hard boundary an agent should preserve: e.g. don't
 add k3s app deployments via Ansible, don't add OpenStack resources via a Helm hook, etc.
@@ -480,9 +487,11 @@ commands here once these gaps close instead of leaving this section stale.
   Kafka, like `catalog-api`, unlike `notification-worker`'s simpler always-ready-once-connected
   check). Paired with its own standalone Helm chart `charts/reservation-worker/` (same
   Deployment/ConfigMap/Secret/PodDisruptionBudget/PodMonitor/NetworkPolicy/`_helpers.tpl`/
-  `values.schema.json` pattern as `charts/notification-worker/`; `replicaCount: 1` +
-  `PodDisruptionBudget` disabled by default since KEDA — the eventual scaler for this exact
-  service, P6 — doesn't exist yet), deployed via `gitops/apps/reservation-worker.yaml`.
+  `values.schema.json` pattern as `charts/notification-worker/`; `replicaCount: 1` is now just the
+  Deployment's starting value — KEDA (`templates/keda-scaledobject.yaml`, added 2026-09-16, see
+  the P6/KEDA bullet below) owns actual replica count from the first scale reconcile on, and
+  `PodDisruptionBudget` is enabled by default now that scaling is real), deployed via
+  `gitops/apps/reservation-worker.yaml`.
 
   **Postgres wiring (resolved 2026-09-15, credentials hardcoded 2026-09-16):** originally blocked
   by the same cross-namespace-secret gap as everywhere else (`charts/postgres-cluster` only
@@ -501,6 +510,59 @@ commands here once these gaps close instead of leaving this section stale.
   overrides needed.
   Also added a `reservation-worker` service + `reservation-result` topic pre-creation to the
   root `docker-compose.yml` for local testing (previously only had `reservation-requested`).
+- **Done for `charts/reservation-worker`'s half (`helm lint`/`template` clean), `charts/keda`
+  itself not yet `helm dependency update`-able locally (2026-09-16):** P6 — KEDA scales
+  `reservation-worker` on Kafka consumer-group lag instead of CPU (root `README.md` ## P6).
+  `charts/keda` (new, wrapper around the upstream `kedacore/charts` chart pinned `2.20.2`) +
+  `gitops/apps/keda.yaml` (namespace `keda`, cluster-wide `watchNamespace` default kept,
+  `syncOptions: [ServerSideApply=true]` — its `scaledjobs` CRD alone is >650KB, same class of
+  problem as CNPG/Strimzi/kube-prometheus-stack) is the operator only, same split as
+  `charts/cnpg-operator` vs. `charts/postgres-cluster`: the actual `ScaledObject`/
+  `TriggerAuthentication` live with the workload they target, in
+  `charts/reservation-worker/templates/keda-scaledobject.yaml`, not in `charts/keda`. Written
+  against the upstream chart's real `values.yaml` structure and the actual `keda.sh` Kafka-scaler
+  docs (fetched live, not guessed) — `crds.install`/`podSecurityContext`/`securityContext` already
+  sensible chart defaults, kept; `resources` set explicitly per component (operator/metricServer/
+  webhooks, scaled down for the lab cluster, same sizing convention as `charts/cnpg-operator`/
+  `charts/strimzi-operator`); the chart's native `networkPolicy` field is enabled (`flavor:
+  kubernetes`, no Cilium in this cluster) — **not yet rendered/verified** that its per-component
+  policies are safely scoped (the "Loki-bug" class of empty-podSelector risk, see `charts/README.md`
+  ## Resource-Limits...), since `charts/keda`'s dependency can't be resolved locally right now (see
+  below); `prometheus.operator.serviceMonitor.enabled: true` wired to `kube-prometheus-stack`
+  (P7). **`charts/keda` itself could not be `helm dependency update`d/lint/template-verified in
+  this session** — same corporate TLS-interception proxy that blocked the `docker compose`
+  Go-module downloads earlier also breaks any HTTPS fetch from inside a container on this
+  machine (confirmed: even a bare `curl https://kedacore.github.io/...` from a container fails
+  with "self-signed certificate in certificate chain") — this repo already has precedent for
+  committing a wrapper chart this way (`charts/cnpg-operator`/`charts/strimzi-operator` were never
+  locally dependency-resolved either, per their own status entries above), so this isn't a new
+  class of gap, but it does mean `charts/keda`'s rendered output is unverified beyond "the values
+  key names match the real upstream `values.yaml` structure I fetched" — check with a real
+  `helm template` (or just watch the live ArgoCD sync) before trusting it blind.
+
+  `charts/reservation-worker`'s half **is** fully `helm lint`/`template`-verified locally (no
+  external dependency to resolve there, pure custom templates): a small chart-owned Secret
+  (`<fullname>-keda-auth`) holds just the SASL **username** (`reservation-worker`, not sensitive)
+  because KEDA's Kafka scaler only accepts `username`/`password` via `TriggerAuthentication.
+  secretTargetRef` (confirmed against the live `keda.sh/docs/latest/scalers/apache-kafka` docs,
+  never as a literal metadata value) and the Strimzi-generated Secret
+  (`config.kafkaSasl.secretName`) has no separate `username` key to reuse — the **password**
+  comes straight from that existing Strimzi Secret, no copy. `config.keda.{minReplicaCount,
+  maxReplicaCount,lagThreshold,pollingInterval,cooldownPeriod}` are new values, deliberately NOT
+  defaulted to KEDA's own generic defaults: `maxReplicaCount: 3` is pinned to
+  `reservation-requested`'s actual partition count on the profile that's actually synced right
+  now (`gitops/apps/kafka-cluster.yaml` runs `values-dev.yaml`, 3 partitions — a consumer group
+  can't usefully run more consumers than partitions) and needs bumping to 8 alongside any future
+  switch to `values-prod.yaml`; `lagThreshold: "10"` and the 30-seat demo event in
+  `local/postgres/init.sql` are sized so that a full sellout burst drives a full scale-out to
+  `maxReplicaCount`; `pollingInterval: 15`/`cooldownPeriod: 60` are shorter than KEDA's defaults
+  (30s/300s) so a screencast shows both scale-up and scale-down without a multi-minute wait.
+  `replicaCount: 1` in this chart is now purely the Deployment's starting value, not an ongoing
+  source of truth — `gitops/apps/reservation-worker.yaml` gained an `ignoreDifferences` entry on
+  `spec.replicas` for the Deployment (the standard ArgoCD + HPA/KEDA pattern), otherwise
+  `selfHeal: true` would stomp every KEDA scale event back to `replicaCount: 1` on the next sync
+  tick. `podDisruptionBudget.enabled` flipped from `false` to `true` (`minAvailable: 1`) now that
+  the replica count is no longer statically 1.
 - **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
   `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
@@ -693,7 +755,7 @@ commands here once these gaps close instead of leaving this section stale.
   deployed in the same Application as Kafka — this chart was split out of `charts/kafka-cluster`
   (which originally held both) for exactly that reason; `lint`/`template`/kubeconform all pass
   for both charts post-split.
-- **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
+- **Not started:** `gitops/apps/notification-worker.yaml`,
   `gitops/projects/ticketflow-project.yaml`, all `src/load-generator` code,
   `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
   deny-by-default `NetworkPolicy` set + SOPS-encrypted `infra/ansible/secrets.yml`/

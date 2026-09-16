@@ -274,14 +274,27 @@ Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich 
 nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten; ein Pod-Verlust darf
 keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
 
-**P6 – Skalierbarkeit.** *Wahl:* KEDA skaliert `reservation-worker` auf Basis des
-Kafka-Consumer-Group-Lags. *Alternative:* HPA auf CPU-Auslastung. *Begründung:* Die eigentliche
-fachliche Engpassgröße ist "wie viele Reservierungen warten auf Verarbeitung", nicht CPU-Last —
-CPU kann bei I/O-gebundener Arbeit (Warten auf DB-Commit, Kafka-Fetch) trügerisch niedrig bleiben,
-obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung warten. Der Trade-off: eine
-Lag-basierte Metrik braucht einen zusätzlichen Scaler/Adapter (KEDA) statt der im Cluster bereits
-eingebauten HPA-CPU-Metrik — der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest
-schlicht am falschen Signal skalieren würde.
+**P6 – Skalierbarkeit.** *Wahl:* KEDA (`charts/keda`, Operator; `ScaledObject`/
+`TriggerAuthentication` in `charts/reservation-worker/templates/keda-scaledobject.yaml`) skaliert
+`reservation-worker` auf Basis des Kafka-Consumer-Group-Lags von `reservation-requested`.
+*Alternative:* HPA auf CPU-Auslastung. *Begründung:* Die eigentliche fachliche Engpassgröße ist
+"wie viele Reservierungen warten auf Verarbeitung", nicht CPU-Last — CPU kann bei I/O-gebundener
+Arbeit (Warten auf DB-Commit, Kafka-Fetch) trügerisch niedrig bleiben, obwohl die Warteschlange
+wächst und Kunden auf ihre Bestätigung warten. Der Trade-off: eine Lag-basierte Metrik braucht
+einen zusätzlichen Scaler/Adapter (KEDA) statt der im Cluster bereits eingebauten HPA-CPU-Metrik —
+der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest schlicht am falschen Signal
+skalieren würde.
+
+| Wert | dev (aktuell synct) | prod | Begründung |
+|---|---|---|---|
+| `keda.maxReplicaCount` | 3 | 8 | = Partitionszahl von `reservation-requested` je Kafka-Profil (`charts/kafka-cluster` `values-dev.yaml`/`values-prod.yaml`) — mehr Consumer als Partitionen innerhalb einer Consumer-Group wären untätig |
+| `keda.lagThreshold` | 10 | 10 | passt zum 30-Sitzplatz-Demo-Event (`local/postgres/init.sql`): ein kompletter Sellout-Burst treibt die Skalierung bis auf `maxReplicaCount` |
+| `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
+
+`reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert;
+`gitops/apps/reservation-worker.yaml` ignoriert `spec.replicas` explizit (`ignoreDifferences`),
+sonst würde ArgoCDs `selfHeal` jede KEDA-Skalierung sofort wieder zurücksetzen — Standardmuster
+für ArgoCD zusammen mit einem HPA/KEDA-verwalteten Deployment.
 
 **P7 – Observability.** *Wahl:* Jeder Service exponiert `/metrics` (Prometheus-Client). Wo ein
 Service von anderen Pods über eine `Service`-Ressource erreichbar sein muss, wird per
