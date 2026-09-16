@@ -17,8 +17,13 @@ database:
   name: postgres
   # Database owner created during bootstrap.
   owner: postgres
-  # Plaintext password for the bootstrap secret. Provide via --set/-f, not committed.
-  password: CHANGE_ME
+  # Lab credentials (2026-09-16, hardcoded on explicit user request - Uni lab project, not a
+  # live system, simple/consistent handling over CHANGE_ME-then-forget; same password used for
+  # AKHQ basic-auth and the Kafka SASL "akhq" user, see charts/akhq/values.yaml). Must match
+  # catalogApi.databaseSecret/databaseSecret.password in charts/ticketflow-app and
+  # charts/reservation-worker (those charts duplicate this value into their own chart-owned
+  # Secret instead of referencing this one cross-namespace, see their comments).
+  password: ticketflow
   primaryUpdateMethod: switchover
   primaryUpdateStrategy: supervised
   postgresql:

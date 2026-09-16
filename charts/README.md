@@ -57,8 +57,8 @@ schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 Kubernetes-`Secret`s sind nicht Namespace-übergreifend referenzierbar. Gelöst nach demselben
 Muster wie `catalog-api`/`notification-worker` (Niklas' Vorgabe, siehe deren Chart-Kommentare):
 der Chart legt sein Postgres-Credentials-`Secret` **selbst** an
-(`templates/secret.yaml`, `databaseSecret.{create,username,password}`, `CHANGE_ME`-Platzhalter,
-echte Werte via `--set`/`--set-file` – müssen mit `charts/postgres-cluster` `values.yaml`
+(`templates/secret.yaml`, `databaseSecret.{create,username,password}`, Lab-Zugangsdaten fest im
+Repo hinterlegt statt `CHANGE_ME` – müssen mit `charts/postgres-cluster` `values.yaml`
 `database.owner`/`.password` übereinstimmen), statt ein extern kopiertes Secret zu referenzieren.
 Die Anwendung baut ihren Connection-String selbst aus `database.{host,port,name,sslMode}`
 (ConfigMap) + diesem Secret zusammen (Keys `username`/`password`, explizit auf `DB_USER`/
