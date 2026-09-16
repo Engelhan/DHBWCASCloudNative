@@ -42,6 +42,14 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "apicurio.fullname" . }}
+          {{- if .Values.kafkaSasl.enabled }}
+          env:
+            - name: APICURIO_KAFKASQL_SECURITY_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apicurio.fullname" . }}-kafka-sasl
+                  key: sasl.jaas.config
+          {{- end }}
           # Kein dediziertes Health-Endpoint in der 3.x-Doku bestaetigt (moeglicherweise auf
           # einem separaten Management-Port statt 8080, siehe charts/README.md). Nutzt
           # stattdessen die echte, immer erreichbare REST-API selbst als Probe - dieselbe

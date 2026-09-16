@@ -18,6 +18,25 @@ config:
   storageKind: kafkasql
   kafkaBootstrapServers: ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092
 
+# B2-Nachtrag (2026-09-16, live auf einem echten Sync gefunden): dieser Chart wurde einen Tag vor
+# der B2-SASL/Authorization-Einfuehrung geschrieben (siehe charts/kafka-cluster) und verband sich
+# bis hierher komplett unauthentifiziert - der Kafka-Cluster verlangt seither SASL_PLAINTEXT+
+# SCRAM-SHA-512 auf dem "plain"-Listener, wodurch der Pod dauerhaft mit
+# "TimeoutException: Timed out waiting for a node assignment" crashloopte. Property-Namen
+# (`apicurio.kafkasql.security.*`) aus dem offiziellen 3.0-Migrationsguide, nicht geraten - die
+# `sasl.jaas.config`-Variante selbst ist dort nicht explizit gelistet (nur oauth-lastige
+# Properties wie sasl.client-id/-secret), folgt hier aber demselben env-var-Mapping-Schema wie
+# das bereits funktionierende APICURIO_KAFKASQL_BOOTSTRAP_SERVERS
+# (apicurio.kafkasql.bootstrap.servers). Live gegen den echten Cluster verifizieren, sobald
+# dieser Fix synct - falls die Property doch anders heisst, zeigt der Pod-Log wieder dieselbe
+# TimeoutException (Authentifizierung nie angewendet) statt einer expliziten SASL-Fehlermeldung.
+kafkaSasl:
+  enabled: true
+  username: apicurio
+  # Lab-Zugangsdaten, gleiches Muster wie charts/akhq/values.yaml kafkaSasl.password. Muss mit
+  # charts/kafka-cluster/values.yaml kafka.apicurioUser.password uebereinstimmen.
+  password: "ticketflow"
+
 service:
   port: 8080
 
