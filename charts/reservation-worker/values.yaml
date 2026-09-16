@@ -120,3 +120,11 @@ networkPolicy:
 podDisruptionBudget:
   enabled: true # jetzt sinnvoll: KEDA kann tatsaechlich > 1 Replica fahren (siehe keda oben)
   minAvailable: 1
+
+# Weiche Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
+# charts/ticketflow-app catalogApi.topologySpreadConstraint. Bei replicaCount: 1 (bzw. KEDAs
+# minReplicaCount: 1) wirkungslos, aber sobald KEDA hochskaliert (config.keda.maxReplicaCount),
+# verteilt sich reservation-worker ueber die Regionen statt sich auf einem Node zu haeufen.
+topologySpreadConstraint:
+  enabled: true
+  maxSkew: 1

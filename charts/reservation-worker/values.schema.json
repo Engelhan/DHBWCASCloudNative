@@ -93,6 +93,13 @@
         "enabled": { "type": "boolean" },
         "minAvailable": { "type": "integer", "minimum": 0 }
       }
+    },
+    "topologySpreadConstraint": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxSkew": { "type": "integer", "minimum": 1 }
+      }
     }
   }
 }

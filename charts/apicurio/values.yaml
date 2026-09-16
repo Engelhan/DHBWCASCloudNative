@@ -10,8 +10,8 @@ image:
   pullPolicy: IfNotPresent
 
 # kafkasql-Storage: Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer eigenen
-# Postgres-Instanz - vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die aktuell
-# den echten Deploy von reservation-worker blockiert (siehe charts/reservation-worker/values.yaml).
+# Postgres-Instanz - vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die andere
+# Services (z.B. reservation-worker/Postgres) loesen mussten (siehe deren values.yaml-Kommentare).
 # Zeigt auf den bereits deployten Strimzi-Bootstrap-Service in Namespace "ticketflow". Beides
 # unkritisch (keine Zugangsdaten), landet deshalb in der ConfigMap, nicht in einem Secret.
 config:
@@ -49,3 +49,10 @@ securityContext:
 
 nameOverride: ""
 fullnameOverride: ""
+
+# Weiche Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
+# charts/ticketflow-app catalogApi.topologySpreadConstraint. Bei replicaCount: 1 wirkungslos,
+# schadet aber nicht (ScheduleAnyway) und ist korrekt vorbereitet, falls replicaCount je erhoeht wird.
+topologySpreadConstraint:
+  enabled: true
+  maxSkew: 1

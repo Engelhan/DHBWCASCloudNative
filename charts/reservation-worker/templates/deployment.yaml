@@ -14,6 +14,19 @@ spec:
       labels:
         {{- include "reservation-worker.labels" . | nindent 8 }}
     spec:
+      # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
+      # bei topologySpreadConstraint. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, weil
+      # replicaCount: 1 (bzw. KEDA minReplicaCount: 1) sonst auf einem Ein-Node-Dev-Setup haengen
+      # bleiben wuerde - gleiches Muster wie charts/ticketflow-app.
+      {{- if .Values.topologySpreadConstraint.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
+          topologyKey: topology.ticketflow/region
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "reservation-worker.selectorLabels" . | nindent 14 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

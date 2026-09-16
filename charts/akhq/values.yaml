@@ -30,6 +30,28 @@ akhq:
       cpu: 500m
       memory: 512Mi
 
+  # Weiche Verteilung ueber die drei simulierten Regionen (P4). AKHQs Upstream-Chart hat
+  # (anders als charts/ticketflow-app/charts/reservation-worker/charts/apicurio) KEIN natives
+  # topologySpreadConstraints-Feld - gegen templates/deployment.yaml im Upstream-Chart-Tarball
+  # geprueft (nur affinity/nodeSelector/tolerations werden dort templated, reiner
+  # toYaml-Passthrough). Deshalb aequivalent ueber eine weiche podAntiAffinity ausgedrueckt.
+  # labelSelector ist hier (anders als bei den volleigenen Charts) auf die tatsaechlich vom
+  # Upstream-Chart gerenderten Pod-Labels haendisch hartkodiert (app.kubernetes.io/name=akhq,
+  # app.kubernetes.io/instance=akhq - Release-Name = ArgoCD-Application-Name "akhq"), da
+  # values.yaml selbst nicht templated wird und daher keine Helm-Helper wie "akhq.selectorLabels"
+  # referenzieren kann. Bei replicaCount: 1 (Chart-Default) wirkungslos, aber korrekt vorbereitet,
+  # falls replicaCount je erhoeht wird. Gegen `helm template` verifiziert.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: topology.ticketflow/region
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: akhq
+                app.kubernetes.io/instance: akhq
+
   # Chart-Default fuer beide ist {} (ungehaertet) - wie bei charts/strimzi-operator (siehe
   # dessen values.yaml) explizit gesetzt statt uebernommen. readOnlyRootFilesystem bewusst NICHT
   # gesetzt: unklar, ob/wohin AKHQ zur Laufzeit schreibt (kein Hinweis im Upstream-Chart/-Doku
