@@ -91,3 +91,19 @@ func TestLoad_InvalidProcessRetryBackoff(t *testing.T) {
 		t.Fatal("Load() with invalid PROCESS_RETRY_BACKOFF: expected error, got nil")
 	}
 }
+
+func TestLoad_KafkaSASLEnabledRequiresUsernameAndPassword(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("KAFKA_SASL_ENABLED", "true")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when KAFKA_SASL_ENABLED=true without username/password")
+	}
+
+	t.Setenv("KAFKA_SASL_USERNAME", "reservation-worker")
+	t.Setenv("KAFKA_SASL_PASSWORD", "secret")
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() unexpected error once username/password set: %v", err)
+	}
+}

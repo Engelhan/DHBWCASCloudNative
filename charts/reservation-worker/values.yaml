@@ -38,12 +38,24 @@ securityContext:
 
 config:
   # Echter Wert: Strimzi-Bootstrap-Service aus charts/kafka-cluster, gleicher Namespace "ticketflow".
+  # Port 9092 = Strimzi's "plain"-Listener - seit B2 SASL_PLAINTEXT (SCRAM-Auth, siehe
+  # kafkaSasl unten), Transport bleibt unverschluesselt.
   kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
   reservationTopic: "reservation-requested"
   resultTopic: "reservation-result"
   consumerGroup: "reservation-worker"
   processMaxRetries: 3
   processRetryBackoff: "2s"
+
+  # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
+  # Operator verwaltete KafkaUser "reservation-worker" (siehe charts/kafka-cluster values.yaml
+  # kafka.users). secretName referenziert das vom User Operator AUTOMATISCH angelegte Secret
+  # (Keys "password"/"sasl.jaas.config") direkt per secretKeyRef - kein eigenes Secret noetig wie
+  # bei Postgres, weil dieser Chart und der Kafka-Cluster denselben Namespace "ticketflow" teilen.
+  kafkaSasl:
+    enabled: true
+    username: reservation-worker
+    secretName: reservation-worker
   # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
   # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
   registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
@@ -63,13 +75,14 @@ database:
 
 # Chart legt das Secret selbst an (Niklas' Vorgabe, analog zu charts/notification-worker/
 # templates/secret.yaml und charts/ticketflow-app catalogApi.databaseSecret - kein externes
-# Copy-Skript mehr). Platzhalter-Struktur; echte Werte via --set/--set-file zur Deploy-Zeit, nie
-# im Repo committen. Muss mit charts/postgres-cluster values.yaml database.owner/.password
-# uebereinstimmen.
+# Copy-Skript mehr). Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt
+# statt CHANGE_ME/--set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - muss mit
+# charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen (dort ebenfalls
+# hardcoded, siehe dessen Kommentar).
 databaseSecret:
   create: true
-  username: "CHANGE_ME"
-  password: "CHANGE_ME"
+  username: "postgres"
+  password: "ticketflow"
 
 # PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (reiner
 # Kafka-Consumer, Kubelet-Probes gehen direkt an den Pod), daher auch keine eigene

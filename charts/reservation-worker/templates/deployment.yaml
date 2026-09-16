@@ -43,6 +43,15 @@ spec:
                 secretKeyRef:
                   name: {{ include "reservation-worker.fullname" . }}
                   key: password
+            {{- if .Values.config.kafkaSasl.enabled }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
+                  # values.yaml-Kommentar bei config.kafkaSasl) - nicht dieser Chart.
+                  name: {{ .Values.config.kafkaSasl.secretName }}
+                  key: password
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

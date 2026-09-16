@@ -30,6 +30,13 @@ type Config struct {
 	ResultTopic      string
 	ConsumerGroup    string
 
+	// SASL/SCRAM-SHA-512 auth against the Strimzi-managed KafkaUser "reservation-worker" (see
+	// charts/kafka-cluster templates/messaging/kafka-users.yaml). Optional: local docker-compose
+	// has no Strimzi listener/ACLs, so KafkaSASLEnabled defaults to false there.
+	KafkaSASLEnabled  bool
+	KafkaSASLUsername string
+	KafkaSASLPassword string
+
 	ProcessMaxRetries   int
 	ProcessRetryBackoff time.Duration
 
@@ -48,19 +55,21 @@ type Config struct {
 // incomplete configuration fail confusingly later at runtime.
 func Load() (Config, error) {
 	cfg := Config{
-		DBHost:           os.Getenv("DB_HOST"),
-		DBPort:           getenvDefault("DB_PORT", "5432"),
-		DBName:           os.Getenv("DB_NAME"),
-		DBSSLMode:        getenvDefault("DB_SSLMODE", "disable"),
-		DBUser:           os.Getenv("DB_USER"),
-		DBPassword:       os.Getenv("DB_PASSWORD"),
-		ReservationTopic: os.Getenv("RESERVATION_TOPIC"),
-		ResultTopic:      os.Getenv("RESULT_TOPIC"),
-		ConsumerGroup:    os.Getenv("CONSUMER_GROUP"),
-		RegistryURL:      os.Getenv("REGISTRY_URL"),
-		RegistryGroupID:  getenvDefault("REGISTRY_GROUP_ID", "ticketflow"),
-		LogLevel:         getenvDefault("LOG_LEVEL", "info"),
-		HTTPAddr:         getenvDefault("HTTP_ADDR", ":8080"),
+		DBHost:            os.Getenv("DB_HOST"),
+		DBPort:            getenvDefault("DB_PORT", "5432"),
+		DBName:            os.Getenv("DB_NAME"),
+		DBSSLMode:         getenvDefault("DB_SSLMODE", "disable"),
+		DBUser:            os.Getenv("DB_USER"),
+		DBPassword:        os.Getenv("DB_PASSWORD"),
+		ReservationTopic:  os.Getenv("RESERVATION_TOPIC"),
+		ResultTopic:       os.Getenv("RESULT_TOPIC"),
+		ConsumerGroup:     os.Getenv("CONSUMER_GROUP"),
+		KafkaSASLUsername: os.Getenv("KAFKA_SASL_USERNAME"),
+		KafkaSASLPassword: os.Getenv("KAFKA_SASL_PASSWORD"),
+		RegistryURL:       os.Getenv("REGISTRY_URL"),
+		RegistryGroupID:   getenvDefault("REGISTRY_GROUP_ID", "ticketflow"),
+		LogLevel:          getenvDefault("LOG_LEVEL", "info"),
+		HTTPAddr:          getenvDefault("HTTP_ADDR", ":8080"),
 	}
 
 	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
@@ -72,6 +81,9 @@ func Load() (Config, error) {
 	}
 
 	var err error
+	if cfg.KafkaSASLEnabled, err = getenvBool("KAFKA_SASL_ENABLED", false); err != nil {
+		return Config{}, err
+	}
 	if cfg.ProcessMaxRetries, err = getenvInt("PROCESS_MAX_RETRIES", 3); err != nil {
 		return Config{}, err
 	}
@@ -116,6 +128,11 @@ func (c Config) validate() error {
 	if c.ProcessMaxRetries < 0 {
 		return fmt.Errorf("PROCESS_MAX_RETRIES must be >= 0")
 	}
+	if c.KafkaSASLEnabled {
+		if c.KafkaSASLUsername == "" || c.KafkaSASLPassword == "" {
+			return fmt.Errorf("KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD are both required when KAFKA_SASL_ENABLED=true")
+		}
+	}
 	return nil
 }
 
@@ -138,6 +155,18 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func getenvBool(key string, def bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s: invalid bool %q: %w", key, v, err)
+	}
+	return b, nil
 }
 
 func getenvInt(key string, def int) (int, error) {

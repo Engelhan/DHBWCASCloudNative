@@ -16,6 +16,7 @@ import (
 	"ticketflow/reservation-worker/internal/config"
 	"ticketflow/reservation-worker/internal/db"
 	"ticketflow/reservation-worker/internal/kafkaconsumer"
+	"ticketflow/reservation-worker/internal/kafkasasl"
 	"ticketflow/reservation-worker/internal/migrate"
 	"ticketflow/reservation-worker/internal/producer"
 	"ticketflow/reservation-worker/internal/schemareg"
@@ -27,6 +28,12 @@ func main() {
 	logger := newLogger(cfg)
 	if err != nil {
 		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	kafkaSASL, err := kafkasasl.Build(cfg)
+	if err != nil {
+		logger.Error("invalid kafka SASL configuration", "error", err)
 		os.Exit(1)
 	}
 
@@ -74,11 +81,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	publisher := producer.New(cfg.KafkaBrokers, cfg.ResultTopic, resultSchema)
+	publisher := producer.New(cfg.KafkaBrokers, cfg.ResultTopic, resultSchema, kafkaSASL)
 	defer publisher.Close()
 
 	srv := server.New(cfg.HTTPAddr, database, publisher, reqSchema, resultSchema)
-	consumer := kafkaconsumer.New(cfg, database, publisher, reqSchema, logger)
+	consumer := kafkaconsumer.New(cfg, database, publisher, reqSchema, logger, kafkaSASL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

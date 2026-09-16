@@ -10,6 +10,8 @@ data:
   DB_NAME: {{ .Values.database.name | quote }}
   DB_SSLMODE: {{ .Values.database.sslMode | quote }}
   KAFKA_BROKERS: {{ .Values.config.kafkaBrokers | quote }}
+  KAFKA_SASL_ENABLED: {{ .Values.config.kafkaSasl.enabled | quote }}
+  KAFKA_SASL_USERNAME: {{ .Values.config.kafkaSasl.username | quote }}
   RESERVATION_TOPIC: {{ .Values.config.reservationTopic | quote }}
   RESULT_TOPIC: {{ .Values.config.resultTopic | quote }}
   CONSUMER_GROUP: {{ .Values.config.consumerGroup | quote }}

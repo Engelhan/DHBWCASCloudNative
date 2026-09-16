@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
 
 	"ticketflow/reservation-worker/internal/booking"
 	"ticketflow/reservation-worker/internal/config"
@@ -50,8 +51,8 @@ type Consumer struct {
 	logger     *slog.Logger
 }
 
-func New(cfg config.Config, database *db.DB, publisher *producer.Producer, schema *schemareg.Client, logger *slog.Logger) *Consumer {
-	dialer := &kafka.Dialer{Timeout: 10 * time.Second}
+func New(cfg config.Config, database *db.DB, publisher *producer.Producer, schema *schemareg.Client, logger *slog.Logger, saslMechanism sasl.Mechanism) *Consumer {
+	dialer := &kafka.Dialer{Timeout: 10 * time.Second, SASLMechanism: saslMechanism}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: cfg.KafkaBrokers,
