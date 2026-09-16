@@ -695,7 +695,12 @@ commands here once these gaps close instead of leaving this section stale.
   for both charts post-split.
 - **Not started:** `gitops/apps/keda.yaml`, `gitops/apps/notification-worker.yaml`,
   `gitops/projects/ticketflow-project.yaml`, all `src/load-generator` code,
-  `observability/dashboards/` + `observability/alerts/` content, and the cross-namespace
-  `DATABASE_URL` wiring described above (blocking `reservation-worker`'s real deploy, see above).
+  `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
+  deny-by-default `NetworkPolicy` set + SOPS-encrypted `infra/ansible/secrets.yml`/
+  `argocd_deploy_key` (see root `README.md` ## Bonus B1 — still "was getan werden soll", not
+  done; three charts already have their own scoped `NetworkPolicy` active, see `charts/README.md`
+  ## Resource-Limits...). The cross-namespace `DATABASE_URL` blocker mentioned in older versions
+  of this line is resolved (see the Postgres-wiring paragraph above) — `reservation-worker`'s
+  chart is deploy-ready.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
