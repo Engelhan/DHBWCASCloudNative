@@ -3,6 +3,19 @@
 # reservation-worker), siehe CLAUDE.md ## Team. Wrapper um den Upstream-Chart, gleiches Muster
 # wie die anderen Addon-Charts, siehe charts/README.md ## Addon-Charts.
 #
+# B2 (Root-README ## Bonus): eigenes Secret (templates/kafka-sasl-secret.yaml) fuer die
+# SCRAM-Credentials der "akhq"-KafkaUser (charts/kafka-cluster values.yaml kafka.users) - bewusst
+# AUSSERHALB des "akhq:"-Dependency-Blocks unten (das waere an den Upstream-Chart durchgereicht,
+# dieses Secret ist aber unser eigenes, zusaetzliches Template). MUSS mit charts/kafka-cluster
+# values.yaml kafka.akhqUser.password uebereinstimmen (siehe dessen Kommentar fuer den
+# Cross-Namespace-Grund, wieso dieses Chart das Passwort nicht einfach per secretKeyRef vom
+# Strimzi User Operator lesen kann). Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt
+# hier hinterlegt statt CHANGE_ME/--set, da fuer diesen Kurs kein produktionsartiges Geheimnis) -
+# dasselbe Passwort wie secrets.akhq.security.basic-auth unten (dort schon so gehandhabt).
+kafkaSasl:
+  username: akhq
+  password: "ticketflow"
+
 # Muss unter dem Dependency-Alias "akhq" verschachtelt sein (siehe Chart.yaml), damit Helm die
 # Werte an den gewrappten Upstream-Chart durchreicht.
 akhq:
@@ -31,6 +44,20 @@ akhq:
     allowPrivilegeEscalation: false
     capabilities:
       drop: ["ALL"]
+
+  # B2 (Root-README ## Entscheidungen): AKHQ authentifiziert sich seit
+  # charts/kafka-cluster/templates/messaging/kafka-users.yaml (authorization: type: simple ist
+  # jetzt Default-Deny fuer jeden unauthentifizierten Client) als eigene KafkaUser-Identitaet
+  # "akhq" statt anonym zu verbinden. Das JAAS-Config-Secret wird NICHT hier eingetragen (waere
+  # ein Klartext-Passwort im Repo), sondern per Env-Var aus einem selbst angelegten Secret
+  # (secretKeyRef unten) injiziert - AKHQ/Micronaut loest "${VAR}"-Platzhalter in jedem
+  # Config-Wert zur Laufzeit auf.
+  extraEnv:
+    - name: KAFKA_SASL_JAAS_CONFIG
+      valueFrom:
+        secretKeyRef:
+          name: akhq-kafka-sasl
+          key: sasl.jaas.config
 
   # Chart-Default ist bereits enabled: true, und templates/networkpolicy.yaml wurde gegengeprueft
   # (podSelector korrekt auf die eigenen Pods verengt, kein "Loki-Bug" mit leerem Selector - siehe
@@ -99,6 +126,13 @@ akhq:
         ticketflow-kafka:
           properties:
             bootstrap.servers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+            # SASL_PLAINTEXT statt PLAINTEXT (B2) - "${KAFKA_SASL_JAAS_CONFIG}" wird von
+            # Micronaut/AKHQ zur Laufzeit aus der env-Var aufgeloest, die extraEnv oben per
+            # secretKeyRef aus templates/kafka-sasl-secret.yaml injiziert (kein Klartext-Passwort
+            # in dieser Datei).
+            security.protocol: SASL_PLAINTEXT
+            sasl.mechanism: SCRAM-SHA-512
+            sasl.jaas.config: "${KAFKA_SASL_JAAS_CONFIG}"
       security:
         basic-auth:
           - username: admin
