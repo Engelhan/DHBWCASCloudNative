@@ -23,7 +23,7 @@
     },
     "config": {
       "type": "object",
-      "required": ["kafkaBrokers", "reservationTopic", "resultTopic", "consumerGroup", "registryUrl", "kafkaSasl"],
+      "required": ["kafkaBrokers", "reservationTopic", "resultTopic", "consumerGroup", "registryUrl", "kafkaSasl", "keda"],
       "properties": {
         "kafkaBrokers": { "type": "string", "minLength": 1 },
         "reservationTopic": { "type": "string", "minLength": 1 },
@@ -53,6 +53,17 @@
               "username": { "type": "string", "minLength": 1 },
               "secretName": { "type": "string", "minLength": 1 }
             }
+          }
+        },
+        "keda": {
+          "type": "object",
+          "required": ["minReplicaCount", "maxReplicaCount", "lagThreshold", "pollingInterval", "cooldownPeriod"],
+          "properties": {
+            "minReplicaCount": { "type": "integer", "minimum": 0 },
+            "maxReplicaCount": { "type": "integer", "minimum": 1 },
+            "lagThreshold": { "type": "string", "minLength": 1 },
+            "pollingInterval": { "type": "integer", "minimum": 1 },
+            "cooldownPeriod": { "type": "integer", "minimum": 1 }
           }
         }
       }

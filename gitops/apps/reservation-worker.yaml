@@ -1,15 +1,10 @@
 ---
 # reservation-worker: Kafka-Consumer, der die eigentliche Sitzplatzbuchung durchfuehrt (siehe
-# src/reservation-worker/README.md, charts/reservation-worker/). Anders als zunaechst (inline
-# helm.values hier in der Application) leben image.tag/config.kafkaBrokers/secret.databaseUrl
-# jetzt als Defaults direkt in charts/reservation-worker/values.yaml, kein values-dev.yaml/
-# values-prod.yaml-Split fuer diesen Chart. image.repository und config.kafkaBrokers sind dort
-# echte Werte; secret.databaseUrl bleibt ein bewusst falscher Platzhalter (siehe dessen
-# Kommentar in values.yaml) - charts/postgres-cluster legt das DB-Secret nur im Namespace
-# "application" an, Secrets sind namespace-uebergreifend nicht referenzierbar. Mit
-# automated/selfHeal bleibt diese Application deshalb absichtlich rot (DB-Connect-Fehler) in der
-# ArgoCD-UI, statt unbemerkt gruen mit falschen Daten zu laufen - sichtbarer Reminder, bis der
-# Wert durch einen echten ersetzt wird (z.B. per External Secret, dann in values.yaml committen).
+# src/reservation-worker/README.md, charts/reservation-worker/). image.tag/config.kafkaBrokers/
+# databaseSecret.{username,password} leben als Defaults direkt in
+# charts/reservation-worker/values.yaml (Lab-Zugangsdaten, muss mit charts/postgres-cluster
+# values.yaml database.owner/.password uebereinstimmen), kein values-dev.yaml/values-prod.yaml-
+# Split fuer diesen Chart, keine helm.values hier in der Application.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -30,3 +25,13 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  # P6: KEDA (gitops/apps/keda.yaml) verwaltet spec.replicas dieses Deployments ab dem ersten
+  # Scale-Reconcile (charts/reservation-worker/templates/keda-scaledobject.yaml). Ohne dieses
+  # ignoreDifferences wuerde selfHeal jede KEDA-Skalierung beim naechsten Sync-Tick sofort wieder
+  # auf den Git-Wert (replicaCount: 1) zuruecksetzen - Standard-Pattern fuer ArgoCD + HPA/KEDA.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: reservation-worker
+      jsonPointers:
+        - /spec/replicas

@@ -7,11 +7,10 @@ image:
   tag: "a0acfac6"
   pullPolicy: IfNotPresent
 
-# Statischer Default fuer jetzt - der eigentliche Skalierungs-Trigger (KEDA auf
-# Consumer-Lag von config.consumerGroup, P6) existiert noch nicht (siehe
-# gitops/apps/keda.yaml, CLAUDE.md ## Current implementation status). Sobald KEDA
-# eingerichtet ist, wird replicaCount vom ScaledObject ueberschrieben - dieser Wert bleibt dann
-# nur noch der Startwert/minReplicaCount.
+# Startwert, bis das ScaledObject unten (keda.minReplicaCount/.maxReplicaCount) den ersten Scale-
+# Reconcile durchfuehrt und die Kontrolle uebernimmt. gitops/apps/reservation-worker.yaml
+# ignoriert spec.replicas fuer dieses Deployment explizit (ArgoCD ignoreDifferences) - sonst
+# wuerde selfHeal jede KEDA-Skalierung sofort wieder auf diesen Wert zuruecksetzen.
 replicaCount: 1
 
 resources:
@@ -56,6 +55,27 @@ config:
     enabled: true
     username: reservation-worker
     secretName: reservation-worker
+
+  # P6 (Root-README ## Entscheidungen): KEDA skaliert auf Basis des Kafka-Consumer-Group-Lags
+  # von config.consumerGroup, nicht CPU. Siehe templates/keda-scaledobject.yaml + gitops/apps/
+  # keda.yaml (Operator-Chart). maxReplicaCount: 3 ist bewusst an die tatsaechlich synchte
+  # Kafka-Partitionszahl gebunden - gitops/apps/kafka-cluster.yaml faehrt aktuell mit
+  # values-dev.yaml (charts/kafka-cluster), das reservation-requested nur 3 Partitionen gibt (ein
+  # Consumer pro Partition ist das Maximum innerhalb einer Consumer-Group; mehr Replicas als
+  # Partitionen wuerden nur untaetig herumstehen). Bei einem Wechsel auf values-prod.yaml (8
+  # Partitionen) muss dieser Wert auf 8 mitgezogen werden. lagThreshold: "10" passt zum
+  # 30-Sitzplatz-Demo-Event aus local/postgres/init.sql - ein kompletter Sellout-Burst (~30
+  # gleichzeitige Reservierungen) erzeugt genug Lag, um bis auf maxReplicaCount hochzuskalieren.
+  # pollingInterval/cooldownPeriod bewusst kuerzer als KEDAs Standard (30s/300s), damit ein
+  # Flash-Sale-Screencast Skalierung UND Rueckskalierung in vertretbarer Zeit zeigt, statt bis zu
+  # 5 Minuten auf das Cooldown zu warten.
+  keda:
+    minReplicaCount: 1
+    maxReplicaCount: 3
+    lagThreshold: "10"
+    pollingInterval: 15
+    cooldownPeriod: 60
+
   # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
   # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
   registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
@@ -98,5 +118,5 @@ networkPolicy:
   enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
 
 podDisruptionBudget:
-  enabled: false # sinnvoll erst ab replicaCount > 1 (bzw. sobald KEDA minReplicaCount > 1 setzt)
+  enabled: true # jetzt sinnvoll: KEDA kann tatsaechlich > 1 Replica fahren (siehe keda oben)
   minAvailable: 1

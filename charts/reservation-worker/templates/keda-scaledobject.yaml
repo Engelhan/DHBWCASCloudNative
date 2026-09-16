@@ -1,0 +1,63 @@
+# P6 (Root-README ## Entscheidungen): KEDA skaliert dieses Deployment auf Basis des
+# Kafka-Consumer-Group-Lags von .Values.config.consumerGroup auf .Values.config.reservationTopic.
+# Braucht den KEDA-Operator (gitops/apps/keda.yaml, charts/keda) fuer die ScaledObject/
+# TriggerAuthentication-CRDs - dieselbe CRD-Bootstrap-Reihenfolge-Annahme wie bei jeder anderen
+# Custom Resource in diesem Repo, die von einem separat deployten Operator abhaengt (z.B. Kafka/
+# KafkaTopic/KafkaUser vs. Strimzi), kein Sonderfall.
+#
+# KEDAs Kafka-Scaler akzeptiert "username"/"password" fuer TriggerAuthentication NUR ueber
+# secretTargetRef, nie als Klartext-Metadata-Feld (siehe keda.sh/docs/latest/scalers/apache-kafka).
+# Das Strimzi-generierte Secret (.Values.config.kafkaSasl.secretName) hat aber nur die Keys
+# "password"/"sasl.jaas.config", keinen separaten "username"-Key - deshalb dieses kleine,
+# chart-eigene Secret nur fuer den (nicht-geheimen) Benutzernamen; das eigentliche Passwort kommt
+# weiterhin direkt aus dem Strimzi-Secret, keine Kopie davon hier.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "reservation-worker.fullname" . }}-keda-auth
+  labels:
+    {{- include "reservation-worker.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ .Values.config.kafkaSasl.username | quote }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "reservation-worker.fullname" . }}-kafka-lag
+  labels:
+    {{- include "reservation-worker.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: username
+      name: {{ include "reservation-worker.fullname" . }}-keda-auth
+      key: username
+    - parameter: password
+      name: {{ .Values.config.kafkaSasl.secretName }}
+      key: password
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "reservation-worker.fullname" . }}
+  labels:
+    {{- include "reservation-worker.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "reservation-worker.fullname" . }}
+  minReplicaCount: {{ .Values.config.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.config.keda.maxReplicaCount }}
+  pollingInterval: {{ .Values.config.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.config.keda.cooldownPeriod }}
+  triggers:
+    - type: kafka
+      authenticationRef:
+        name: {{ include "reservation-worker.fullname" . }}-kafka-lag
+      metadata:
+        bootstrapServers: {{ .Values.config.kafkaBrokers | quote }}
+        consumerGroup: {{ .Values.config.consumerGroup | quote }}
+        topic: {{ .Values.config.reservationTopic | quote }}
+        lagThreshold: {{ .Values.config.keda.lagThreshold | quote }}
+        offsetResetPolicy: latest
+        sasl: {{ .Values.config.kafkaSasl.enabled | ternary "scram_sha512" "none" | quote }}
+        tls: disable
