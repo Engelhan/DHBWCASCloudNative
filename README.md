@@ -368,30 +368,36 @@ Kafka-Broker verbinden (negative Probe); `git show` zeigt die SOPS-verschlüssel
 `secrets.yml`, `sops -d` (nur mit dem richtigen age-Key) das Klartext-Ergebnis.
 
 **B2 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
-hinaus.** *Was getan werden soll:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
-für alle drei Services bekommt jeder Service über Strimzis **User Operator** eine eigene
-`KafkaUser`-Custom-Resource mit SCRAM-SHA-512-Authentifizierung (das zugehörige Secret erzeugt
-der Operator automatisch) und ein eigenes, engst mögliches `spec.authorization`
-(`type: simple`, ACLs): `catalog-api` darf nur `Write` auf `reservation-requests`, kein `Read`;
-`reservation-worker` darf `Read` auf `reservation-requests` und `Write` auf
-`reservation-results`; `notification-worker` darf ausschließlich `Read` auf
-`reservation-results`. Ergänzend läuft **AKHQ** (schreibgeschützt konfiguriert) als Kafka-Ops-UI
-im Cluster — Topics, Partitionen und Consumer-Group-Lag live einsehbar, ursprünglich bereits im
-Team-ToDo für die Kafka-Cluster-Aufgabe vorgesehen. *Alternative:* ein einziges, geteiltes
-Client-Secret für alle Producer/Consumer (der in der Vorlesung/GridFlex gezeigte Umfang), oder
-Kafka-ACLs händisch per `kafka-acls.sh` statt deklarativ über `KafkaUser`. *Begründung:* Ein
-geteiltes Secret ist funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht
-aber jeden der drei Services implizit zu einem Producer/Consumer auf *jedem* Topic — ein Bug in
-`notification-worker` könnte dann unbemerkt in `reservation-results` schreiben und stille
-Dateninkonsistenz erzeugen, statt sofort mit einer `TopicAuthorizationException` abgelehnt zu
-werden. Händische `kafka-acls.sh`-Aufrufe wären nicht GitOps-versioniert und müssten bei jedem
-Cluster-Rebuild manuell wiederholt werden; `KafkaUser` als Custom Resource kommt wie alles andere
-aus Git und wird von ArgoCD mitverwaltet (siehe W2). *Tragend, nicht dekorativ:* Die ACLs ändern
-das tatsächliche Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller
-Fehlschreibung) und sind damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht
-nur eine zusätzliche Konfigurationsdatei. *Nachweis im Betrieb (geplant):* `kubectl get kafkauser
--n kafka` zeigt die drei Nutzer; ein absichtlich falsch konfigurierter Test-Producer (z. B. ein
-`kubectl run`-Pod mit `notification-worker`s Credentials, der versucht auf
-`reservation-requests` zu schreiben) wird von Kafka mit einer Autorisierungs-Exception abgelehnt
-— eine Screencast-taugliche Negativprobe; AKHQ zeigt die drei Consumer-Groups mit wachsendem/
+hinaus.** *Was umgesetzt wurde:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
+für alle Services bekommt jeder Client über Strimzis **User Operator** eine eigene
+`KafkaUser`-Custom-Resource mit SCRAM-SHA-512-Authentifizierung und ein eigenes, engst mögliches
+`spec.authorization` (`type: simple`, ACLs) — siehe `charts/kafka-cluster/templates/messaging/
+kafka-users.yaml`, generiert aus `values.yaml` `kafka.users`: `catalog-api` darf nur `Write` auf
+`reservation-requested`, kein `Read`; `reservation-worker` darf `Read` auf
+`reservation-requested` (+ die eigene Consumer-Group) und `Write` auf `reservation-result`;
+`notification-worker` darf ausschließlich `Read` auf `reservation-result` (+ eigene
+Consumer-Group). Für das zugehörige Secret gibt es zwei Varianten, je nachdem ob Client und
+Kafka-Cluster denselben Namespace teilen: `catalog-api`/`reservation-worker`/`notification-worker`
+laufen mit dem Kafka-Cluster zusammen im Namespace `ticketflow`, ihr jeweiliges Secret wird vom
+User Operator automatisch erzeugt und per `secretKeyRef` direkt referenziert; **AKHQ**
+(schreibgeschützt konfiguriert, Namespace `kafka`) läuft in einem anderen Namespace und bekommt
+stattdessen ein vorgegebenes Passwort über `spec.authentication.password.valueFrom.secretKeyRef`
+auf ein selbst angelegtes, austauschbares Secret (Kubernetes erlaubt kein `secretKeyRef` über
+Namespace-Grenzen). *Alternative:* ein einziges, geteiltes Client-Secret für alle
+Producer/Consumer (der in der Vorlesung/GridFlex gezeigte Umfang), oder Kafka-ACLs händisch per
+`kafka-acls.sh` statt deklarativ über `KafkaUser`. *Begründung:* Ein geteiltes Secret ist
+funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht aber jeden Service
+implizit zu einem Producer/Consumer auf *jedem* Topic — ein Bug in `notification-worker` könnte
+dann unbemerkt in `reservation-result` schreiben und stille Dateninkonsistenz erzeugen, statt
+sofort mit einer `TopicAuthorizationException` abgelehnt zu werden. Händische
+`kafka-acls.sh`-Aufrufe wären nicht GitOps-versioniert und müssten bei jedem Cluster-Rebuild
+manuell wiederholt werden; `KafkaUser` als Custom Resource kommt wie alles andere aus Git und wird
+von ArgoCD mitverwaltet (siehe W2). *Tragend, nicht dekorativ:* Die ACLs ändern das tatsächliche
+Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller Fehlschreibung) und sind
+damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht nur eine zusätzliche
+Konfigurationsdatei. *Nachweis im Betrieb (noch nicht live geprüft, kein Cluster verfügbar):*
+`kubectl get kafkauser -n ticketflow` zeigt die vier Nutzer; ein absichtlich falsch konfigurierter
+Test-Producer (z. B. ein `kubectl run`-Pod mit `notification-worker`s Credentials, der versucht
+auf `reservation-requested` zu schreiben) wird von Kafka mit einer Autorisierungs-Exception
+abgelehnt — eine Screencast-taugliche Negativprobe; AKHQ zeigt die Consumer-Groups mit wachsendem/
 fallendem Lag live während der P6-Lastdemo.

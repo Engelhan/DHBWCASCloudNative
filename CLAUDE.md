@@ -484,14 +484,17 @@ commands here once these gaps close instead of leaving this section stale.
   `PodDisruptionBudget` disabled by default since KEDA — the eventual scaler for this exact
   service, P6 — doesn't exist yet), deployed via `gitops/apps/reservation-worker.yaml`.
 
-  **Postgres wiring (resolved 2026-09-15):** originally blocked by the same cross-namespace-
-  secret gap as everywhere else (`charts/postgres-cluster` only creates a `username`/`password`
-  `Secret` in namespace `application`, this chart deploys into `ticketflow`). Resolved per
-  Niklas' team-wide decision (see the `catalog-api`/`ticketflow-app` bullet below): the chart
-  creates its **own** `Secret` (`templates/secret.yaml`, `databaseSecret.{create,username,
-  password}`, `CHANGE_ME` placeholders, real values via `--set`/`--set-file`, must match
-  `charts/postgres-cluster`'s `database.owner`/`.password`) instead of referencing an externally
-  copied one. The app builds its own connection string from `DB_HOST`/`DB_PORT`/`DB_NAME`/
+  **Postgres wiring (resolved 2026-09-15, credentials hardcoded 2026-09-16):** originally blocked
+  by the same cross-namespace-secret gap as everywhere else (`charts/postgres-cluster` only
+  creates a `username`/`password` `Secret` in namespace `application`, this chart deploys into
+  `ticketflow`). Resolved per Niklas' team-wide decision (see the `catalog-api`/`ticketflow-app`
+  bullet below): the chart creates its **own** `Secret` (`templates/secret.yaml`,
+  `databaseSecret.{create,username,password}`) instead of referencing an externally copied one.
+  `username`/`password` were `CHANGE_ME` placeholders until 2026-09-16, then hardcoded to
+  `postgres`/`ticketflow` on explicit user request (same lab-credentials reasoning as the AKHQ
+  passwords — Uni project, not live, simple/consistent over CHANGE_ME-then-forget) — must match
+  `charts/postgres-cluster`'s `database.owner`/`.password`, hardcoded there too now. The app
+  builds its own connection string from `DB_HOST`/`DB_PORT`/`DB_NAME`/
   `DB_SSLMODE` (ConfigMap, `values.yaml` → `database.*`, real values) plus `DB_USER`/
   `DB_PASSWORD` (explicit `secretKeyRef`s against that Secret's `username`/`password` keys, not
   `envFrom` — the key names don't match the env var names). `helm lint`/`template` clean with no
@@ -511,24 +514,100 @@ commands here once these gaps close instead of leaving this section stale.
   assigns the Ingress a `LoadBalancer` address — no `traefik-config`-style workaround required.
   Secured with basic-auth (`micronaut.security.enabled` + `akhq.security`), RBAC roles adapted
   from AKHQ's own `application.example.yml` but restricted to the `*-read` roles only (no
-  `*-admin` roles with CREATE/UPDATE/DELETE), matching root `README.md` ## Entscheidungen (B2)'s
-  explicit "AKHQ (schreibgeschützt konfiguriert)" claim — discovered while building this that the
-  root README already documents a whole **B2 elective topic** (per-service `KafkaUser` CRs with
-  SCRAM-SHA-512 + narrow `type: simple` ACLs, one per service, plus read-only AKHQ as the
-  Kafka-ops UI) that doesn't exist yet in the cluster (`charts/kafka-cluster` has no `KafkaUser`
-  resources — see that section above) and isn't listed in this file's "Chosen elective topics" at
-  the top (which only names W1/W2) — **flagged to the user, not resolved**: unclear whether B2 is
-  a live commitment needing implementation (KafkaUser/ACLs are Carlos' scope, same as the Kafka
-  cluster itself) or aspirational text to revise down; update both this file and the "Chosen
-  elective topics" line once that's settled. `default-group: no-roles` (not the upstream
-  example's `admin`) so anonymous visitors get no access at all; the basic-auth password is a
-  `CHANGE_ME` placeholder (same pattern as `charts/postgres-cluster` `database.password`) that
-  must be set via `--helm-set` before the first real sync. `helm dependency update`/`lint`/
-  `template` all pass (verified locally 2026-09-14 once Docker was available) and the rendered
-  Secret/ConfigMap/Deployment/Ingress all look correct — but this only proves the chart renders,
-  not that AKHQ actually enforces the RBAC config as intended; the RBAC block itself is still
-  copied from docs, not tested against a running instance — check login + role behavior in the
-  AKHQ UI after the first real sync.
+  `*-admin` roles with CREATE/UPDATE/DELETE), matching root `README.md` ## Bonus (B2)'s
+  explicit "AKHQ (schreibgeschützt konfiguriert)" claim. `default-group: no-roles` (not the
+  upstream example's `admin`) so anonymous visitors get no access at all; the basic-auth password
+  is already hardcoded (SHA-256 hash of the lab password `ticketflow`, username `admin`) rather
+  than a `CHANGE_ME` placeholder — a correction to this file, the value was already committed like
+  this, no `--helm-set` needed before the first sync. Also authenticates to Kafka itself
+  via SASL/SCRAM-SHA-512 now (see B2/`charts/kafka-cluster` bullet below) — `extraEnv` injects a
+  `KAFKA_SASL_JAAS_CONFIG` env var from a chart-owned `templates/kafka-sasl-secret.yaml` Secret
+  (own resource, not passed through to the upstream `akhq:` dependency block), referenced as
+  `${KAFKA_SASL_JAAS_CONFIG}` inside `secrets.akhq.connections.ticketflow-kafka.properties`
+  (AKHQ/Micronaut resolves `${VAR}` placeholders from the environment at runtime, so that
+  specific field never carries a literal password — the password itself lives once, in
+  `kafkaSasl.password` in this same values.yaml, see the B2 bullet below for why that's a
+  hardcoded lab value rather than `CHANGE_ME`). `helm dependency update`/`lint`/`template` all pass
+  (re-verified 2026-09-16 after the SASL wiring) and the rendered Secret/ConfigMap/Deployment/
+  Ingress all look correct — but this only proves the chart renders, not that AKHQ actually
+  enforces the RBAC config or connects successfully via SASL as intended; both are still
+  unverified against a running instance — check login + role behavior + the Kafka connection in
+  the AKHQ UI after the first real sync.
+- **Done, `helm lint`/`template` clean for all five affected charts, `go vet`/`build`/`test` clean
+  for all three Go services, not yet live-verified (2026-09-16):** B2 (root `README.md` ## Bonus)
+  — per-service `KafkaUser` CRs (SCRAM-SHA-512 + narrowest-possible `type: simple` ACLs) replacing
+  the previously anonymous/unauthenticated Kafka access.
+  `charts/kafka-cluster/templates/messaging/kafka-cluster.yaml`: the `plain` listener (name kept
+  unchanged — it only affects internal Strimzi bookkeeping, not the stable
+  `<cluster>-kafka-bootstrap` DNS every consumer already references) now sets
+  `authentication.type: scram-sha-512` (still `tls: false`, i.e. SASL_PLAINTEXT, not SASL_SSL —
+  transport stays unencrypted per the existing P1-P7 decision, only the login is now
+  authenticated), and `spec.kafka.authorization: {type: simple}` is on (default-deny: a client
+  with no matching ACL is rejected outright). New `templates/messaging/kafka-users.yaml`
+  (generated from `values.yaml` `kafka.users`, four entries: `catalog-api`, `reservation-worker`,
+  `notification-worker`, `akhq`) + `kafka-akhq-user-secret.yaml`. Three of the four users
+  (`catalog-api`/`reservation-worker`/`notification-worker`, same namespace `ticketflow` as this
+  Kafka cluster) let the Strimzi User Operator auto-generate their SCRAM password and are
+  referenced directly via `secretKeyRef` from their own charts (no chart-owned secret needed,
+  unlike the Postgres case) — `akhq` runs in namespace `kafka` instead, so Kubernetes'
+  same-namespace-only `secretKeyRef` rule means it can't read an auto-generated Secret from
+  `ticketflow`; instead its `KafkaUser` sets `spec.authentication.password.valueFrom.secretKeyRef`
+  to a Secret this chart creates itself (`kafka-akhq-user-secret.yaml`), and
+  `charts/akhq/values.yaml`/`templates/kafka-sasl-secret.yaml` supply the matching value on the
+  other side (must match on both sides — both hardcoded to the lab password `ticketflow`, same
+  shape as the Postgres `databaseSecret` values elsewhere in this repo, also hardcoded rather than
+  `CHANGE_ME` as of 2026-09-16 on explicit user request: Uni lab project, not a live system,
+  weak-but-simple beats CHANGE_ME-then-forget) — see the `charts/akhq` bullet above for how AKHQ
+  itself consumes it.
+  `catalog-api`/`reservation-worker`/`notification-worker` charts each gained a
+  `config.kafkaSasl`/`catalogApi.kafkaSasl` block (`enabled`/`username`/`secretName`) wired into
+  their ConfigMap (`KAFKA_SASL_ENABLED`/`KAFKA_SASL_USERNAME`) and Deployment
+  (`KAFKA_SASL_PASSWORD` via `secretKeyRef` against the Strimzi-generated Secret); all three
+  `values.schema.json` updated to match. `notification-worker`'s long-standing placeholder
+  defaults (`config.resultTopic: "reservation-results"`, `config.kafkaBrokers: ""`) were also
+  fixed to the real topic name (`reservation-result`, singular — was a typo/never-updated
+  placeholder) and the real bootstrap-service DNS while touching this file, even though that
+  chart still has no `gitops/apps/notification-worker.yaml` Application (unrelated, still not
+  started, see below). Go side: all three services gained SASL/SCRAM-SHA-512 support via
+  `github.com/segmentio/kafka-go/sasl/scram` (already a transitive part of the already-vendored
+  `segmentio/kafka-go` dependency, `go mod tidy` pulled in `xdg-go/{scram,pbkdf2,stringprep}` as
+  new indirect deps in all three `go.sum` — no new direct dependency chosen) — a
+  `KAFKA_SASL_ENABLED`/`_USERNAME`/`_PASSWORD` env-var triple, optional and default-`false` (same
+  shape as `notification-worker`'s pre-existing `KAFKA_TLS_ENABLED` mTLS scaffold, but
+  independent/orthogonal to it — our listener is SASL_PLAINTEXT, not SASL_SSL, so both could in
+  principle be combined later but aren't here). `reservation-worker`/`notification-worker` each
+  got a small `internal/kafkasasl` package (`Build(cfg) (sasl.Mechanism, error)`, nil when
+  disabled) mirroring `notification-worker`'s existing `internal/kafkatls` package shape;
+  `catalog-api` has no `internal/config` package at all (reads env directly in `main.go`), so its
+  equivalent is an inline `buildKafkaSASL()` helper in `main.go` instead of a new package, for
+  consistency with that file's existing flat style. Config validation (fail-fast at startup)
+  requires username+password when `KAFKA_SASL_ENABLED=true`, covered by new unit tests in both
+  `reservation-worker` and `notification-worker`'s `internal/config` packages. Local
+  `docker-compose.yml` is deliberately untouched — it has no Strimzi listener/ACLs, so
+  `KAFKA_SASL_ENABLED` stays unset (defaults to `false`) there, same plaintext local dev path as
+  before; **not yet re-verified end-to-end via `docker compose up --build`** after this change —
+  attempted once but blocked by this machine's corporate TLS-interception proxy rejecting `go mod
+  download` inside the build containers (`x509: certificate signed by unknown authority` against
+  `proxy.golang.org`), an environment limitation unrelated to this change (the same three services
+  build/vet/test cleanly with the host's native Go 1.27 toolchain, outside Docker). Root
+  `README.md` ## Bonus (B2) paragraph updated from "was getan werden soll" (planned) to "was
+  umgesetzt wurde" (done), topic names corrected to the real singular `reservation-requested`/
+  `reservation-result` (previous text had a plural-typo mismatch,
+  `reservation-requests`/`reservation-results`, against the actual `KafkaTopic` names), namespace
+  in the "Nachweis im Betrieb" `kubectl` example corrected from `-n kafka` to `-n ticketflow`
+  (`KafkaUser`s live with the Kafka cluster, not with AKHQ), and the four-user/cross-namespace
+  password mechanics added. B2 was already documented under root `README.md` ## Bonus (not `##
+  Entscheidungen`), so no change was needed to this file's "Chosen elective topics" line at the
+  top (that names only the two required W-topics, W1/W2; B1/B2 are separate optional bonus
+  topics) — the previous flag about that line being out of sync was a misreading, not an actual
+  gap. **Known open risk, unverified against a live cluster (documented in a comment in
+  `kafka-cluster.yaml` itself):** Strimzi is *supposed* to automatically grant its own
+  Cluster/Entity Operator (Topic/User Operator) super-user rights once
+  `authorization: type: simple` is enabled, via an internal mTLS identity on a listener outside
+  user control — if that assumption is wrong, `KafkaTopic`/`KafkaUser` reconciliation could break
+  the moment this syncs for real; check the Strimzi operator logs first if `kubectl get
+  kafkatopic`/`kafkauser` show errors after this deploys, and add an explicit
+  `spec.kafka.authorization.superUsers` entry for the operator's principal CN as the fix if so.
 - **Done:** `.github/workflows/build-images.yml` now actually builds and pushes (previously just
   a `docker build`-only TODO stub — all four matrix Dockerfiles already existed, only the push
   target was missing). Pushes to **ghcr.io** (GitHub Container Registry) as
@@ -558,8 +637,9 @@ commands here once these gaps close instead of leaving this section stale.
   `config.kafkaBrokers`/`database.*` are all real values now (ghcr.io path + a real,
   ghcr.io-verified git-short-sha tag, Strimzi bootstrap service, real CNPG host/port/name/
   sslMode — see the Postgres-wiring paragraph above); `databaseSecret.{username,password}` are
-  the one remaining intentional `CHANGE_ME` placeholder, consistent with `notification-worker`/
-  `catalog-api`'s same pattern. `helm lint`/`template` clean with zero overrides.
+  now hardcoded lab credentials (`postgres`/`ticketflow`, see the Postgres-wiring paragraph
+  above), consistent with `notification-worker`/`catalog-api`'s same pattern. `helm lint`/
+  `template` clean with zero overrides.
 
   **Real incident, 2026-09-15 (root-caused, now fixed):** an earlier commit removed the
   then-still-needed inline `helm.values` block from the Application without moving those values
