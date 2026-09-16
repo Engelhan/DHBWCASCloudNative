@@ -8,6 +8,8 @@ data:
   PORT: {{ .Values.catalogApi.env.port | quote }}
   RESERVATION_TOPIC: {{ .Values.catalogApi.env.reservationTopic | quote }}
   KAFKA_BROKERS: {{ .Values.catalogApi.env.kafkaBrokers | quote }}
+  KAFKA_SASL_ENABLED: {{ .Values.catalogApi.kafkaSasl.enabled | quote }}
+  KAFKA_SASL_USERNAME: {{ .Values.catalogApi.kafkaSasl.username | quote }}
   CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.env.corsAllowedOrigin | quote }}
   DB_HOST: {{ .Values.catalogApi.database.host | quote }}
   DB_PORT: {{ .Values.catalogApi.database.port | quote }}

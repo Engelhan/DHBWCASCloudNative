@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/scram"
 
 	"ticketflow/catalog-api/internal/api"
 	"ticketflow/catalog-api/internal/db"
@@ -28,6 +31,12 @@ func main() {
 	registryGroupID := getenv("REGISTRY_GROUP_ID", "ticketflow")
 	corsOrigin := getenv("CORS_ALLOWED_ORIGIN", "*")
 	port := getenv("PORT", "8080")
+
+	kafkaSASL, err := buildKafkaSASL()
+	if err != nil {
+		slog.Error("invalid kafka SASL configuration", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -54,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	producer := reservation.NewProducer(kafkaBrokers, reservationTopic, schema)
+	producer := reservation.NewProducer(kafkaBrokers, reservationTopic, schema, kafkaSASL)
 	if err := database.Migrate(ctx); err != nil {
 		slog.Error("database migration failed", "error", err)
 		os.Exit(1)
@@ -95,6 +104,36 @@ func requireEnv(key string) string {
 		os.Exit(1)
 	}
 	return v
+}
+
+func getenvBool(key string, def bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s: invalid bool %q: %w", key, v, err)
+	}
+	return b, nil
+}
+
+// buildKafkaSASL builds a SCRAM-SHA-512 sasl.Mechanism for authenticating to the
+// Strimzi-managed KafkaUser "catalog-api" (see charts/kafka-cluster templates/messaging/
+// kafka-users.yaml), or returns (nil, nil) when KAFKA_SASL_ENABLED is false -- kafka-go treats a
+// nil sasl.Mechanism as "no auth", the current default for local docker-compose (no Strimzi
+// listener/ACLs there).
+func buildKafkaSASL() (sasl.Mechanism, error) {
+	enabled, err := getenvBool("KAFKA_SASL_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, nil
+	}
+	username := requireEnv("KAFKA_SASL_USERNAME")
+	password := requireEnv("KAFKA_SASL_PASSWORD")
+	return scram.Mechanism(scram.SHA512, username, password)
 }
 
 // buildDatabaseURL setzt den Connection-String aus Einzelteilen zusammen, statt einen fertigen

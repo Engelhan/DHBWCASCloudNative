@@ -19,7 +19,7 @@
     },
     "catalogApi": {
       "type": "object",
-      "required": ["replicas", "image", "service", "resources", "env", "database", "databaseSecret"],
+      "required": ["replicas", "image", "service", "resources", "env", "database", "databaseSecret", "kafkaSasl"],
       "properties": {
         "replicas": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
@@ -38,6 +38,26 @@
             "reservationTopic": { "type": "string", "minLength": 1 },
             "kafkaBrokers": { "type": "string", "minLength": 1 },
             "corsAllowedOrigin": { "type": "string" }
+          }
+        },
+        "kafkaSasl": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "username": { "type": "string" },
+            "secretName": { "type": "string" }
+          },
+          "if": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          },
+          "then": {
+            "required": ["username", "secretName"],
+            "properties": {
+              "username": { "type": "string", "minLength": 1 },
+              "secretName": { "type": "string", "minLength": 1 }
+            }
           }
         },
         "database": {

@@ -48,12 +48,24 @@ catalogApi:
     port: "8080"
     reservationTopic: reservation-requested
     # Bootstrap-Service des Kafka-Clusters aus charts/kafka-cluster (kafka.metadata.name dort),
-    # Port 9092 ist Strimzi's Standard-Plaintext-Listener.
+    # Port 9092 ist Strimzi's "plain"-Listener - seit B2 SASL_PLAINTEXT (SCRAM-Auth, siehe
+    # kafkaSasl unten), Transport bleibt unverschluesselt.
     kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
     # Nur fuer Requests ausserhalb des Ingress-Pfads relevant (z.B. direkter Aufruf durch
     # load-generator) - das Frontend selbst braucht dank Same-Origin-Ingress (siehe
     # templates/frontend/ingress.yaml) kein CORS.
     corsAllowedOrigin: ""
+
+  # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
+  # Operator verwaltete KafkaUser "catalog-api" (siehe charts/kafka-cluster values.yaml
+  # kafka.users) statt eines anonymen/geteilten Kafka-Zugriffs. secretName referenziert das vom
+  # User Operator AUTOMATISCH angelegte Secret (Keys "password"/"sasl.jaas.config") direkt per
+  # secretKeyRef - kein eigenes Secret noetig wie bei Postgres, weil catalog-api und der
+  # Kafka-Cluster denselben Namespace "ticketflow" teilen (siehe values.yaml-Kommentar oben).
+  kafkaSasl:
+    enabled: true
+    username: catalog-api
+    secretName: catalog-api
 
   # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
   # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
@@ -71,13 +83,14 @@ catalogApi:
     sslMode: "require"
     credentialsSecretName: ticketflow-postgres-credentials
 
-  # Platzhalter-Struktur; echte Werte via --set/--set-file zur Deploy-Zeit, nie im Repo committen
-  # (siehe charts/notification-worker/values.yaml fuer dieselbe Konvention). Muss mit
-  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen.
+  # Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt statt CHANGE_ME/
+  # --set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - muss mit
+  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen (dort ebenfalls
+  # hardcoded, siehe dessen Kommentar).
   databaseSecret:
     create: true
-    username: "CHANGE_ME"
-    password: "CHANGE_ME"
+    username: "postgres"
+    password: "ticketflow"
 
   podDisruptionBudget:
     enabled: true

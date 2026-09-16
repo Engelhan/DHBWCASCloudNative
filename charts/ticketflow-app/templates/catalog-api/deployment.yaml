@@ -66,6 +66,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.catalogApi.database.credentialsSecretName }}
                   key: password
+            {{- if .Values.catalogApi.kafkaSasl.enabled }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
+                  # values.yaml-Kommentar bei catalogApi.kafkaSasl) - nicht dieser Chart.
+                  name: {{ .Values.catalogApi.kafkaSasl.secretName }}
+                  key: password
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
