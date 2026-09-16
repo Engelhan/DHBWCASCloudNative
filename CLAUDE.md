@@ -563,6 +563,28 @@ commands here once these gaps close instead of leaving this section stale.
   `selfHeal: true` would stomp every KEDA scale event back to `replicaCount: 1` on the next sync
   tick. `podDisruptionBudget.enabled` flipped from `false` to `true` (`minAvailable: 1`) now that
   the replica count is no longer statically 1.
+- **Done, `helm lint`/`template` clean for all three (2026-09-16):** P4 scheduling/placement for
+  `charts/reservation-worker`/`charts/akhq`/`charts/apicurio` — previously only
+  `charts/ticketflow-app` and the Kafka/Postgres node pools had a region-spread preference; these
+  three didn't. `reservation-worker`/`apicurio` (own templates, `_helpers.tpl`-based) got the same
+  `topologySpreadConstraints` + `whenUnsatisfiable: ScheduleAnyway` block as `charts/ticketflow-app`,
+  gated by a new `topologySpreadConstraint.{enabled,maxSkew}` value.
+  **`charts/akhq` needed a different mechanism, found only by checking the vendored upstream chart's
+  actual `templates/deployment.yaml`:** its `values.yaml` doesn't have a `topologySpreadConstraints`
+  field at all — only `affinity`/`nodeSelector`/`tolerations` are templated (raw `toYaml`
+  passthrough). A first attempt setting `topologySpreadConstraints:` there rendered into nothing,
+  silently — caught only by actually grepping the rendered output for the block and finding it
+  missing, not from `helm lint`, which stayed green either way. Fixed with an equivalent
+  `affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution` term instead
+  (`topologyKey: topology.ticketflow/region`), with the `labelSelector` hardcoded to AKHQ's actual
+  rendered pod labels (`app.kubernetes.io/name`/`instance: akhq`) since `values.yaml` isn't
+  templated and can't call a Helm helper the way the two custom charts do. **Lesson for any future
+  wrapper-chart values.yaml edit that isn't covered by this repo's own `values.schema.json`:
+  `helm lint`/`template` only prove a chart renders, never that a specific value you set actually
+  reaches a template** — grep the rendered manifest for the field you expect, don't just check the
+  exit code. All three effectively no-ops at `replicaCount: 1` (their current default everywhere),
+  same as `charts/ticketflow-app`'s own dev profile — becomes real once any of them scales beyond 1
+  (`reservation-worker` via KEDA, see above).
 - **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
   `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is

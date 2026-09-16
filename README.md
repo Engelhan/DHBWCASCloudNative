@@ -255,7 +255,12 @@ vergeben und von Ansible in ein Kubernetes-Label übersetzt – die DHBWCloud st
 Region/AZ bereit, die Verteilung wird für diese Entscheidung bewusst simuliert). CNPG-Postgres
 (Primary+2 Replicas) und die Kafka-Broker (Strimzi, 3 Broker) erhalten je eine
 `topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas nie auf
-demselben simulierten Standort landen. *Alternative:* freie Platzierung durch den
+demselben simulierten Standort landen. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
+`reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
+ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
+natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
+nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert.
+*Alternative:* freie Platzierung durch den
 Standard-Scheduler, oder ein einzelner dedizierter "Storage-Node" für beide Dienste.
 *Begründung:* Freie Platzierung könnte alle Replicas eines Dienstes zufällig auf denselben Node
 verteilen — der Ausfall genau dieses einen Nodes würde Ticket-Reservierungen und deren Event-Log
