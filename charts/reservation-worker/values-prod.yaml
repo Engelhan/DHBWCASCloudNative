@@ -1,0 +1,13 @@
+# HA-/Lastwerte. Der Worker ist der Service, den KEDA auf Kafka-Consumer-Lag skaliert (P6) - hier
+# bekommt er das volle Fenster, damit ein Flash Sale tatsaechlich hochskalieren kann. Das
+# PodDisruptionBudget ist eingeschaltet, weil jetzt dauerhaft mehr als ein Replica laeuft.
+replicaCount: 2
+
+config:
+  keda:
+    minReplicaCount: 2
+    maxReplicaCount: 10
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

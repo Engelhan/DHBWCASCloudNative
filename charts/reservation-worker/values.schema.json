@@ -7,7 +7,13 @@
     "config",
     "database",
     "databaseSecret",
-    "ticketflow"
+    "ticketflow",
+    "resources",
+    "podSecurityContext",
+    "securityContext",
+    "podMonitor",
+    "networkPolicy",
+    "topologySpreadConstraint"
   ],
   "properties": {
     "replicaCount": {
@@ -223,16 +229,7 @@
       }
     },
     "topologySpreadConstraint": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "maxSkew": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
+      "$ref": "#/$defs/topologySpreadConstraint"
     },
     "ticketflow": {
       "type": "object",
@@ -252,6 +249,94 @@
           "not": {
             "const": "latest"
           }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "$ref": "#/$defs/resourceQuantities"
+        },
+        "limits": {
+          "$ref": "#/$defs/resourceQuantities"
+        }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "podMonitor": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "type": "object"
+        }
+      }
+    },
+    "networkPolicy": {
+      "$ref": "#/$defs/toggle"
+    }
+  },
+  "$defs": {
+    "resourceQuantities": {
+      "type": "object",
+      "required": [
+        "cpu",
+        "memory"
+      ],
+      "properties": {
+        "cpu": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "memory": {
+          "type": "string"
+        }
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "topologySpreadConstraint": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSkew": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }

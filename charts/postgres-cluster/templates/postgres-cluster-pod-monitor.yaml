@@ -4,6 +4,11 @@ kind: PodMonitor
 metadata:
   name: "{{ .Values.database.name }}-postgres-cluster"
   namespace: {{ .Values.namespace | default .Release.Namespace }}
+  # Ohne dieses Label greift der podMonitorSelector von kube-prometheus-stack nicht (Chart-Default
+  # "release: <helm-release-name>") und die CNPG-Metriken werden schlicht nie gescrapt - alle
+  # anderen Monitore im Repo tragen es bereits.
+  labels:
+    {{- toYaml .Values.podMonitor.labels | nindent 4 }}
 spec:
   podMetricsEndpoints:
     - port: metrics

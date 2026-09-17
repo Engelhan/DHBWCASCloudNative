@@ -1,8 +1,7 @@
 {{/*
-Erster Chart im Repo mit _helpers.tpl (die anderen volleigenen Charts,
-cert-manager-config/argocd-ingress, rendern nur 1-2 Ressourcen und hardcoden Namen direkt aus
-.Values). notification-worker rendert 6 Ressourcen, die alle konsistente Namen/Selector-Labels
-brauchen - Standard helm-create-Helpers statt das an sechs Stellen zu duplizieren.
+Standard-helm-create-Helper - identisch zu charts/reservation-worker und charts/ticketflow-app,
+nur mit anderem Chart-Namen. Bewusst je Chart dupliziert statt als Library-Chart ausgelagert:
+eine file://-Dependency mehr pro Chart waere fuer drei kurze Defines mehr Aufwand als Nutzen.
 */}}
 
 {{/*

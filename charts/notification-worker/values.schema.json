@@ -5,7 +5,13 @@
   "required": [
     "replicaCount",
     "config",
-    "ticketflow"
+    "ticketflow",
+    "resources",
+    "podSecurityContext",
+    "securityContext",
+    "podMonitor",
+    "networkPolicy",
+    "topologySpreadConstraint"
   ],
   "properties": {
     "replicaCount": {
@@ -224,6 +230,51 @@
           }
         }
       }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "$ref": "#/$defs/resourceQuantities"
+        },
+        "limits": {
+          "$ref": "#/$defs/resourceQuantities"
+        }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "podMonitor": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "type": "object"
+        }
+      }
+    },
+    "networkPolicy": {
+      "$ref": "#/$defs/toggle"
+    },
+    "topologySpreadConstraint": {
+      "$ref": "#/$defs/topologySpreadConstraint"
     }
   },
   "if": {
@@ -271,6 +322,52 @@
             "type": "string",
             "minLength": 1
           }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "resourceQuantities": {
+      "type": "object",
+      "required": [
+        "cpu",
+        "memory"
+      ],
+      "properties": {
+        "cpu": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "memory": {
+          "type": "string"
+        }
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "topologySpreadConstraint": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSkew": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }

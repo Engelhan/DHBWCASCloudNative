@@ -14,6 +14,19 @@ spec:
       labels:
         {{- include "notification-worker.labels" . | nindent 8 }}
     spec:
+      # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
+      # bei topologySpreadConstraint. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, damit
+      # ein Ein-Node-Dev-Setup nicht haengen bleibt - gleiches Muster wie in den anderen
+      # Applikations-Charts.
+      {{- if .Values.topologySpreadConstraint.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
+          topologyKey: topology.ticketflow/region
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "notification-worker.selectorLabels" . | nindent 14 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

@@ -67,3 +67,10 @@ fullnameOverride: ""
 topologySpreadConstraint:
   enabled: true
   maxSkew: 1
+
+# Default aus: bei replicaCount: 1 wuerde ein Budget jeden Node-Drain blockieren. Eingeschaltet
+# sinnvoll, sobald mehr als ein Replica laeuft - dann auch in values-prod.yaml von
+# charts/ticketflow-app/... analog mitziehen.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

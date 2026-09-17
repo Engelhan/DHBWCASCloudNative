@@ -106,3 +106,11 @@ resources:
     cpu: "1"
 
 monitoring: true
+
+# Labels des PodMonitor (templates/postgres-cluster-pod-monitor.yaml). Gleiche Annahme wie in den
+# uebrigen Charts: kube-prometheus-stack hat keinen eigenen podMonitorSelector-Override, also
+# greift der Chart-Default "release: <helm-release-name>" - und der Release-Name ist der Name der
+# ArgoCD-Application ("kube-prometheus-stack").
+podMonitor:
+  labels:
+    release: kube-prometheus-stack

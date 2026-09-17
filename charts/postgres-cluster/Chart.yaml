@@ -1,6 +1,6 @@
 apiVersion: v2
-name: postgres
-description: PostgreSQL chart 
+name: postgres-cluster
+description: CNPG-Cluster (PostgreSQL) fuer TicketFlow - siehe charts/README.md
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

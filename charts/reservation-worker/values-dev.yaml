@@ -1,0 +1,11 @@
+# Kleine Werte fuer Funktionstests auf den Lab-VMs. KEDA bleibt aktiv, skaliert aber in einem
+# engeren Fenster - ein Flash-Sale-Lasttest ist auf dem Dev-Setup nicht das Ziel.
+replicaCount: 1
+
+config:
+  keda:
+    minReplicaCount: 1
+    maxReplicaCount: 3
+
+podDisruptionBudget:
+  enabled: false
