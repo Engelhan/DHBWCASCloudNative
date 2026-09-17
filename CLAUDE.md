@@ -455,6 +455,17 @@ commands here once these gaps close instead of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
+- **Cross-namespace `KafkaUser` watching needs TWO settings, not one (found live, fixed):**
+  `charts/kafka-cluster` sets `spec.entityOperator.userOperator.watchedNamespace` to the app
+  namespace so the User Operator reconciles the `KafkaUser` CRs that live next to their consumers.
+  On its own that makes the Cluster Operator **delete the Entity Operator deployment** again
+  ("Entity Operator deployment deleted because Topic Operator and/or User Operator are configured
+  with watchedNamespace set to a different namespace but the feature is disabled"). The gate is
+  `STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED=true` on the **Cluster Operator** deployment;
+  the upstream chart has no dedicated value for it, so `charts/strimzi-operator/values.yaml`
+  injects it via `extraEnvs` (verified rendered into the Deployment, not just that the chart
+  renders). RBAC needs nothing extra: with `watchAnyNamespace: true` the chart emits a
+  `ClusterRoleBinding` for the entity-operator delegation. Treat the two as one unit.
 - **Done, merged to `main`:** `charts/kafka-cluster` Kafka
   cluster — `Chart.yaml`/`values.yaml`/`values-dev.yaml`/`values-prod.yaml`/`values.schema.json`
   (schema currently only validates the `kafka.*` section; extensible for later sections) +

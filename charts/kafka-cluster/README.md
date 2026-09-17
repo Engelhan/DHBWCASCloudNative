@@ -68,6 +68,23 @@ User Operator die CRs im anderen Namespace überhaupt sieht, setzt `kafka-cluste
 würden die `KafkaUser`s nie reconciled — ohne Fehlermeldung, nur mit dauerhaft leerem `status`
 und fehlenden Secrets.**
 
+Das Feld allein genügt aber nicht: der Cluster-Operator behandelt namespace-übergreifendes
+Beobachten als abgeschaltetes Feature und **löscht** das Entity-Operator-Deployment wieder, sobald
+Topic- oder User-Operator ein fremdes `watchedNamespace` tragen. Im Log steht dann
+
+```
+Entity Operator deployment deleted because Topic Operator and/or User Operator are configured
+with watchedNamespace set to a different namespace but the feature is disabled. To enable
+cross-namespace watching, set STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED=true
+```
+
+Diese Env-Variable setzt `charts/strimzi-operator/values.yaml` über `extraEnvs` am
+Cluster-Operator-Deployment — der Upstream-Chart hat dafür keinen eigenen Wert. Die RBAC passt
+bereits ohne Zutun: bei `watchAnyNamespace: true` erzeugt der Chart für die
+Entity-Operator-Delegation ein `ClusterRoleBinding` statt eines namespace-gebundenen
+`RoleBinding`s. **Beide Stellen gehören zusammen** — wer `watchedNamespace` ändert oder entfernt,
+muss die Env-Variable mitdenken, und umgekehrt.
+
 Namespace und Cluster-Name kommen aus `gitops/env/cluster.yaml`
 (`ticketflow.namespaces.{app,kafka}`, `ticketflow.kafka.clusterName`); alle Clients leiten ihre
 Bootstrap-Adresse daraus ab, statt sie auszuschreiben.
