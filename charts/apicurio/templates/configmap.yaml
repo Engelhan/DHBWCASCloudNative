@@ -7,9 +7,3 @@ metadata:
 data:
   APICURIO_STORAGE_KIND: {{ .Values.config.storageKind | quote }}
   APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | quote }}
-  {{- if .Values.kafkaSasl.enabled }}
-  # SCRAM-Zugangsdaten selbst kommen per secretKeyRef aus kafka-sasl-secret.yaml (deployment.yaml)
-  # - Protokoll/Mechanismus sind nicht sensitiv, duerfen deshalb in die ConfigMap.
-  APICURIO_KAFKASQL_SECURITY_PROTOCOL: "SASL_PLAINTEXT"
-  APICURIO_KAFKASQL_SECURITY_SASL_MECHANISM: "SCRAM-SHA-512"
-  {{- end }}

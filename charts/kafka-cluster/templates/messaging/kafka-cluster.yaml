@@ -57,6 +57,24 @@ spec:
         tls: false
         authentication:
           type: scram-sha-512
+      # Zweiter, unauthentifizierter interner Listener - ausschliesslich fuer Apicurio
+      # (charts/apicurio). Grund: Apicurios kafkasql-Storage unterstuetzt in Version 3.3.3 kein
+      # SCRAM/PLAIN-SASL mit Username/Passwort - der Quellcode
+      # (KafkaSqlConfiguration.java, gegen den echten 3.3.3-Tag auf GitHub geprueft) baut
+      # sasl.jaas.config nur programmatisch fuer einen OAuth-Client-Credentials-Flow
+      # (client-id/client-secret/token-endpoint); ein GitHub-Issue (Apicurio/apicurio-registry#4893)
+      # bestaetigt, dass SASL/PLAIN am selben, hart auf OAuth verdrahteten Callback-Handler
+      # scheitert. Einen echten OAuth/OIDC-Server nur fuer dieses eine Client-Kafka-Login
+      # aufzusetzen war fuer dieses Uni-Projekt nicht verhaeltnismaessig, daher dieser
+      # pragmatische Zweit-Listener statt SASL. Kein TLS (siehe "plain" oben), keine
+      # Authentifizierung - der Client verbindet als Kafka-Principal "User:ANONYMOUS", der unten
+      # in authorization.superUsers explizit freigegeben ist (siehe dortiger Kommentar). Nur
+      # innerhalb des Clusters erreichbar (type: internal, kein externer Zugriffspunkt), daher
+      # vertretbar.
+      - name: unauth
+        port: 9093
+        type: internal
+        tls: false
 
     config:
       offsets.topic.replication.factor: {{ .Values.kafka.config.offsetsTopicReplicationFactor }}
@@ -97,6 +115,15 @@ spec:
     # configuration" ab. Mit `kubectl explain kafka.spec.kafka.authorization` gegengeprueft.
     authorization:
       type: simple
+      # Erlaubt dem "unauth"-Listener oben (Apicurio) trotz Default-Deny alles - ein
+      # unauthentifizierter Client bekommt von Kafka den festen Principal "User:ANONYMOUS"
+      # zugewiesen, es gibt dafuer keine KafkaUser-CR/ACL-Moeglichkeit (KafkaUser setzt immer eine
+      # Authentifizierungsmethode voraus). superUsers gilt zwar clusterweit ueber alle Listener
+      # hinweg (Strimzi/Kafka kennt keine Listener-Scope fuer diese Liste), praktisch nutzbar ist
+      # der anonyme Zugriff aber nur ueber "unauth", da "plain" weiterhin SASL verlangt - kein
+      # externer Zugriffspunkt existiert fuer keinen der beiden Listener (type: internal).
+      superUsers:
+        - User:ANONYMOUS
 
   # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
   # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber

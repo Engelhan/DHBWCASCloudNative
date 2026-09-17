@@ -144,33 +144,12 @@ kafka:
           operations: [Describe, Read]
         - resource: { type: cluster }
           operations: [Describe]
-    # apicurio: kafkasql-Storage-Backend der Schema-Registry (siehe charts/apicurio) - legt beim
-    # ersten Start selbst seine beiden internen Journal-/Snapshot-Topics an (kein
-    # auto.create.topics.enable, siehe kafka.config oben), braucht dafuer zusaetzlich zu
-    # Read/Write/Describe auch Create auf genau diesen beiden Topic-Namen (Apicurio-3.x-Doku
-    # bestaetigt "kafkasql-journal"/"kafkasql-snapshots" als Default-Namen). Die interne
-    # Consumer-Group-ID ist pro Pod-Neustart zufaellig ("apicurio-<uuid>", live im Pod-Log
-    # beobachtet, siehe die "TimeoutException: Timed out waiting for a node assignment"-
-    # Crashloop, die vor dieser SASL/ACL-Ergaenzung auftrat) - deshalb hier "prefixed" statt
-    # "literal" auf die Gruppe. Passwort wie bei akhq explizit vorgegeben statt vom User Operator
-    # generiert, da Apicurio ebenfalls im Namespace "kafka" laeuft, nicht "ticketflow"
-    # (Cross-Namespace-Grenze, siehe akhqUser-Kommentar oben). Muss mit
-    # charts/apicurio/values.yaml kafkaSasl.password uebereinstimmen. UNVERIFIZIERT: welche
-    # genauen ACL-Operationen Apicurios AdminClient beim Topic-Anlegen wirklich braucht war zum
-    # Zeitpunkt dieser Aenderung nicht mehr live nachtestbar (siehe CLAUDE.md) - falls die
-    # kafkasql-Storage nach diesem Fix weiterhin nicht startet, zuerst den Pod-Log auf eine
-    # "TopicAuthorizationException"/"GroupAuthorizationException" pruefen und die ACL dort gezielt
-    # erweitern (z.B. Create/Describe auf `{ type: cluster }`, falls das AdminClient-Verhalten
-    # doch einen clusterweiten statt topic-scoped Create-Grant braucht).
-    - name: apicurio
-      passwordSecretName: apicurio-kafka-user-password
-      acls:
-        - resource: { type: topic, name: kafkasql-journal, patternType: literal }
-          operations: [Create, Write, Read, Describe]
-        - resource: { type: topic, name: kafkasql-snapshots, patternType: literal }
-          operations: [Create, Write, Read, Describe]
-        - resource: { type: group, name: "apicurio-", patternType: prefixed }
-          operations: [Read, Describe]
+    # Kein "apicurio"-Eintrag hier (frueherer Versuch, siehe git-Historie) - Apicurios
+    # kafkasql-Storage unterstuetzt kein SCRAM/PLAIN-SASL mit Username/Passwort (siehe
+    # kafka-cluster.yaml Kommentar beim "unauth"-Listener), eine KafkaUser-CR braucht aber immer
+    # eine Authentifizierungsmethode. Apicurio verbindet stattdessen unauthentifiziert ueber den
+    # "unauth"-Listener und ist dort per authorization.superUsers (kafka-cluster.yaml) als
+    # "User:ANONYMOUS" freigeschaltet - keine ACL/ KafkaUser noetig.
 
   akhqUser:
     passwordSecretName: akhq-kafka-user-password
@@ -179,12 +158,6 @@ kafka:
     # charts/akhq/values.yaml secrets.akhq.security.basic-auth (dort schon so gehandhabt), aus
     # Gruenden der einfachen Handhabung. Muss mit charts/akhq/values.yaml kafkaSasl.password
     # uebereinstimmen.
-    password: "ticketflow"
-
-  apicurioUser:
-    passwordSecretName: apicurio-kafka-user-password
-    # Lab-Zugangsdaten, gleiche Begruendung/Muster wie akhqUser oben. Muss mit
-    # charts/apicurio/values.yaml kafkaSasl.password uebereinstimmen.
     password: "ticketflow"
 
 # Apicurio Registry (charts/apicurio, Namespace "kafka"), siehe templates/schema-registry/ und
