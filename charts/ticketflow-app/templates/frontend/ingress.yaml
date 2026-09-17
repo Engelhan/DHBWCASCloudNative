@@ -1,46 +1,50 @@
+{{- $api := dict "root" $ "component" "catalog-api" }}
+{{- $fe := dict "root" $ "component" "frontend" }}
 # Ein Ingress fuer Frontend + catalog-api auf derselben Origin/demselben Host - vermeidet damit
 # komplett CORS zwischen Browser und catalog-api (siehe src/frontend/README.md ## Stack und
-# catalogApi.env.corsAllowedOrigin in values.yaml). /events und /reservations sind die einzigen
+# catalogApi.config.corsAllowedOrigin in values.yaml). /events und /reservations sind die einzigen
 # vom Frontend-JS aufgerufenen catalog-api-Pfade (siehe src/frontend/app.js) - bewusst NICHT
 # /healthz, /readyz, /metrics oeffentlich geroutet, die bleiben rein cluster-intern
 # (Kubelet-Probes bzw. ServiceMonitor). Alles andere (/) faellt auf das Frontend zurueck.
 {{- if .Values.frontend.ingress.enabled }}
+{{- $host := include "ticketflow-app.ingressHost" $ }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: ticketflow
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.fullname" $ }}
+  labels:
+    {{- include "ticketflow-app.labels" $ | nindent 4 }}
   annotations:
     cert-manager.io/cluster-issuer: {{ .Values.frontend.ingress.clusterIssuerName }}
 spec:
-  ingressClassName: traefik
+  ingressClassName: {{ .Values.frontend.ingress.className }}
   tls:
     - hosts:
-        - {{ .Values.frontend.ingress.host | quote }}
+        - {{ $host | quote }}
       secretName: {{ .Values.frontend.ingress.tlsSecretName }}
   rules:
-    - host: {{ .Values.frontend.ingress.host | quote }}
+    - host: {{ $host | quote }}
       http:
         paths:
           - path: /events
             pathType: Prefix
             backend:
               service:
-                name: ticketflow-catalog-api
+                name: {{ include "ticketflow-app.componentName" $api }}
                 port:
                   number: {{ .Values.catalogApi.service.port }}
           - path: /reservations
             pathType: Prefix
             backend:
               service:
-                name: ticketflow-catalog-api
+                name: {{ include "ticketflow-app.componentName" $api }}
                 port:
                   number: {{ .Values.catalogApi.service.port }}
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: ticketflow-frontend
+                name: {{ include "ticketflow-app.componentName" $fe }}
                 port:
                   number: {{ .Values.frontend.service.port }}
 {{- end }}

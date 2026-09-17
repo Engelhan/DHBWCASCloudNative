@@ -1,0 +1,81 @@
+{{/*
+Basis-Helper, identisch zu charts/reservation-worker und charts/notification-worker - dieser Chart
+rendert allerdings ZWEI Komponenten (catalog-api, frontend) in einem Release, weshalb es unter den
+Basis-Helpern zusaetzlich komponentenbezogene Varianten gibt. Diese bekommen ihren Kontext als
+dict uebergeben:
+
+    {{ include "ticketflow-app.componentLabels" (dict "root" . "component" "catalog-api") }}
+
+Vorher standen Name und Labels in allen elf Templates woertlich drin.
+*/}}
+{{- define "ticketflow-app.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "ticketflow-app.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ticketflow-app.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "ticketflow-app.labels" -}}
+helm.sh/chart: {{ include "ticketflow-app.chart" . }}
+{{ include "ticketflow-app.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{- define "ticketflow-app.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "ticketflow-app.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{/* --- Komponentenbezogene Varianten (dict mit "root" und "component") --- */}}
+
+{{- define "ticketflow-app.componentName" -}}
+{{- printf "%s-%s" (include "ticketflow-app.fullname" .root) .component | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "ticketflow-app.componentSelectorLabels" -}}
+{{ include "ticketflow-app.selectorLabels" .root }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
+{{- define "ticketflow-app.componentLabels" -}}
+{{ include "ticketflow-app.labels" .root }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
+{{/*
+Vollstaendiger Image-Name einer Komponente. Registry und Tag kommen zentral aus
+gitops/env/cluster.yaml (ticketflow.imageRegistry / .imageTag), damit ein Image-Bump nur EINE
+Stelle im Repo beruehrt - .github/workflows/build-images.yml schreibt den Tag dort automatisch
+fort. image.repository/.tag der Komponente bleiben als bewusster Einzelfall-Override moeglich,
+sind aber normalerweise leer.
+*/}}
+{{- define "ticketflow-app.componentImage" -}}
+{{- $repo := .image.repository | default (printf "%s/ticketflow-%s" (required "ticketflow.imageRegistry fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .root.Values.ticketflow.imageRegistry) .component) -}}
+{{- $tag := .image.tag | default (required "ticketflow.imageTag fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .root.Values.ticketflow.imageTag) -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+
+{{/*
+Oeffentlicher Hostname der Anwendung. Leitet sich per Default aus der zentralen DNS-Zone ab, damit
+ein Fork ihn nicht separat pflegen muss; frontend.ingress.host ueberschreibt ihn bei Bedarf.
+*/}}
+{{- define "ticketflow-app.ingressHost" -}}
+{{- .Values.frontend.ingress.host | default (printf "ticketflow.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) -}}
+{{- end -}}

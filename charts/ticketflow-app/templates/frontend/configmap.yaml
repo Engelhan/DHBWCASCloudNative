@@ -1,3 +1,4 @@
+{{- $ctx := dict "root" $ "component" "frontend" }}
 # Ueberschreibt das im Image gebackene config.js (Default: http://localhost:8080, siehe
 # src/frontend/config.js) per Volume-Mount mit einem leeren API_BASE_URL - das Ingress
 # (ingress.yaml) routet /events und /reservations bereits auf derselben Origin an catalog-api,
@@ -5,8 +6,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ticketflow-frontend-config
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.componentName" $ctx }}
+  labels:
+    {{- include "ticketflow-app.componentLabels" $ctx | nindent 4 }}
 data:
   config.js: |
     window.API_BASE_URL = "";

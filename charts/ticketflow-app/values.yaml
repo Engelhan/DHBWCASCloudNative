@@ -1,37 +1,39 @@
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
 # Gemeinsame Basiswerte fuer alle Umgebungen. dev/prod-spezifische Overrides in
 # values-dev.yaml/values-prod.yaml.
 #
 # catalog-api + frontend (Philipps Scope) - bewusst eigener Chart, getrennt von
 # charts/kafka-cluster (Kafka + Schema-Registry, Carlos' Scope), siehe Chart.yaml-Beschreibung und
 # charts/README.md.
-
-# Namespace fuer alle Ressourcen dieses Charts - derselbe Namespace wie charts/kafka-cluster
-# (Kafka), damit catalog-api den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen
-# erreicht (siehe catalogApi.env.kafkaBrokers unten). Zwei Helm-Releases im selben Kubernetes-
-# Namespace sind unproblematisch. Wird von gitops/apps/ticketflow-app.yaml als
-# destination.namespace gesetzt (CreateNamespace=true).
-namespace: ticketflow
-
-# Apicurio Registry (charts/apicurio, Namespace "kafka", ueber charts/kafka-cluster/templates/
-# schema-registry/ mit den kanonischen Schemas befuellt). URL ist die vom Apicurio-Chart selbst
-# gerenderte Service-DNS (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml
-# metadata.name) - noch nicht live gegen einen echten Sync geprueft (kein Cluster verfuegbar).
-schemaRegistry:
-  url: http://apicurio.kafka.svc:8080/apis/registry/v3
-  groupId: ticketflow
+#
+# Beide Komponenten folgen derselben Key-Reihenfolge wie charts/reservation-worker und
+# charts/notification-worker (image, replicaCount, resources, podSecurityContext, securityContext,
+# config, database/secret, service, ingress, serviceMonitor, networkPolicy, podDisruptionBudget,
+# topologySpreadConstraint) - siehe charts/README.md ## Muster fuer Applikations-Charts.
+#
+# Der Namespace steht bewusst nicht mehr hier: ihn bestimmt die ArgoCD-Application
+# (destination.namespace in gitops/applicationset.yaml), wie bei allen anderen Charts im Repo.
+# Es bleibt derselbe Namespace wie charts/kafka-cluster, damit catalog-api den Kafka-Bootstrap-
+# Service per kurzem In-Namespace-DNS-Namen erreicht (siehe catalogApi.config.kafkaBrokers).
 
 catalogApi:
-  replicas: 2
-
+  # Registry und Tag kommen zentral aus gitops/env/cluster.yaml (ticketflow.imageRegistry /
+  # .imageTag; das Repository wird daraus als "<registry>/ticketflow-catalog-api" gebildet).
+  # Die Felder hier sind nur ein bewusster Einzelfall-Override und bleiben normalerweise leer.
+  # Nie :latest (P3) - das verbietet auch values.schema.json.
   image:
-    repository: ghcr.io/engelhan/ticketflow-catalog-api
-    # Git-Short-SHA, wird beim Deploy gesetzt (--set catalogApi.image.tag=<sha>), siehe P3 -
-    # kein :latest im Repo.
-    tag: "latest"
+    repository: ""
+    tag: ""
     pullPolicy: IfNotPresent
 
-  service:
-    port: 8080
+  replicaCount: 2
 
   resources:
     requests:
@@ -41,9 +43,28 @@ catalogApi:
       cpu: 300m
       memory: 128Mi
 
+  # runAsUser/runAsGroup explizit als Zahl noetig: das Image (distroless/static-debian12:nonroot)
+  # setzt den Container-User nur als NAMEN ("nonroot"), Kubernetes kann Namen aber nicht aufloesen
+  # und verweigert mit runAsNonRoot: true sonst den Start ("cannot verify user is non-root").
+  # 65532 ist Distroless' Standard-nonroot-UID/GID, siehe src/catalog-api/Dockerfile. Identisch zu
+  # charts/reservation-worker/values.yaml - fsGroup/seccompProfile fehlten hier frueher.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+
   # -> ConfigMap (templates/catalog-api/configmap.yaml), siehe src/catalog-api/README.md
   # ## Konfiguration fuer die Bedeutung jeder Variable.
-  env:
+  config:
     logLevel: info
     port: "8080"
     reservationTopic: reservation-requested
@@ -55,46 +76,44 @@ catalogApi:
     # load-generator) - das Frontend selbst braucht dank Same-Origin-Ingress (siehe
     # templates/frontend/ingress.yaml) kein CORS.
     corsAllowedOrigin: ""
-
-  # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
-  # Operator verwaltete KafkaUser "catalog-api" (siehe charts/kafka-cluster values.yaml
-  # kafka.users) statt eines anonymen/geteilten Kafka-Zugriffs. secretName referenziert das vom
-  # User Operator AUTOMATISCH angelegte Secret (Keys "password"/"sasl.jaas.config") direkt per
-  # secretKeyRef - kein eigenes Secret noetig wie bei Postgres, weil catalog-api und der
-  # Kafka-Cluster denselben Namespace "ticketflow" teilen (siehe values.yaml-Kommentar oben).
-  kafkaSasl:
-    enabled: true
-    username: catalog-api
-    secretName: catalog-api
+    # Apicurio Registry (charts/apicurio, Namespace "kafka", ueber
+    # charts/kafka-cluster/templates/schema-registry/ mit den kanonischen Schemas befuellt).
+    # Gleiche Schluesselnamen wie in charts/reservation-worker/values.yaml config.registry*.
+    registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
+    registryGroupId: "ticketflow"
+    # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
+    # Operator verwaltete KafkaUser "catalog-api" (siehe charts/kafka-cluster values.yaml
+    # kafka.users) statt eines anonymen/geteilten Kafka-Zugriffs. secretName referenziert das vom
+    # User Operator AUTOMATISCH angelegte Secret (Keys "password"/"sasl.jaas.config") direkt per
+    # secretKeyRef - kein eigenes Secret noetig wie bei Postgres, weil catalog-api und der
+    # Kafka-Cluster denselben Namespace teilen.
+    kafkaSasl:
+      enabled: true
+      username: catalog-api
+      secretName: catalog-api
 
   # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
   # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
   # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
-  # credentialsSecretName referenziert ein Secret mit den Keys "username"/"password" IM
-  # NAMESPACE DIESES CHARTS (Kubernetes erlaubt kein secretKeyRef ueber Namespace-Grenzen) -
-  # charts/postgres-cluster legt sein Secret aber in Namespace "application" an. Deshalb legt
-  # dieser Chart selbst ein Secret an (siehe databaseSecret unten), analog zu
-  # charts/notification-worker/templates/secret.yaml, statt es per Skript nachtraeglich zu
-  # kopieren.
   database:
     host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
     port: "5432"
     name: "postgres"
     sslMode: "require"
-    credentialsSecretName: ticketflow-postgres-credentials
 
+  # Der Chart legt das Credentials-Secret selbst an (Name: <release>-catalog-api-db-credentials),
+  # weil charts/postgres-cluster seines im Namespace "application" ablegt und secretKeyRef keine
+  # Namespace-Grenzen ueberschreiten kann - gleiches Muster wie charts/reservation-worker.
   # Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt statt CHANGE_ME/
   # --set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - muss mit
-  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen (dort ebenfalls
-  # hardcoded, siehe dessen Kommentar).
+  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen.
   databaseSecret:
     create: true
     username: "postgres"
     password: "ticketflow"
 
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
+  service:
+    port: 8080
 
   serviceMonitor:
     enabled: true
@@ -106,24 +125,33 @@ catalogApi:
     labels:
       release: kube-prometheus-stack
 
+  # Default aus, wie im Repo sonst ueblich (siehe charts/README.md). Vor dem Aktivieren die
+  # gerenderte Policy pruefen - ein leerer podSelector wuerde alle Pods im geteilten Namespace
+  # treffen (dokumentierter Loki-Vorfall).
+  networkPolicy:
+    enabled: false
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
   # Weiche Verteilung ueber die drei simulierten Regionen (P4) - catalog-api ist stateless und
   # horizontal skaliert, damit ein Ausfall einer Region waehrend eines Flash Sales nicht alle
   # Replicas gleichzeitig verliert. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, weil
-  # values-dev.yaml mit replicas: 1 sonst auf einem Ein-Node-Dev-Setup haengen bleiben wuerde.
+  # values-dev.yaml mit replicaCount: 1 sonst auf einem Ein-Node-Dev-Setup haengen bleiben wuerde.
   topologySpreadConstraint:
     enabled: true
     maxSkew: 1
 
 frontend:
-  replicas: 2
-
+  # Siehe catalogApi.image - Registry/Tag kommen zentral, Repository wird als
+  # "<registry>/ticketflow-frontend" gebildet.
   image:
-    repository: ghcr.io/engelhan/ticketflow-frontend
-    tag: "latest"
+    repository: ""
+    tag: ""
     pullPolicy: IfNotPresent
 
-  service:
-    port: 80
+  replicaCount: 2
 
   resources:
     requests:
@@ -133,13 +161,31 @@ frontend:
       cpu: 100m
       memory: 64Mi
 
+  # Bewusst leer: nginx:1.27-alpine startet als root (bindet Port 80, schreibt PID-File) und
+  # delegiert die Worker-Prozesse intern an den nginx-User. runAsNonRoot waere hier also nicht
+  # erfuellbar - dieselbe Art dokumentierter, begruendeter Ausnahme wie Longhorn, siehe
+  # charts/README.md ## Resource-Limits, Security-Context, NetworkPolicy.
+  podSecurityContext: {}
+
+  # Aus demselben Grund kein readOnlyRootFilesystem/capabilities-drop - nginx schreibt zur
+  # Laufzeit in /var/cache/nginx und /var/run.
+  securityContext:
+    allowPrivilegeEscalation: false
+
+  service:
+    port: 80
+
   ingress:
     enabled: true
-    # Muss innerhalb der aktivierten RFC2136-Zone liegen, siehe
-    # charts/cert-manager-config/values.yaml rfc2136.zone.
-    host: "ticketflow.cas438007-at-cas-dhbw-de.users.dhbw.site"
+    # Leer lassen: der Host wird als "ticketflow.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml
+    # abgeleitet und liegt damit automatisch innerhalb der aktivierten RFC2136-Zone.
+    host: ""
+    className: traefik
     clusterIssuerName: certificate-cluster-issuer
     tlsSecretName: ticketflow-frontend-tls
+
+  networkPolicy:
+    enabled: false
 
   podDisruptionBudget:
     enabled: true

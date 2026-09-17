@@ -1,19 +1,21 @@
+{{- $ctx := dict "root" $ "component" "catalog-api" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ticketflow-catalog-api
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.componentName" $ctx }}
+  labels:
+    {{- include "ticketflow-app.componentLabels" $ctx | nindent 4 }}
 data:
-  LOG_LEVEL: {{ .Values.catalogApi.env.logLevel | quote }}
-  PORT: {{ .Values.catalogApi.env.port | quote }}
-  RESERVATION_TOPIC: {{ .Values.catalogApi.env.reservationTopic | quote }}
-  KAFKA_BROKERS: {{ .Values.catalogApi.env.kafkaBrokers | quote }}
-  KAFKA_SASL_ENABLED: {{ .Values.catalogApi.kafkaSasl.enabled | quote }}
-  KAFKA_SASL_USERNAME: {{ .Values.catalogApi.kafkaSasl.username | quote }}
-  CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.env.corsAllowedOrigin | quote }}
+  LOG_LEVEL: {{ .Values.catalogApi.config.logLevel | quote }}
+  PORT: {{ .Values.catalogApi.config.port | quote }}
+  RESERVATION_TOPIC: {{ .Values.catalogApi.config.reservationTopic | quote }}
+  KAFKA_BROKERS: {{ .Values.catalogApi.config.kafkaBrokers | quote }}
+  KAFKA_SASL_ENABLED: {{ .Values.catalogApi.config.kafkaSasl.enabled | quote }}
+  KAFKA_SASL_USERNAME: {{ .Values.catalogApi.config.kafkaSasl.username | quote }}
+  CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.config.corsAllowedOrigin | quote }}
   DB_HOST: {{ .Values.catalogApi.database.host | quote }}
   DB_PORT: {{ .Values.catalogApi.database.port | quote }}
   DB_NAME: {{ .Values.catalogApi.database.name | quote }}
   DB_SSLMODE: {{ .Values.catalogApi.database.sslMode | quote }}
-  REGISTRY_URL: {{ .Values.schemaRegistry.url | quote }}
-  REGISTRY_GROUP_ID: {{ .Values.schemaRegistry.groupId | quote }}
+  REGISTRY_URL: {{ .Values.catalogApi.config.registryUrl | quote }}
+  REGISTRY_GROUP_ID: {{ .Values.catalogApi.config.registryGroupId | quote }}

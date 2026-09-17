@@ -1,16 +1,14 @@
+{{- $ctx := dict "root" $ "component" "frontend" }}
 {{- if .Values.frontend.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: ticketflow-frontend
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.componentName" $ctx }}
   labels:
-    app.kubernetes.io/name: frontend
-    app.kubernetes.io/part-of: ticketflow
+    {{- include "ticketflow-app.componentLabels" $ctx | nindent 4 }}
 spec:
   minAvailable: {{ .Values.frontend.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: frontend
-      app.kubernetes.io/part-of: ticketflow
+      {{- include "ticketflow-app.componentSelectorLabels" $ctx | nindent 6 }}
 {{- end }}

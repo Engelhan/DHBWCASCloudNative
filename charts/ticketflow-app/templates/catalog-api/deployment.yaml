@@ -1,22 +1,19 @@
+{{- $ctx := dict "root" $ "component" "catalog-api" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ticketflow-catalog-api
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.componentName" $ctx }}
   labels:
-    app.kubernetes.io/name: catalog-api
-    app.kubernetes.io/part-of: ticketflow
+    {{- include "ticketflow-app.componentLabels" $ctx | nindent 4 }}
 spec:
-  replicas: {{ .Values.catalogApi.replicas }}
+  replicas: {{ .Values.catalogApi.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: catalog-api
-      app.kubernetes.io/part-of: ticketflow
+      {{- include "ticketflow-app.componentSelectorLabels" $ctx | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: catalog-api
-        app.kubernetes.io/part-of: ticketflow
+        {{- include "ticketflow-app.componentLabels" $ctx | nindent 8 }}
     spec:
       # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
       # bei catalogApi.topologySpreadConstraint.
@@ -27,52 +24,41 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: catalog-api
-              app.kubernetes.io/part-of: ticketflow
+              {{- include "ticketflow-app.componentSelectorLabels" $ctx | nindent 14 }}
       {{- end }}
-      # runAsUser/runAsGroup explizit als Zahl noetig: das Image (distroless/static-debian12:
-      # nonroot) setzt den Container-User nur als NAMEN ("nonroot"), Kubernetes kann Namen aber
-      # nicht auflösen und verweigert mit runAsNonRoot: true sonst den Start ("cannot verify
-      # user is non-root"). 65532 ist Distroless' Standard-nonroot-UID/GID, siehe
-      # src/catalog-api/Dockerfile.
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
+        {{- toYaml .Values.catalogApi.podSecurityContext | nindent 8 }}
       containers:
         - name: catalog-api
-          image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
+          image: {{ include "ticketflow-app.componentImage" (merge (dict "image" .Values.catalogApi.image) $ctx) | quote }}
           imagePullPolicy: {{ .Values.catalogApi.image.pullPolicy }}
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- toYaml .Values.catalogApi.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: ticketflow-catalog-api
+                name: {{ include "ticketflow-app.componentName" $ctx }}
           env:
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.catalogApi.database.credentialsSecretName }}
+                  name: {{ include "ticketflow-app.componentName" $ctx }}-db-credentials
                   key: username
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.catalogApi.database.credentialsSecretName }}
+                  name: {{ include "ticketflow-app.componentName" $ctx }}-db-credentials
                   key: password
-            {{- if .Values.catalogApi.kafkaSasl.enabled }}
+            {{- if .Values.catalogApi.config.kafkaSasl.enabled }}
             - name: KAFKA_SASL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
-                  # values.yaml-Kommentar bei catalogApi.kafkaSasl) - nicht dieser Chart.
-                  name: {{ .Values.catalogApi.kafkaSasl.secretName }}
+                  # values.yaml-Kommentar bei catalogApi.config.kafkaSasl) - nicht dieser Chart.
+                  name: {{ .Values.catalogApi.config.kafkaSasl.secretName }}
                   key: password
             {{- end }}
           livenessProbe:

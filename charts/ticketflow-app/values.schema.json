@@ -1,152 +1,430 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ticketflow-app",
-  "description": "Validiert catalog-api/frontend (charts/ticketflow-app/templates/). Bewusst ohne additionalProperties:false auf Root-Ebene, damit weitere Abschnitte ergaenzt werden koennen, ohne dieses Schema umzubauen.",
+  "description": "catalog-api + frontend. Beide Komponenten teilen sich dieselbe Key-Struktur wie charts/reservation-worker und charts/notification-worker - siehe charts/README.md ## Muster fuer Applikations-Charts.",
   "type": "object",
-  "required": ["namespace", "schemaRegistry", "catalogApi", "frontend"],
+  "required": [
+    "ticketflow",
+    "catalogApi",
+    "frontend"
+  ],
   "properties": {
-    "namespace": {
-      "type": "string",
-      "minLength": 1
-    },
-    "schemaRegistry": {
+    "ticketflow": {
       "type": "object",
-      "required": ["url", "groupId"],
+      "description": "Zentrale Werte aus gitops/env/cluster.yaml (von ArgoCD per Multi-Source durchgereicht).",
+      "required": [
+        "imageRegistry",
+        "imageTag",
+        "dnsZone"
+      ],
       "properties": {
-        "url": { "type": "string", "minLength": 1 },
-        "groupId": { "type": "string", "minLength": 1 }
+        "imageRegistry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageTag": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "latest"
+          }
+        },
+        "dnsZone": {
+          "type": "string",
+          "minLength": 1
+        }
       }
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
     },
     "catalogApi": {
       "type": "object",
-      "required": ["replicas", "image", "service", "resources", "env", "database", "databaseSecret", "kafkaSasl"],
+      "required": [
+        "image",
+        "replicaCount",
+        "resources",
+        "podSecurityContext",
+        "securityContext",
+        "config",
+        "database",
+        "databaseSecret",
+        "service",
+        "serviceMonitor",
+        "networkPolicy",
+        "podDisruptionBudget",
+        "topologySpreadConstraint"
+      ],
       "properties": {
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/definitions/image" },
-        "service": {
-          "type": "object",
-          "required": ["port"],
-          "properties": { "port": { "type": "integer", "minimum": 1 } }
+        "image": {
+          "$ref": "#/$defs/imageOverride"
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "env": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
           "type": "object",
-          "required": ["logLevel", "port", "reservationTopic", "kafkaBrokers"],
+          "required": [
+            "requests",
+            "limits"
+          ],
           "properties": {
-            "logLevel": { "type": "string", "minLength": 1 },
-            "port": { "type": "string", "minLength": 1 },
-            "reservationTopic": { "type": "string", "minLength": 1 },
-            "kafkaBrokers": { "type": "string", "minLength": 1 },
-            "corsAllowedOrigin": { "type": "string" }
+            "requests": {
+              "$ref": "#/$defs/resourceQuantities"
+            },
+            "limits": {
+              "$ref": "#/$defs/resourceQuantities"
+            }
           }
         },
-        "kafkaSasl": {
+        "podSecurityContext": {
+          "type": "object"
+        },
+        "securityContext": {
+          "type": "object"
+        },
+        "config": {
           "type": "object",
-          "required": ["enabled"],
+          "required": [
+            "logLevel",
+            "port",
+            "reservationTopic",
+            "kafkaBrokers",
+            "registryUrl",
+            "registryGroupId",
+            "kafkaSasl"
+          ],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "username": { "type": "string" },
-            "secretName": { "type": "string" }
-          },
-          "if": {
-            "properties": { "enabled": { "const": true } },
-            "required": ["enabled"]
-          },
-          "then": {
-            "required": ["username", "secretName"],
-            "properties": {
-              "username": { "type": "string", "minLength": 1 },
-              "secretName": { "type": "string", "minLength": 1 }
+            "logLevel": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "info",
+                "warn",
+                "error"
+              ]
+            },
+            "port": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reservationTopic": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kafkaBrokers": {
+              "type": "string",
+              "minLength": 1
+            },
+            "corsAllowedOrigin": {
+              "type": "string"
+            },
+            "registryUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "registryGroupId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kafkaSasl": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "secretName": {
+                  "type": "string"
+                }
+              }
             }
           }
         },
         "database": {
           "type": "object",
-          "required": ["host", "port", "name", "sslMode", "credentialsSecretName"],
+          "required": [
+            "host",
+            "port",
+            "name",
+            "sslMode"
+          ],
           "properties": {
-            "host": { "type": "string", "minLength": 1 },
-            "port": { "type": "string", "minLength": 1 },
-            "name": { "type": "string", "minLength": 1 },
-            "sslMode": { "type": "string", "minLength": 1 },
-            "credentialsSecretName": { "type": "string", "minLength": 1 }
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sslMode": {
+              "type": "string",
+              "enum": [
+                "disable",
+                "allow",
+                "prefer",
+                "require",
+                "verify-ca",
+                "verify-full"
+              ]
+            }
           }
         },
         "databaseSecret": {
+          "$ref": "#/$defs/databaseSecret"
+        },
+        "service": {
           "type": "object",
-          "required": ["create", "username", "password"],
+          "required": [
+            "port"
+          ],
           "properties": {
-            "create": { "type": "boolean" },
-            "username": { "type": "string" },
-            "password": { "type": "string" }
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
           }
         },
-        "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },
         "serviceMonitor": {
           "type": "object",
+          "required": [
+            "enabled"
+          ],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "interval": { "type": "string", "minLength": 1 },
-            "labels": { "type": "object" }
+            "enabled": {
+              "type": "boolean"
+            },
+            "interval": {
+              "type": "string",
+              "minLength": 1
+            },
+            "labels": {
+              "type": "object"
+            }
           }
         },
-        "topologySpreadConstraint": { "$ref": "#/definitions/topologySpreadConstraint" }
+        "networkPolicy": {
+          "$ref": "#/$defs/toggle"
+        },
+        "podDisruptionBudget": {
+          "$ref": "#/$defs/podDisruptionBudget"
+        },
+        "topologySpreadConstraint": {
+          "$ref": "#/$defs/topologySpreadConstraint"
+        }
       }
     },
     "frontend": {
       "type": "object",
-      "required": ["replicas", "image", "service", "resources", "ingress"],
+      "required": [
+        "image",
+        "replicaCount",
+        "resources",
+        "podSecurityContext",
+        "securityContext",
+        "service",
+        "ingress",
+        "networkPolicy",
+        "podDisruptionBudget",
+        "topologySpreadConstraint"
+      ],
       "properties": {
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/definitions/image" },
-        "service": {
-          "type": "object",
-          "required": ["port"],
-          "properties": { "port": { "type": "integer", "minimum": 1 } }
+        "image": {
+          "$ref": "#/$defs/imageOverride"
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "ingress": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
           "type": "object",
+          "required": [
+            "requests",
+            "limits"
+          ],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "host": { "type": "string" },
-            "clusterIssuerName": { "type": "string" },
-            "tlsSecretName": { "type": "string" }
+            "requests": {
+              "$ref": "#/$defs/resourceQuantities"
+            },
+            "limits": {
+              "$ref": "#/$defs/resourceQuantities"
+            }
           }
         },
-        "podDisruptionBudget": { "$ref": "#/definitions/podDisruptionBudget" },
-        "topologySpreadConstraint": { "$ref": "#/definitions/topologySpreadConstraint" }
+        "podSecurityContext": {
+          "type": "object"
+        },
+        "securityContext": {
+          "type": "object"
+        },
+        "service": {
+          "type": "object",
+          "required": [
+            "port"
+          ],
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string",
+              "description": "Leer = wird als ticketflow.<ticketflow.dnsZone> abgeleitet."
+            },
+            "className": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clusterIssuerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tlsSecretName": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "networkPolicy": {
+          "$ref": "#/$defs/toggle"
+        },
+        "podDisruptionBudget": {
+          "$ref": "#/$defs/podDisruptionBudget"
+        },
+        "topologySpreadConstraint": {
+          "$ref": "#/$defs/topologySpreadConstraint"
+        }
       }
     }
   },
-  "definitions": {
-    "image": {
+  "$defs": {
+    "imageOverride": {
       "type": "object",
-      "required": ["repository"],
+      "description": "Optionaler Override. Normalerweise leer - Registry/Tag kommen aus ticketflow.imageRegistry/.imageTag.",
+      "required": [
+        "pullPolicy"
+      ],
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string" },
-        "pullPolicy": { "type": "string" }
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "not": {
+            "const": "latest"
+          }
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
-    "resources": {
+    "resourceQuantities": {
       "type": "object",
+      "required": [
+        "cpu",
+        "memory"
+      ],
       "properties": {
-        "requests": { "type": "object" },
-        "limits": { "type": "object" }
+        "cpu": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "memory": {
+          "type": "string"
+        }
+      }
+    },
+    "databaseSecret": {
+      "type": "object",
+      "required": [
+        "create"
+      ],
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
       }
     },
     "podDisruptionBudget": {
       "type": "object",
+      "required": [
+        "enabled"
+      ],
       "properties": {
-        "enabled": { "type": "boolean" },
-        "minAvailable": { "type": ["integer", "string"] }
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "topologySpreadConstraint": {
       "type": "object",
+      "required": [
+        "enabled"
+      ],
       "properties": {
-        "enabled": { "type": "boolean" },
-        "maxSkew": { "type": "integer", "minimum": 1 }
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSkew": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     }
   }

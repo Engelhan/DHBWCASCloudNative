@@ -1,16 +1,14 @@
+{{- $ctx := dict "root" $ "component" "catalog-api" }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: ticketflow-catalog-api
-  namespace: {{ .Values.namespace }}
+  name: {{ include "ticketflow-app.componentName" $ctx }}
   labels:
-    app.kubernetes.io/name: catalog-api
-    app.kubernetes.io/part-of: ticketflow
+    {{- include "ticketflow-app.componentLabels" $ctx | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: catalog-api
-    app.kubernetes.io/part-of: ticketflow
+    {{- include "ticketflow-app.componentSelectorLabels" $ctx | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.catalogApi.service.port }}

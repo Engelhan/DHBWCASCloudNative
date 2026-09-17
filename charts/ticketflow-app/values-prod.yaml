@@ -4,7 +4,11 @@
 # (P4/P5-Begruendung).
 
 catalogApi:
-  replicas: 3
+  replicaCount: 3
+  podDisruptionBudget:
+    minAvailable: 2
 
 frontend:
-  replicas: 3
+  replicaCount: 3
+  podDisruptionBudget:
+    minAvailable: 2

@@ -4,7 +4,7 @@
 # Template noetig).
 
 catalogApi:
-  replicas: 1
+  replicaCount: 1
 
 frontend:
-  replicas: 1
+  replicaCount: 1
