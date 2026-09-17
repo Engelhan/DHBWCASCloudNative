@@ -43,7 +43,9 @@ spec:
             - configMapRef:
                 name: {{ include "notification-worker.fullname" . }}
             - secretRef:
-                name: {{ include "notification-worker.fullname" . }}
+                # Bewusst NICHT fullname: das waere der Name des vom Strimzi User Operator
+                # erzeugten SCRAM-Secrets - siehe _helpers.tpl notification-worker.secretName.
+                name: {{ include "notification-worker.secretName" . }}
           {{- if .Values.config.kafkaSasl.enabled }}
           env:
             - name: KAFKA_SASL_PASSWORD

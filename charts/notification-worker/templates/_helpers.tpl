@@ -34,6 +34,23 @@ aus einer privaten Registry), sind aber normalerweise leer.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Name des chart-eigenen Secrets (SMTP-Zugang, optionale Kafka-mTLS-Materialien).
+
+Der Suffix ist NICHT kosmetisch: der Strimzi User Operator legt fuer jede KafkaUser-CR ein Secret
+mit exakt dem CR-Namen an, und die CR heisst "notification-worker" (siehe
+charts/kafka-cluster/values.yaml kafka.users) - im selben Namespace, in den dieser Chart deployt.
+Ohne Suffix waere das dasselbe Objekt: ArgoCD und der User Operator wuerden es abwechselnd
+ueberschreiben, und das envFrom unten zoege die SCRAM-Keys als Env-Variablen in den Container,
+waehrend der KAFKA_SASL_PASSWORD-secretKeyRef ins Leere liefe.
+
+secret.name ueberschreibt den Namen, z.B. wenn secret.create=false ist und ein External Secret
+das Objekt unter eigenem Namen bereitstellt.
+*/}}
+{{- define "notification-worker.secretName" -}}
+{{- .Values.secret.name | default (printf "%s-credentials" (include "notification-worker.fullname" .)) -}}
+{{- end -}}
+
 {{- define "notification-worker.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

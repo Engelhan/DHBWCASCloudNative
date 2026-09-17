@@ -193,6 +193,15 @@
         },
         "kafkaTlsClientKey": {
           "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "smtpUsername": {
+          "type": "string"
+        },
+        "smtpPassword": {
+          "type": "string"
         }
       }
     },
