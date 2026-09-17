@@ -1,0 +1,191 @@
+---
+# Wurzelobjekt des GitOps-Rollouts (W2) - ersetzt das fruehere App-of-Apps-Pattern mit 19
+# einzelnen Application-Dateien unter gitops/apps/. Wird von infra/ansible/roles/argocd_bootstrap
+# einmalig angewendet; alles Weitere erzeugt und reconciled ArgoCD daraus selbst.
+#
+# Warum ein ApplicationSet statt 19 Dateien: Repo-URL, Revision und Environment standen vorher in
+# jeder einzelnen Datei (die repoURL allein 19x). Ein Fork musste sie alle umschreiben - jede
+# uebersehene Stelle blieb still auf dem Original-Repo stehen. Hier steht jede dieser Angaben
+# genau einmal, und alles Deployment-Spezifische kommt aus env/cluster.yaml.
+#
+# +---------------------------------------------------------------------------------------+
+# | DIE EINZIGE Stelle im gesamten Repo, an der die Repo-URL noch woertlich steht, ist die |
+# | repoURL des git-Generators unten. Henne-Ei: der Generator muss wissen, aus welchem     |
+# | Repo er env/cluster.yaml ueberhaupt lesen soll. Ab da kommt alles - inklusive der      |
+# | repoURL der erzeugten Applications - aus {{ .ticketflow.repoURL }}.                    |
+# | Fuer einen Fork also: env/cluster.yaml ausfuellen + diese eine Zeile anpassen.         |
+# +---------------------------------------------------------------------------------------+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ticketflow
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    # Matrix = Kreuzprodukt beider Generatoren: der git-Generator liefert genau EINEN Parametersatz
+    # (den Inhalt von env/cluster.yaml), der list-Generator einen pro Application. Jedes Element
+    # sieht dadurch sowohl seine eigenen Felder als auch .ticketflow.* aus der zentralen Datei.
+    - matrix:
+        generators:
+          - git:
+              # <-- EINZIGE woertliche Repo-URL, siehe Kasten oben.
+              repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+              revision: main
+              files:
+                - path: gitops/env/cluster.yaml
+          - list:
+              # Felder je Application:
+              #   name             Name der erzeugten Application. Muss exakt so heissen wie
+              #                    bisher - beim Umstieg vom App-of-Apps uebernimmt das
+              #                    ApplicationSet die verwaisten Applications ueber ihren Namen.
+              #   chartPath        Pfad zum Chart im Repo. Bewusst NICHT "path": der git-Generator
+              #                    belegt ".path" bereits mit Metadaten der gefundenen Datei, im
+              #                    Kreuzprodukt wuerden sich beide ueberschreiben.
+              #   namespace        Ziel-Namespace.
+              #   serverSideApply  Nur noetig, wenn der Chart eine CRD ueber dem 262144-Byte-
+              #                    Annotationslimit der Kubernetes-API mitbringt (siehe
+              #                    templatePatch unten).
+              #   syncWave         Nur wo eine echte Reihenfolge noetig ist; sonst holt selfHeal
+              #                    verfruehte Syncs im naechsten Reconcile nach.
+              #   ignoreReplicas   spec.replicas des gleichnamigen Deployments nicht vergleichen
+              #                    (KEDA verwaltet es, siehe P6).
+              elements:
+                # --- Cluster-Addons / Storage ---
+                - name: longhorn
+                  chartPath: charts/longhorn
+                  namespace: longhorn-system
+                - name: cert-manager
+                  chartPath: charts/cert-manager
+                  namespace: cert-manager
+                - name: cert-manager-issuer
+                  chartPath: charts/cert-manager-config
+                  namespace: cert-manager
+                  # Braucht die cert-manager-CRDs aus der Wave davor.
+                  syncWave: "1"
+                - name: external-dns
+                  chartPath: charts/external-dns
+                  namespace: external-dns
+                - name: traefik-config
+                  chartPath: charts/traefik-config
+                  namespace: kube-system
+                - name: argocd-ingress
+                  chartPath: charts/argocd-ingress
+                  namespace: argocd
+                  # Braucht den ClusterIssuer aus Wave 1.
+                  syncWave: "2"
+                # --- Operatoren ---
+                - name: cnpg-operator
+                  chartPath: charts/cnpg-operator
+                  namespace: cnpg-system
+                  serverSideApply: true
+                - name: strimzi-operator
+                  chartPath: charts/strimzi-operator
+                  namespace: kafka
+                  serverSideApply: true
+                - name: keda
+                  chartPath: charts/keda
+                  namespace: keda
+                  serverSideApply: true
+                # --- Observability (LGTM) ---
+                - name: kube-prometheus-stack
+                  chartPath: charts/kube-prometheus-stack
+                  namespace: monitoring
+                  serverSideApply: true
+                - name: loki
+                  chartPath: charts/loki
+                  namespace: monitoring
+                - name: tempo
+                  chartPath: charts/tempo
+                  namespace: monitoring
+                # --- Datenhaltung / Messaging ---
+                - name: postgres-cluster
+                  chartPath: charts/postgres-cluster
+                  namespace: application
+                - name: kafka-cluster
+                  chartPath: charts/kafka-cluster
+                  namespace: ticketflow
+                - name: apicurio
+                  chartPath: charts/apicurio
+                  namespace: kafka
+                - name: akhq
+                  chartPath: charts/akhq
+                  namespace: kafka
+                # --- TicketFlow-Anwendung ---
+                - name: ticketflow-app
+                  chartPath: charts/ticketflow-app
+                  namespace: ticketflow
+                - name: reservation-worker
+                  chartPath: charts/reservation-worker
+                  namespace: ticketflow
+                  ignoreReplicas: true
+                - name: notification-worker
+                  chartPath: charts/notification-worker
+                  namespace: ticketflow
+  # spec.template ist ein typisiertes Kubernetes-Objekt, kein Text-Template: Go-Ausdruecke duerfen
+  # hier nur INNERHALB von String-Werten stehen, nicht als {{- if }}-Bloecke um YAML-Schluessel
+  # herum. Alles Bedingte steht deshalb unten in templatePatch.
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      project: default
+      # Zwei Sources: der Chart selbst, plus dasselbe Repo noch einmal als reine Wertequelle
+      # ("ref: values"). Dadurch kann jeder Chart die zentrale env/cluster.yaml als zusaetzliche
+      # Values-Datei laden, ohne dass sie in jeden Chart kopiert werden muesste.
+      sources:
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          path: '{{ .chartPath }}'
+          helm:
+            # values.yaml muss explizit mit aufgefuehrt werden - sobald valueFiles gesetzt ist,
+            # laedt ArgoCD sie nicht mehr automatisch.
+            #
+            # values-<environment>.yaml wird fuer JEDEN Chart versucht und per
+            # ignoreMissingValueFiles uebersprungen, wo es die Datei nicht gibt. Damit braucht ein
+            # Chart, der spaeter einen dev/prod-Split bekommt, keine Aenderung mehr an dieser
+            # Datei. Die zentrale env/cluster.yaml ist davon nicht betroffen: fehlt sie, rendern
+            # die Charts nicht durch (required-Meldung), statt still falsche Defaults zu nehmen.
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - values.yaml
+              - 'values-{{ .ticketflow.environment }}.yaml'
+              - $values/gitops/env/cluster.yaml
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+  # Ergaenzt pro Element die Teile, die nicht fuer alle Applications gleich sind. Wird als
+  # Merge-Patch auf das gerenderte template angewendet (Objekte werden gemergt, Listen ersetzt) -
+  # syncPolicy.automated oben bleibt also erhalten, syncOptions wird komplett gesetzt.
+  # Der spec-Block wird immer erzeugt, damit der Patch nie leer ist.
+  #
+  # CreateNamespace=true steht bewusst pauschal drin: fuer bereits existierende Namespaces
+  # (kube-system, argocd) ist es wirkungslos, spart aber ein weiteres Feld je Element.
+  templatePatch: |
+    {{- if .syncWave }}
+    metadata:
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{ .syncWave }}"
+    {{- end }}
+    spec:
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          {{- if .serverSideApply }}
+          - ServerSideApply=true
+          {{- end }}
+      {{- if .ignoreReplicas }}
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: {{ .name }}
+          jsonPointers:
+            - /spec/replicas
+      {{- end }}
