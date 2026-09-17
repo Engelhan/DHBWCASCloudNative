@@ -32,9 +32,9 @@ variable "network_name" {
 # --- Compute ---
 
 variable "name_prefix" {
-  description = "Präfix für alle erzeugten Ressourcennamen"
+  description = "Präfix für alle erzeugten Ressourcennamen. Leer lassen: der Wert kommt dann aus gitops/env/cluster.yaml (ticketflow.namePrefix), der zentralen Konfigurationsdatei dieses Deployments."
   type        = string
-  default     = "niklas-ticketflow"
+  default     = null
 }
 
 variable "name_suffix" {

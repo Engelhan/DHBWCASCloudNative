@@ -36,24 +36,25 @@
   debug:
     msg: "ArgoCD Admin-Login: user=admin password={{ argocd_admin_password_b64.stdout | b64decode }}"
 
-- name: Prüfen, ob das App-of-Apps-Manifest im Repo bereits existiert
+- name: Prüfen, ob das ApplicationSet-Manifest im Repo bereits existiert
   stat:
-    path: "{{ playbook_dir }}/../../../gitops/apps/app-of-apps.yaml"
+    path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
   delegate_to: localhost
   become: false
-  register: app_of_apps_file
+  register: applicationset_file
 
-# gitops/apps/app-of-apps.yaml existiert inzwischen (siehe gitops/README.md) - der stat-Check
-# bleibt trotzdem als Sicherheitsnetz, damit ein Playbook-Lauf auf einem aelteren Branch/Tag
-# ohne diese Datei nicht fehlschlaegt, sondern diesen Schritt nur ueberspringt.
-- name: App-of-Apps-Manifest auf die Control-Plane kopieren
+# Das ApplicationSet ist das einzige Objekt, das Ansible im GitOps-Layer anwendet - alles Weitere
+# (die 19 Applications und deren Ressourcen) erzeugt ArgoCD daraus selbst. Der stat-Check bleibt
+# als Sicherheitsnetz, damit ein Playbook-Lauf auf einem aelteren Branch/Tag ohne diese Datei
+# nicht fehlschlaegt, sondern diesen Schritt nur ueberspringt.
+- name: ApplicationSet-Manifest auf die Control-Plane kopieren
   copy:
-    src: "{{ playbook_dir }}/../../../gitops/apps/app-of-apps.yaml"
-    dest: /tmp/ticketflow-app-of-apps.yaml
+    src: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
+    dest: /tmp/ticketflow-applicationset.yaml
     mode: "0644"
-  when: app_of_apps_file.stat.exists
+  when: applicationset_file.stat.exists
 
-- name: App-of-Apps anwenden
-  command: k3s kubectl apply -f /tmp/ticketflow-app-of-apps.yaml
-  when: app_of_apps_file.stat.exists
+- name: ApplicationSet anwenden
+  command: k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
+  when: applicationset_file.stat.exists
   changed_when: true
