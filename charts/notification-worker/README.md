@@ -18,7 +18,7 @@ notification-worker/
     ├── _helpers.tpl
     ├── deployment.yaml
     ├── configmap.yaml
-    ├── secret.yaml                    # SMTP-/Kafka-TLS-Material, default leer
+    ├── secret.yaml                    # SMTP-/Kafka-TLS-Material, default leer (siehe ## Secret-Namen)
     ├── podmonitor.yaml                # /metrics, P7
     ├── networkpolicy.yaml             # default aus
     └── poddisruptionbudget.yaml
@@ -59,3 +59,29 @@ helm lint charts/notification-worker \
   -f charts/notification-worker/values-dev.yaml \
   -f gitops/env/cluster.yaml
 ```
+
+## Secret-Namen
+
+Das chart-eigene Secret heisst **`<release>-credentials`**, nicht `<release>`. Der Suffix ist
+Pflicht, kein Stilmittel:
+
+Der Strimzi User Operator legt fuer jede `KafkaUser`-CR ein Secret mit **exakt dem CR-Namen** an.
+Die CR dieses Dienstes heisst `notification-worker` (`charts/kafka-cluster/values.yaml`,
+`kafka.users`) und liegt im selben Namespace, in den dieser Chart deployt (`ticketflow`). Ohne
+Suffix waeren das zwei Controller auf einem Objekt:
+
+- ArgoCD (`selfHeal`) schreibt es mit den SMTP-Platzhaltern zurueck,
+- der User Operator schreibt es mit den SCRAM-Credentials zurueck,
+- das `envFrom: secretRef` des Deployments zieht dabei mal die SMTP-Keys, mal `password` und
+  `sasl.jaas.config` als Env-Variablen in den Container,
+- und der `KAFKA_SASL_PASSWORD`-`secretKeyRef` auf `password` laeuft ins Leere, sobald ArgoCD
+  zuletzt geschrieben hat - der Dienst kommt dann nicht mehr an Kafka.
+
+Beide Namen entstehen an einer Stelle: `templates/_helpers.tpl`, `notification-worker.secretName`.
+`secret.name` in `values.yaml` ueberschreibt ihn, etwa wenn `secret.create: false` gesetzt ist und
+ein External Secret das Objekt unter eigenem Namen liefert.
+
+Die uebrigen Charts im `ticketflow`-Namespace haben dasselbe Problem nicht: `reservation-worker`
+besitzt kein eigenes gleichnamiges Secret mehr (nur das suffigierte `-keda-auth`), und die
+Komponenten von `charts/ticketflow-app` heissen `ticketflow-app-catalog-api`/`-frontend`. **Wer
+hier ein neues Secret anlegt, prueft vorher die Namen in `kafka.users`.**

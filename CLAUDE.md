@@ -455,6 +455,18 @@ commands here once these gaps close instead of leaving this section stale.
   covers a pod-vs-container-securityContext nesting bug caught and fixed while doing this (Tempo
   splits them across `tempo.tempo.securityContext` vs `tempo.securityContext` — don't assume one
   chart's values shape applies to another without checking the template first).
+- **A chart-owned Secret must never share a name with a `KafkaUser` (found live, fixed):** the
+  Strimzi User Operator names the SCRAM Secret it generates **exactly** after the `KafkaUser` CR,
+  in that CR's namespace - which since the namespace split is `ticketflow`, the same namespace the
+  app charts deploy into. `charts/notification-worker` created its own Secret at
+  `<release>` = `notification-worker`, i.e. the same object: ArgoCD's `selfHeal` and the User
+  Operator overwrote each other, the Deployment's `envFrom: secretRef` pulled whichever content
+  won, and the `KAFKA_SASL_PASSWORD` `secretKeyRef` on key `password` broke whenever ArgoCD wrote
+  last. Fixed by a `notification-worker.secretName` helper (`<release>-credentials`, overridable
+  via `secret.name`), used by both `secret.yaml` and the Deployment's `envFrom`. **Before adding a
+  Secret to any chart deploying into `ticketflow`, check it against `kafka.users` in
+  `charts/kafka-cluster/values.yaml`** (`catalog-api`, `reservation-worker`, `notification-worker`,
+  `akhq`). The other charts were checked and are clean.
 - **Cross-namespace `KafkaUser` watching needs TWO settings, not one (found live, fixed):**
   `charts/kafka-cluster` sets `spec.entityOperator.userOperator.watchedNamespace` to the app
   namespace so the User Operator reconciles the `KafkaUser` CRs that live next to their consumers.
