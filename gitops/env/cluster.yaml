@@ -44,6 +44,21 @@ ticketflow:
     # von dort als Kubernetes-Secret angelegt, nie im Repo.
     keyName: user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
 
+  # --- Namespace-Aufteilung --------------------------------------------------------------
+  # Die Kafka-Plattform (Cluster, Nodepools, Topics, Operator, AKHQ, Apicurio) laeuft bewusst in
+  # einem eigenen Namespace, getrennt von der Anwendung (catalog-api/frontend, reservation-worker,
+  # notification-worker). Alles, was daraus folgt - Bootstrap-DNS, Schema-Registry-URL, der
+  # Namespace der KafkaUser-CRs - wird aus diesen beiden Werten abgeleitet, statt als
+  # ausgeschriebener DNS-Name in fuenf values.yaml zu stehen.
+  namespaces:
+    app: ticketflow
+    kafka: kafka
+
+  kafka:
+    # Name der Strimzi-Kafka-CR. Der Bootstrap-Service heisst daraus abgeleitet
+    # "<clusterName>-kafka-bootstrap" - Strimzis eigene Namenskonvention, nicht frei waehlbar.
+    clusterName: ticketflow-kafka
+
   # --- Container-Images ------------------------------------------------------------------
   # ghcr.io verlangt kleingeschriebene Namen - der GitHub-Owner ist hier bewusst lowercase,
   # anders als in repoURL oben (.github/workflows/build-images.yml macht dasselbe per ${VAR,,}).

@@ -12,7 +12,8 @@
     "podSecurityContext",
     "securityContext",
     "podDisruptionBudget",
-    "topologySpreadConstraint"
+    "topologySpreadConstraint",
+    "ticketflow"
   ],
   "properties": {
     "replicaCount": {
@@ -51,8 +52,7 @@
     "config": {
       "type": "object",
       "required": [
-        "storageKind",
-        "kafkaBootstrapServers"
+        "storageKind"
       ],
       "properties": {
         "storageKind": {
@@ -65,7 +65,7 @@
         },
         "kafkaBootstrapServers": {
           "type": "string",
-          "minLength": 1
+          "description": "Leer = abgeleitet aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
         }
       }
     },
@@ -136,6 +136,39 @@
         "maxSkew": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "ticketflow": {
+      "type": "object",
+      "required": [
+        "namespaces",
+        "kafka"
+      ],
+      "properties": {
+        "namespaces": {
+          "type": "object",
+          "required": [
+            "kafka"
+          ],
+          "properties": {
+            "kafka": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "kafka": {
+          "type": "object",
+          "required": [
+            "clusterName"
+          ],
+          "properties": {
+            "clusterName": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     }

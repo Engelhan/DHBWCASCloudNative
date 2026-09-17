@@ -54,7 +54,7 @@ spec:
       authenticationRef:
         name: {{ include "reservation-worker.fullname" . }}-kafka-lag
       metadata:
-        bootstrapServers: {{ .Values.config.kafkaBrokers | quote }}
+        bootstrapServers: {{ include "reservation-worker.kafkaBootstrap" . | quote }}
         consumerGroup: {{ .Values.config.consumerGroup | quote }}
         topic: {{ .Values.config.reservationTopic | quote }}
         lagThreshold: {{ .Values.config.keda.lagThreshold | quote }}

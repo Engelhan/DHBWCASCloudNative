@@ -7,8 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ .Values.kafka.metadata.name }}-schema-registrar
-  namespace: {{ .Values.namespace }}
+  name: {{ include "kafka-cluster.clusterName" . }}-schema-registrar
   labels:
     app: ticketflow
   annotations:
@@ -42,7 +41,7 @@ spec:
               drop: ["ALL"]
           env:
             - name: REGISTRY_URL
-              value: {{ .Values.schemaRegistry.url | quote }}
+              value: {{ include "kafka-cluster.schemaRegistryUrl" . | quote }}
             - name: GROUP_ID
               value: {{ .Values.schemaRegistry.groupId | quote }}
           command:
@@ -80,4 +79,4 @@ spec:
       volumes:
         - name: schemas
           configMap:
-            name: {{ .Values.kafka.metadata.name }}-schemas
+            name: {{ include "kafka-cluster.clusterName" . }}-schemas

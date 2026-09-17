@@ -51,7 +51,9 @@ config:
   # CLAUDE.md ## Current implementation status - Wert trotzdem schon real, nicht Platzhalter,
   # damit er sofort zum kafkaSasl-Setup unten passt). Port 9092 = Strimzi's "plain"-Listener -
   # seit B2 SASL_PLAINTEXT (SCRAM-Auth), Transport bleibt unverschluesselt.
-  kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+  # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
+  # abgeleitet (Kafka laeuft in einem eigenen Namespace, siehe gitops/env/cluster.yaml).
+  kafkaBrokers: ""
   # Muss zum echten Topic-Namen aus charts/kafka-cluster/values.yaml kafka.topics passen (war
   # zuvor "reservation-results", ein Platzhalter-Tippfehler - siehe src/*/README.md ## Konfiguration).
   resultTopic: "reservation-result"
@@ -63,7 +65,8 @@ config:
   notifyRetryBackoff: "2s"
   # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
   # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
-  registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
+  # Leer lassen: wird aus ticketflow.namespaces.kafka abgeleitet.
+  registryUrl: ""
   registryGroupId: "ticketflow"
   logLevel: "info"
   httpAddr: ":8080"

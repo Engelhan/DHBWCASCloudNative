@@ -445,14 +445,15 @@ kafka-users.yaml`, generiert aus `values.yaml` `kafka.users`: `catalog-api` darf
 `reservation-requested`, kein `Read`; `reservation-worker` darf `Read` auf
 `reservation-requested` (+ die eigene Consumer-Group) und `Write` auf `reservation-result`;
 `notification-worker` darf ausschließlich `Read` auf `reservation-result` (+ eigene
-Consumer-Group). Für das zugehörige Secret gibt es zwei Varianten, je nachdem ob Client und
-Kafka-Cluster denselben Namespace teilen: `catalog-api`/`reservation-worker`/`notification-worker`
-laufen mit dem Kafka-Cluster zusammen im Namespace `ticketflow`, ihr jeweiliges Secret wird vom
-User Operator automatisch erzeugt und per `secretKeyRef` direkt referenziert; **AKHQ**
-(schreibgeschützt konfiguriert, Namespace `kafka`) läuft in einem anderen Namespace und bekommt
-stattdessen ein vorgegebenes Passwort über `spec.authentication.password.valueFrom.secretKeyRef`
-auf ein selbst angelegtes, austauschbares Secret (Kubernetes erlaubt kein `secretKeyRef` über
-Namespace-Grenzen). *Alternative:* ein einziges, geteiltes Client-Secret für alle
+Consumer-Group). Der Kafka-Cluster läuft in einem **eigenen Namespace** (`kafka`), getrennt von
+der Anwendung (`ticketflow`) — für die Secrets folgt daraus zweierlei: die `KafkaUser`-CRs von
+`catalog-api`/`reservation-worker`/`notification-worker` werden bewusst im **App**-Namespace
+angelegt (`spec.entityOperator.userOperator.watchedNamespace`), damit das vom User Operator
+erzeugte Secret dort landet, wo die Services es per `secretKeyRef` lesen können; **AKHQ**
+(schreibgeschützt konfiguriert) läuft dagegen im Kafka-Namespace und bekommt ein vorgegebenes
+Passwort über `spec.authentication.password.valueFrom.secretKeyRef` auf ein selbst angelegtes,
+austauschbares Secret. Der Grund ist in beiden Fällen derselbe: Kubernetes erlaubt kein
+`secretKeyRef` über Namespace-Grenzen. *Alternative:* ein einziges, geteiltes Client-Secret für alle
 Producer/Consumer (der in der Vorlesung/GridFlex gezeigte Umfang), oder Kafka-ACLs händisch per
 `kafka-acls.sh` statt deklarativ über `KafkaUser`. *Begründung:* Ein geteiltes Secret ist
 funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht aber jeden Service

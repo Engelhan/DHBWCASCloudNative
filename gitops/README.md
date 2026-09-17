@@ -230,8 +230,13 @@ Plattform-Tooling, nicht die Kafka-Cluster-Instanz selbst).
 `charts/kafka-cluster/` (Kafka-CR, KafkaNodePools, KafkaTopics, Apicurio-Schema-Registrierung)
 und `charts/ticketflow-app/` (catalog-api + frontend) sind bewusst zwei getrennte Charts/
 Applications (Team-Entscheidung: nicht gemeinsam deployen, damit ein Sync/Rollback des einen den
-anderen nicht anfasst) — beide laufen im selben Kubernetes-Namespace `ticketflow`, damit
-catalog-api den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
+anderen nicht anfasst) — und seit der Namespace-Trennung auch in getrennten Namespaces: die
+Kafka-Plattform (Operator, Cluster, Apicurio, AKHQ) in `kafka`, die Anwendung in `ticketflow`.
+Beide Namen stehen in `env/cluster.yaml` (`ticketflow.namespaces.app`/`.kafka`); die Clients
+leiten ihre Bootstrap-Adresse daraus ab. Einzige Ausnahme sind die `KafkaUser`-CRs, die
+`charts/kafka-cluster` in den App-Namespace rendert, weil der Strimzi User Operator das
+generierte SCRAM-Secret immer im Namespace der CR ablegt und `secretKeyRef` keine
+Namespace-Grenze überschreitet — Details in `charts/kafka-cluster/README.md` ## Namespaces.
 `charts/kafka-cluster/` hieß ursprünglich `charts/ticketflow/` (bis 2026-09-16, umbenannt um
 Verwechslungen mit `charts/ticketflow-app/` zu vermeiden — reiner `git mv`, keine
 Inhaltsänderung). `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** Teil von

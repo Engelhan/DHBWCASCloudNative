@@ -49,7 +49,9 @@ config:
   # Echter Wert: Strimzi-Bootstrap-Service aus charts/kafka-cluster, gleicher Namespace "ticketflow".
   # Port 9092 = Strimzi's "plain"-Listener - seit B2 SASL_PLAINTEXT (SCRAM-Auth, siehe
   # kafkaSasl unten), Transport bleibt unverschluesselt.
-  kafkaBrokers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+  # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
+  # abgeleitet (Kafka laeuft in einem eigenen Namespace, siehe gitops/env/cluster.yaml).
+  kafkaBrokers: ""
   reservationTopic: "reservation-requested"
   resultTopic: "reservation-result"
   consumerGroup: "reservation-worker"
@@ -88,7 +90,8 @@ config:
 
   # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
   # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
-  registryUrl: "http://apicurio.kafka.svc:8080/apis/registry/v3"
+  # Leer lassen: wird aus ticketflow.namespaces.kafka abgeleitet.
+  registryUrl: ""
   registryGroupId: "ticketflow"
   logLevel: "info"
   httpAddr: ":8080"

@@ -4,9 +4,8 @@ apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: controller
-  namespace: {{ .Values.kafka.metadata.namespace }}
   labels:
-    strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+    strimzi.io/cluster: {{ include "kafka-cluster.clusterName" . }}
 spec:
   replicas: {{ .Values.kafka.controller.replicas }}
 
@@ -39,7 +38,7 @@ spec:
                     - key: strimzi.io/name
                       operator: In
                       values:
-                        - {{ .Values.kafka.metadata.name }}-kafka
+                        - {{ include "kafka-cluster.clusterName" . }}-kafka
                 topologyKey: kubernetes.io/hostname
       {{- if gt (int .Values.kafka.controller.replicas) 1 }}
       # P4, siehe kafka-broker-nodepool.yaml - fuer den Controller-Quorum genauso relevant
@@ -50,6 +49,6 @@ spec:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
-              strimzi.io/cluster: {{ .Values.kafka.metadata.name }}
+              strimzi.io/cluster: {{ include "kafka-cluster.clusterName" . }}
               strimzi.io/pool-name: controller
       {{- end }}

@@ -6,4 +6,4 @@ metadata:
     {{- include "apicurio.labels" . | nindent 4 }}
 data:
   APICURIO_STORAGE_KIND: {{ .Values.config.storageKind | quote }}
-  APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | quote }}
+  APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: {{ include "apicurio.kafkaBootstrap" . | quote }}

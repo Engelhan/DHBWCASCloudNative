@@ -9,7 +9,7 @@ data:
   LOG_LEVEL: {{ .Values.catalogApi.config.logLevel | quote }}
   PORT: {{ .Values.catalogApi.config.port | quote }}
   RESERVATION_TOPIC: {{ .Values.catalogApi.config.reservationTopic | quote }}
-  KAFKA_BROKERS: {{ .Values.catalogApi.config.kafkaBrokers | quote }}
+  KAFKA_BROKERS: {{ include "ticketflow-app.kafkaBootstrap" . | quote }}
   KAFKA_SASL_ENABLED: {{ .Values.catalogApi.config.kafkaSasl.enabled | quote }}
   KAFKA_SASL_USERNAME: {{ .Values.catalogApi.config.kafkaSasl.username | quote }}
   CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.config.corsAllowedOrigin | quote }}
@@ -17,5 +17,5 @@ data:
   DB_PORT: {{ .Values.catalogApi.database.port | quote }}
   DB_NAME: {{ .Values.catalogApi.database.name | quote }}
   DB_SSLMODE: {{ .Values.catalogApi.database.sslMode | quote }}
-  REGISTRY_URL: {{ .Values.catalogApi.config.registryUrl | quote }}
+  REGISTRY_URL: {{ include "ticketflow-app.schemaRegistryUrl" . | quote }}
   REGISTRY_GROUP_ID: {{ .Values.catalogApi.config.registryGroupId | quote }}

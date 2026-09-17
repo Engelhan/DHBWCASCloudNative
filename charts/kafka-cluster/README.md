@@ -41,9 +41,33 @@ kafka-cluster/
 ## Verwendung
 
 ```bash
-helm lint charts/kafka-cluster -f charts/kafka-cluster/values-dev.yaml
-helm template kafka-cluster charts/kafka-cluster -f charts/kafka-cluster/values-dev.yaml
+helm lint charts/kafka-cluster \
+  -f charts/kafka-cluster/values.yaml \
+  -f charts/kafka-cluster/values-dev.yaml \
+  -f gitops/env/cluster.yaml
 ```
 
-Deployment läuft indirekt über ArgoCD (`gitops/apps/kafka-cluster.yaml`, `targetRevision: main`,
-Namespace `ticketflow`).
+Deployment läuft indirekt über ArgoCD (Element `kafka-cluster` in `gitops/applicationset.yaml`),
+Namespace `kafka`.
+
+## Namespaces
+
+Der Chart rendert bewusst in **zwei** Namespaces:
+
+| Ressourcen | Namespace | warum |
+|---|---|---|
+| `Kafka`, `KafkaNodePool`, `KafkaTopic`, Metrics-ConfigMap, Schema-Registrar-Job | `ticketflow.namespaces.kafka` (= Release-Namespace) | die Kafka-Plattform läuft getrennt von der Anwendung |
+| `KafkaUser` + das AKHQ-Passwort-`Secret` | `ticketflow.namespaces.app` | siehe unten |
+
+Der Strimzi User Operator legt das generierte SCRAM-`Secret` **immer im Namespace der
+`KafkaUser`-CR** ab, und Kubernetes erlaubt kein `secretKeyRef` über Namespace-Grenzen. Lägen die
+`KafkaUser`s beim Cluster, kämen `catalog-api`/`reservation-worker`/`notification-worker` nicht
+mehr an ihr Passwort — dieselbe Grenze, die schon die Postgres-Credentials betrifft. Damit der
+User Operator die CRs im anderen Namespace überhaupt sieht, setzt `kafka-cluster.yaml`
+`spec.entityOperator.userOperator.watchedNamespace` auf den App-Namespace. **Ohne dieses Feld
+würden die `KafkaUser`s nie reconciled — ohne Fehlermeldung, nur mit dauerhaft leerem `status`
+und fehlenden Secrets.**
+
+Namespace und Cluster-Name kommen aus `gitops/env/cluster.yaml`
+(`ticketflow.namespaces.{app,kafka}`, `ticketflow.kafka.clusterName`); alle Clients leiten ihre
+Bootstrap-Adresse daraus ab, statt sie auszuschreiben.

@@ -155,7 +155,12 @@ akhq:
       connections:
         ticketflow-kafka:
           properties:
-            bootstrap.servers: "ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092"
+            # Kurzer In-Namespace-Name: AKHQ laeuft im selben Namespace wie der Kafka-Cluster
+            # (ticketflow.namespaces.kafka), der Eintrag bleibt damit auch bei einer
+            # Umbenennung dieses Namespace korrekt. Ein abgeleiteter Wert ist hier nicht
+            # moeglich - der Block gehoert zu den Values des gewrappten Upstream-Charts,
+            # und Helm templatet Values-Dateien nicht (siehe charts/README.md).
+            bootstrap.servers: "ticketflow-kafka-kafka-bootstrap:9092"
             # SASL_PLAINTEXT statt PLAINTEXT (B2) - "${KAFKA_SASL_JAAS_CONFIG}" wird von
             # Micronaut/AKHQ zur Laufzeit aus der env-Var aufgeloest, die extraEnv oben per
             # secretKeyRef aus templates/kafka-sasl-secret.yaml injiziert (kein Klartext-Passwort

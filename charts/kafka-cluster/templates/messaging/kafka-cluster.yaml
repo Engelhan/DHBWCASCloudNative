@@ -33,8 +33,7 @@
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
-  name: {{ .Values.kafka.metadata.name }}
-  namespace: {{ .Values.kafka.metadata.namespace }}
+  name: {{ include "kafka-cluster.clusterName" . }}
   annotations:
     strimzi.io/kraft: enabled
     strimzi.io/node-pools: enabled
@@ -145,6 +144,12 @@ spec:
         limits:
           memory: {{ .Values.kafka.entityOperator.topicOperator.resource.memoryLimit }}
     userOperator:
+      # Der User Operator sieht per Default nur KafkaUser-CRs im Namespace des Clusters. Die
+      # liegen hier aber bewusst im App-Namespace, damit das generierte SCRAM-Secret dort landet,
+      # wo die Services es per secretKeyRef lesen koennen (siehe _helpers.tpl appNamespace).
+      # Ohne dieses Feld wuerden die KafkaUser-CRs schlicht nie reconciled - kein Fehler, nur
+      # dauerhaft leerer status und fehlende Secrets.
+      watchedNamespace: {{ include "kafka-cluster.appNamespace" . }}
       resources:
         requests:
           memory: {{ .Values.kafka.entityOperator.userOperator.resource.memoryLimit }}

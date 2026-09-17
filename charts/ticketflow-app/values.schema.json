@@ -13,9 +13,11 @@
       "type": "object",
       "description": "Zentrale Werte aus gitops/env/cluster.yaml (von ArgoCD per Multi-Source durchgereicht).",
       "required": [
+        "dnsZone",
         "imageRegistry",
         "imageTag",
-        "dnsZone"
+        "kafka",
+        "namespaces"
       ],
       "properties": {
         "imageRegistry": {
@@ -32,6 +34,35 @@
         "dnsZone": {
           "type": "string",
           "minLength": 1
+        },
+        "namespaces": {
+          "type": "object",
+          "required": [
+            "app",
+            "kafka"
+          ],
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kafka": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "kafka": {
+          "type": "object",
+          "required": [
+            "clusterName"
+          ],
+          "properties": {
+            "clusterName": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -93,8 +124,6 @@
             "logLevel",
             "port",
             "reservationTopic",
-            "kafkaBrokers",
-            "registryUrl",
             "registryGroupId",
             "kafkaSasl"
           ],
@@ -118,14 +147,14 @@
             },
             "kafkaBrokers": {
               "type": "string",
-              "minLength": 1
+              "description": "Leer = abgeleitet aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
             },
             "corsAllowedOrigin": {
               "type": "string"
             },
             "registryUrl": {
               "type": "string",
-              "minLength": 1
+              "description": "Leer = abgeleitet aus ticketflow.namespaces.kafka."
             },
             "registryGroupId": {
               "type": "string",

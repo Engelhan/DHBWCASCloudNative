@@ -1,3 +1,7 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit
+# ein Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers gibt.
+ticketflow: {}
+
 # Apicurio Registry (https://www.apicur.io) - JSON-Schema-Registry fuer die Kafka-Event-Contracts
 # (ReservationRequested/ReservationResult), Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
 # reservation-worker), siehe CLAUDE.md ## Team. Volleigener Chart statt Upstream-Wrapper - siehe
@@ -12,7 +16,7 @@ image:
 # kafkasql-Storage: Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer eigenen
 # Postgres-Instanz - vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die andere
 # Services (z.B. reservation-worker/Postgres) loesen mussten (siehe deren values.yaml-Kommentare).
-# Zeigt auf den bereits deployten Strimzi-Bootstrap-Service in Namespace "ticketflow", Port 9093 =
+# Zeigt auf den Strimzi-Bootstrap-Service im Kafka-Namespace, Port 9093 =
 # der "unauth"-Listener (charts/kafka-cluster kafka-cluster.yaml), nicht der SASL-Listener auf
 # 9092. Grund: Apicurios kafkasql-Storage unterstuetzt in Version 3.3.3 kein SCRAM/PLAIN-SASL mit
 # Username/Passwort - der Quellcode (KafkaSqlConfiguration.java, gegen den echten 3.3.3-Tag auf
@@ -27,7 +31,9 @@ image:
 # Zugriffspunkt, type: internal). Zugangsdaten deshalb komplett entfallen, kein Secret noetig.
 config:
   storageKind: kafkasql
-  kafkaBootstrapServers: ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9093
+  # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
+  # abgeleitet (siehe templates/_helpers.tpl).
+  kafkaBootstrapServers: ""
 
 service:
   port: 8080

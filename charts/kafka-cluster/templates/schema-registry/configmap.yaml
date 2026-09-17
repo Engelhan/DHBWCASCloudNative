@@ -5,8 +5,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.kafka.metadata.name }}-schemas
-  namespace: {{ .Values.namespace }}
+  name: {{ include "kafka-cluster.clusterName" . }}-schemas
   labels:
     app: ticketflow
 data:

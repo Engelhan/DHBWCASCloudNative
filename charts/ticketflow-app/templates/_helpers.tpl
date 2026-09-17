@@ -79,3 +79,18 @@ ein Fork ihn nicht separat pflegen muss; frontend.ingress.host ueberschreibt ihn
 {{- define "ticketflow-app.ingressHost" -}}
 {{- .Values.frontend.ingress.host | default (printf "ticketflow.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) -}}
 {{- end -}}
+
+{{/*
+Bootstrap-Adresse des Kafka-Clusters. Kafka laeuft in einem eigenen Namespace, getrennt von dieser
+Anwendung - Name und Namespace kommen deshalb aus gitops/env/cluster.yaml statt als
+ausgeschriebener DNS-Name in values.yaml zu stehen (er stand frueher in vier Charts parallel).
+Port 9092 ist Strimzis "plain"-Listener (seit B2 SASL_PLAINTEXT).
+*/}}
+{{- define "ticketflow-app.kafkaBootstrap" -}}
+{{- .Values.catalogApi.config.kafkaBrokers | default (printf "%s-kafka-bootstrap.%s.svc:9092" (required "ticketflow.kafka.clusterName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName) (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
+{{- end -}}
+
+{{/* URL der Apicurio-Registry - laeuft im selben Kafka-Namespace. */}}
+{{- define "ticketflow-app.schemaRegistryUrl" -}}
+{{- .Values.catalogApi.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
+{{- end -}}

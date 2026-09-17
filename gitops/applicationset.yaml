@@ -102,9 +102,12 @@ spec:
                 - name: postgres-cluster
                   chartPath: charts/postgres-cluster
                   namespace: application
+                # Kafka-Plattform bewusst getrennt von der Anwendung. Einzige Ausnahme sind die
+                # KafkaUser-CRs, die der Chart in den App-Namespace rendert - Begruendung in
+                # charts/kafka-cluster/templates/_helpers.tpl.
                 - name: kafka-cluster
                   chartPath: charts/kafka-cluster
-                  namespace: ticketflow
+                  namespace: kafka
                 - name: apicurio
                   chartPath: charts/apicurio
                   namespace: kafka

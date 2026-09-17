@@ -50,6 +50,34 @@ Regeln:
 `kafka-cluster` rendern ausschließlich Custom Resources fremder Operatoren und haben daher weder
 Deployment noch eigene Labels.
 
+## Namespace-Aufteilung
+
+Die Kafka-Plattform läuft getrennt von der Anwendung:
+
+| Namespace | Charts |
+|---|---|
+| `ticketflow` | `ticketflow-app` (catalog-api + frontend), `reservation-worker`, `notification-worker` |
+| `kafka` | `strimzi-operator`, `kafka-cluster`, `apicurio`, `akhq` |
+| `application` | `postgres-cluster` |
+| `monitoring`, `longhorn-system`, `cert-manager`, `external-dns`, `cnpg-system`, `keda` | die jeweiligen Addons |
+
+Beide App-Namen stehen in `gitops/env/cluster.yaml` (`ticketflow.namespaces.app`/`.kafka`); jeder
+Chart, der den Kafka-Bootstrap-Service oder die Apicurio-Registry braucht, leitet die Adresse
+daraus ab (`<clusterName>-kafka-bootstrap.<kafkaNs>.svc:9092` bzw.
+`http://apicurio.<kafkaNs>.svc:8080/...`) statt sie auszuschreiben — vorher stand derselbe
+DNS-Name in vier `values.yaml` parallel.
+
+**Eine Ausnahme, die man kennen muss:** `charts/kafka-cluster` rendert seine `KafkaUser`-CRs
+nicht in den Kafka-, sondern in den App-Namespace. Der Strimzi User Operator legt das generierte
+SCRAM-`Secret` immer im Namespace der CR ab, und `secretKeyRef` überschreitet keine
+Namespace-Grenze — die Services kämen sonst nicht an ihr Passwort. Dafür setzt der Chart
+`spec.entityOperator.userOperator.watchedNamespace`; siehe `kafka-cluster/README.md`
+## Namespaces.
+
+`charts/akhq` ist der einzige Client, der den Bootstrap-Service nicht ableitet, sondern als
+kurzen In-Namespace-Namen ausschreibt: sein Wert liegt in den Values des gewrappten
+Upstream-Charts, und AKHQ läuft ohnehin im selben Namespace wie der Cluster.
+
 ## Zentrale Werte: `gitops/env/cluster.yaml`
 
 Image-Registry, Image-Tag, DNS-Zone, ACME-Kontakt und TSIG-Key-Name stehen in **keinem** Chart,
@@ -118,7 +146,8 @@ schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 
 **Postgres-Anbindung (gelöst, 2026-09-15):** `charts/postgres-cluster` legt nur ein
 `username`/`password`-`Secret` im Namespace `application` an, kein fertiges `DATABASE_URL`, und
-`reservation-worker` liegt (wie `charts/ticketflow-app`) im Namespace `ticketflow` —
+`reservation-worker` liegt (wie `charts/ticketflow-app`) im Namespace `ticketflow` (siehe
+## Namespace-Aufteilung unten) —
 Kubernetes-`Secret`s sind nicht Namespace-übergreifend referenzierbar. Gelöst nach demselben
 Muster wie `catalog-api`/`notification-worker` (Niklas' Vorgabe, siehe deren Chart-Kommentare):
 der Chart legt sein Postgres-Credentials-`Secret` **selbst** an

@@ -55,12 +55,13 @@ Image-Registry, Image-Tag und DNS-Zone stehen **nicht** in diesem Chart, sondern
 `catalogApi.image.repository`/`.tag` (und das Gegenstück beim frontend) bleiben als
 Einzelfall-Override möglich, sind aber normalerweise leer.
 
-**Schnittstelle zu `charts/kafka-cluster` (Kafka):** `catalogApi.config.kafkaBrokers` referenziert
-den Kafka-Bootstrap-Service aus diesem anderen Chart per fest verdrahtetem Service-DNS-Namen
-(`ticketflow-kafka-kafka-bootstrap.ticketflow.svc:9092`) — beide Charts laufen im selben
-Kubernetes-Namespace (`ticketflow`), auch wenn sie getrennte Helm-Releases/ArgoCD-Applications
-sind. Ändert sich der Kafka-Cluster-Name in `charts/kafka-cluster/values.yaml`, muss dieser Wert
-hier manuell nachgezogen werden (kein Cross-Chart-Referencing).
+**Schnittstelle zu `charts/kafka-cluster` (Kafka):** Kafka läuft in einem **eigenen Namespace**
+(`kafka`), getrennt von dieser Anwendung. `catalogApi.config.kafkaBrokers` ist deshalb leer und
+die Adresse wird abgeleitet: `<ticketflow.kafka.clusterName>-kafka-bootstrap.<ticketflow.namespaces.kafka>.svc:9092`.
+Cluster-Name und Namespace stehen einmalig in `gitops/env/cluster.yaml` — eine Umbenennung zieht
+damit überall durch, statt in vier Charts einzeln nachgetragen werden zu müssen. Das
+SASL-`Secret` erreicht catalog-api trotz der Namespace-Grenze, weil `charts/kafka-cluster` seine
+`KafkaUser`-CRs bewusst in diesen Namespace rendert (siehe dort `README.md` ## Namespaces).
 
 **Datenbank-Zugangsdaten:** `catalog-api` baut den Postgres-Connection-String selbst aus
 `catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + einem Secret (Keys `username`/
@@ -102,4 +103,5 @@ helm template ticketflow-app charts/ticketflow-app \
 ```
 
 Deployment läuft indirekt über ArgoCD (`gitops/applicationset.yaml`, Element `ticketflow-app`,
-Namespace `ticketflow`).
+Namespace `ticketflow` — Kafka liegt getrennt davon in `kafka`, siehe `charts/README.md`
+## Namespace-Aufteilung).

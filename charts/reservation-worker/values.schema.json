@@ -46,18 +46,16 @@
     "config": {
       "type": "object",
       "required": [
-        "kafkaBrokers",
         "reservationTopic",
         "resultTopic",
         "consumerGroup",
-        "registryUrl",
         "kafkaSasl",
         "keda"
       ],
       "properties": {
         "kafkaBrokers": {
           "type": "string",
-          "minLength": 1
+          "description": "Leer = abgeleitet aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
         },
         "reservationTopic": {
           "type": "string",
@@ -81,7 +79,7 @@
         },
         "registryUrl": {
           "type": "string",
-          "minLength": 1
+          "description": "Leer = abgeleitet aus ticketflow.namespaces.kafka."
         },
         "registryGroupId": {
           "type": "string",
@@ -236,7 +234,9 @@
       "description": "Zentrale Werte aus gitops/env/cluster.yaml (von ArgoCD per Multi-Source durchgereicht).",
       "required": [
         "imageRegistry",
-        "imageTag"
+        "imageTag",
+        "kafka",
+        "namespaces"
       ],
       "properties": {
         "imageRegistry": {
@@ -248,6 +248,35 @@
           "minLength": 1,
           "not": {
             "const": "latest"
+          }
+        },
+        "namespaces": {
+          "type": "object",
+          "required": [
+            "app",
+            "kafka"
+          ],
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kafka": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "kafka": {
+          "type": "object",
+          "required": [
+            "clusterName"
+          ],
+          "properties": {
+            "clusterName": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }

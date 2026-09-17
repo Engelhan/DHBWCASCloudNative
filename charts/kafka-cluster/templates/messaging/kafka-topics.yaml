@@ -7,9 +7,8 @@ apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: {{ .name }}
-  namespace: {{ $.Values.namespace }}
   labels:
-    strimzi.io/cluster: {{ $.Values.kafka.metadata.name }}
+    strimzi.io/cluster: {{ include "kafka-cluster.clusterName" $ }}
 spec:
   partitions: {{ .partitions }}
   replicas: {{ .replicationFactor }}

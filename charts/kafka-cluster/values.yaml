@@ -13,16 +13,19 @@
 # Listener/keine Auth, da wir noch keine Client-Identitaeten haben; kein message.max.bytes-Override,
 # da unsere JSON-Events klein sind).
 
-# Namespace fuer alle Ressourcen dieses Charts - getrennt vom Strimzi-Operator-Namespace "kafka"
-# (siehe charts/strimzi-operator), analog zu cnpg-operator (Namespace cnpg-system) vs. dieser
-# App-Namespace. Wird von gitops/apps/kafka-cluster.yaml als destination.namespace gesetzt
-# (CreateNamespace=true).
-namespace: ticketflow
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+#
+# Namespace (ticketflow.namespaces.kafka) und Cluster-Name (ticketflow.kafka.clusterName) kommen
+# von dort. Der Kafka-Namespace ist bewusst von dem der Anwendung getrennt; die KafkaUser-CRs
+# bilden die einzige Ausnahme und liegen im App-Namespace - warum, steht in templates/_helpers.tpl.
+ticketflow: {}
 
 kafka:
-  metadata:
-    name: ticketflow-kafka
-    namespace: ticketflow
 
   # Kafka-Version, die der gepinnte Strimzi-Operator (charts/strimzi-operator, Chart-Version
   # 1.1.0, existiert real nicht) unterstuetzt - live gegen den Kafka.status-Fehler geprueft
@@ -160,10 +163,11 @@ kafka:
     # uebereinstimmen.
     password: "ticketflow"
 
-# Apicurio Registry (charts/apicurio, Namespace "kafka"), siehe templates/schema-registry/ und
-# charts/README.md ## apicurio. URL ist die vom Apicurio-Chart selbst gerenderte Service-DNS
-# (Release-Name "apicurio", siehe gitops/apps/apicurio.yaml metadata.name) - noch nicht live
-# gegen einen echten Sync geprueft (kein Cluster verfuegbar).
+# Apicurio Registry (charts/apicurio), siehe templates/schema-registry/ und charts/README.md
+# ## apicurio. Die URL ist die vom Apicurio-Chart gerenderte Service-DNS (Release-Name "apicurio",
+# = Name des ApplicationSet-Elements) - noch nicht live gegen einen echten Sync geprueft.
 schemaRegistry:
-  url: http://apicurio.kafka.svc:8080/apis/registry/v3
+  # Leer lassen: wird als "http://apicurio.<ticketflow.namespaces.kafka>.svc:8080/apis/registry/v3"
+  # abgeleitet - charts/apicurio laeuft im selben Kafka-Namespace.
+  url: ""
   groupId: ticketflow
