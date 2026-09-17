@@ -1,9 +1,82 @@
 # charts/ – Helm-Packaging (W1)
 
-Enthält den eigenen Chart [`ticketflow/`](ticketflow/) für die Strimzi-`Kafka`-Ressource plus
-Schema-Registry-Registrierung. `catalog-api`+`frontend` (gemeinsam in einem Chart, siehe unten),
-`notification-worker` und `reservation-worker` sind bewusst **kein** Teil davon — jeder(s)
-Service(-paar) hat einen eigenen, standalone Chart nach demselben Muster.
+## Muster für Applikations-Charts (verbindlich)
+
+Alle Charts, die eigenen Anwendungscode ausrollen — [`ticketflow-app/`](ticketflow-app/)
+(catalog-api + frontend), [`reservation-worker/`](reservation-worker/),
+[`notification-worker/`](notification-worker/) — folgen demselben Aufbau. Referenz ist
+`reservation-worker`; Abweichungen sind zu begründen, nicht stillschweigend einzuführen.
+
+```
+charts/<name>/
+├── Chart.yaml               # name == Verzeichnisname
+├── README.md
+├── values.yaml              # feste Key-Reihenfolge, siehe unten
+├── values-dev.yaml          # kleine Werte fuer die Lab-VMs
+├── values-prod.yaml         # HA-Werte
+├── values.schema.json       # Pflichtfelder + Typen, verbietet image.tag "latest"
+└── templates/
+    ├── _helpers.tpl         # name / fullname / chart / labels / selectorLabels / image
+    ├── deployment.yaml
+    ├── configmap.yaml
+    ├── secret.yaml                    # nur wo der Chart selbst Credentials anlegt
+    ├── service.yaml                   # nur wo es HTTP-Konsumenten gibt
+    ├── servicemonitor.yaml            # mit Service; sonst podmonitor.yaml
+    ├── networkpolicy.yaml             # default aus
+    └── poddisruptionbudget.yaml
+```
+
+Feste Key-Reihenfolge in `values.yaml` (je Komponente, falls der Chart mehrere rendert):
+`image`, `replicaCount`, `resources`, `podSecurityContext`, `securityContext`, `config`,
+`database`/`databaseSecret`/`secret`, `service`, `ingress`, `serviceMonitor`/`podMonitor`,
+`networkPolicy`, `podDisruptionBudget`, `topologySpreadConstraint`.
+
+Regeln:
+
+- **Namen und Labels immer über `_helpers.tpl`**, nie wörtlich im Template. Jede Ressource trägt
+  das volle `app.kubernetes.io/`-Set; Charts mit mehreren Komponenten zusätzlich
+  `app.kubernetes.io/component`.
+- **Kein `namespace:` in Templates und keines in `values.yaml`** — den Namespace bestimmt die
+  ArgoCD-Application (`destination.namespace` in `gitops/applicationset.yaml`).
+- **`securityContext` kommt aus `values.yaml`**, nie fest aus dem Template.
+- **Probes `/healthz` (liveness) und `/readyz` (readiness)**; `/metrics` wird gescrapt.
+- **Kein `:latest`** — Registry und Tag kommen zentral (siehe nächster Abschnitt), das Schema
+  verbietet `latest` zusätzlich.
+- `_helpers.tpl` ist je Chart dupliziert statt als Library-Chart ausgelagert: für drei kurze
+  Defines wäre eine `file://`-Dependency pro Chart mehr Aufwand als Nutzen.
+
+`apicurio` und `akhq` folgen diesem Muster bewusst nur teilweise — sie sind Plattform-Werkzeuge
+(Schema-Registry, Kafka-UI), kein TicketFlow-Anwendungscode; `postgres-cluster` und
+`kafka-cluster` rendern ausschließlich Custom Resources fremder Operatoren und haben daher weder
+Deployment noch eigene Labels.
+
+## Zentrale Werte: `gitops/env/cluster.yaml`
+
+Image-Registry, Image-Tag, DNS-Zone, ACME-Kontakt und TSIG-Key-Name stehen in **keinem** Chart,
+sondern einmalig in [`../gitops/env/cluster.yaml`](../gitops/env/cluster.yaml). ArgoCD reicht die
+Datei jedem Chart per Multi-Source `$values` als zusätzliche Values-Datei durch (siehe
+`../gitops/applicationset.yaml`); die Charts lesen sie als `.Values.ticketflow.*`.
+
+Jeder betroffene Chart deklariert dafür ein leeres `ticketflow: {}` in seiner `values.yaml` —
+nur damit ein Rendern ohne die zentrale Datei eine verständliche `required`-Meldung liefert statt
+eines Nil-Pointers. **Lokal muss sie deshalb immer mitgegeben werden:**
+
+```bash
+helm template <name> charts/<name> \
+  -f charts/<name>/values.yaml \
+  -f gitops/env/cluster.yaml
+```
+
+Zwei Wrapper-Charts brauchen den Wert *innerhalb* der Values ihres Upstream-Sub-Charts, wo Helm
+nicht templatet — gelöst ohne index-basierte `helm.parameters`:
+
+- **`akhq`**: `akhq.ingress.enabled: false`, stattdessen ein chart-eigenes
+  `templates/ingress.yaml`, das den Host aus `ticketflow.dnsZone` bildet.
+- **`external-dns`**: `templates/zone-configmap.yaml` schreibt Zone/Server/Key-Name in eine
+  ConfigMap; die Upstream-Values referenzieren sie als `$(DNS_ZONE)` usw. Kubernetes expandiert
+  `$(VAR)` in `args` — derselbe Mechanismus, den der Chart für das TSIG-Secret schon nutzt.
+
+Welche `values-<env>.yaml` greift, steuert `ticketflow.environment` in derselben Datei.
 
 ## `ticketflow-app` — eigenständiger Chart für `catalog-api` + `frontend`
 
@@ -11,8 +84,8 @@ Service(-paar) hat einen eigenen, standalone Chart nach demselben Muster.
 einem gemeinsamen Chart — anders als `notification-worker`/`reservation-worker` (je ein Service
 pro Chart), weil `frontend` ausschließlich mit `catalog-api` spricht und sich mit ihm eine
 Ingress-Route/Origin teilt. Team-Entscheidung: bewusst nicht Teil von `charts/kafka-cluster`
-(Kafka) — zwei getrennte ArgoCD-`Application`s (`gitops/apps/kafka-cluster.yaml` für Kafka,
-`gitops/apps/ticketflow-app.yaml` für diesen Chart), damit ein Sync/Rollback des einen den
+(Kafka) — zwei getrennte ArgoCD-`Application`s (die Elemente `kafka-cluster` und `ticketflow-app`
+in `../gitops/applicationset.yaml`), damit ein Sync/Rollback des einen den
 anderen nicht anfasst. Beide laufen im selben Kubernetes-Namespace (`ticketflow`), damit
 `catalog-api` den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
 
@@ -27,27 +100,19 @@ Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-con
 deutlich mehr rendert als die anderen Custom-Charts. Bewusst kein `Service` — es gibt keinen
 anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes gehen direkt an den
 Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
-Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Er hat außerdem als
-einer von zwei Charts im Repo bislang ein eigenes `values.schema.json` (sonst ist ein Schema an
-das noch nicht vollständige `charts/kafka-cluster` gebunden, siehe root-README `##
-Entscheidungen` zu W1) sowie `replicaCount: 3` + `PodDisruptionBudget` als Default. Noch **kein**
-`gitops/apps/notification-worker.yaml` — der Chart ist bisher nur lint-/template-fähig, nicht per
-ArgoCD deployt. **Hinweis:** `values.yaml` → `config.resultTopic` default `"reservation-results"`
-(Plural) weicht vom tatsächlichen, per `charts/kafka-cluster` angelegten Kafka-Topic
-`reservation-result` (Singular, siehe `charts/kafka-cluster/values.yaml`) ab — noch nicht
-korrigiert/live relevant, da der Chart noch nicht deployt ist, aber vor dem ersten echten Deploy
-gegenzuprüfen.
+Pod-Label-Selector, siehe `notification-worker/templates/podmonitor.yaml`. Default sind `replicaCount: 3` + `PodDisruptionBudget`. Seit der Umstellung auf das ApplicationSet ist er als Element
+`notification-worker` mit ausgerollt — vorher fehlte ihm eine Application, und `image.tag` war
+leer, sodass ein Deploy ohne `--set` gar nicht möglich war. 
 
 ## `reservation-worker` — eigenständiger Chart, gleiches Muster wie `notification-worker`
 
 [`reservation-worker/`](reservation-worker/) ist der zweite vollständig implementierte Service,
 analog zu `notification-worker` als eigener Chart (Deployment, ConfigMap, Secret,
 PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigenes
-`values.schema.json`) — deployt via `gitops/apps/reservation-worker.yaml`. Abweichungen von
-`notification-worker`s Vorlage: `replicaCount: 1` statt `3` (`PodDisruptionBudget` daher default
-`enabled: false`) — der Service wird künftig von KEDA auf Kafka-Consumer-Lag skaliert (P6,
-`gitops/apps/keda.yaml` existiert noch nicht), ein hoher statischer Default wäre vor dessen
-Einführung irreführend; und ein zusätzliches `database`/`databaseSecret`-Wertepaar statt
+`values.schema.json`) — deployt als Element `reservation-worker`. Abweichungen von
+`notification-worker`s Vorlage: `replicaCount: 1` statt `3` — der Service wird von KEDA auf
+Kafka-Consumer-Lag skaliert (P6, Element `keda`), ein hoher statischer Default wäre daneben
+irreführend; und ein zusätzliches `database`/`databaseSecret`-Wertepaar statt
 `notification-worker`s SMTP/TLS-Secret-Feldern, weil der Service transaktional in CNPG-Postgres
 schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 
@@ -70,7 +135,7 @@ Env-Var-Namen passen).
 Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns, CNPG-Operator,
 Strimzi-Operator, kube-prometheus-stack, Loki, Tempo, AKHQ; künftig KEDA) liegen als **eigene,
 kleine Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
-[`../gitops/apps/`](../gitops/apps/), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
+[`../gitops/applicationset.yaml`](../gitops/applicationset.yaml), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
 auf den Upstream-Helm-Repo) – ein einheitliches Muster für alle Charts in diesem Repo statt zwei
 verschiedener (Application-inline-Values vs. lokaler Chart), und alle Werte landen sichtbar
 versioniert in einer eigenen `values.yaml` statt in der Application eingebettet.
@@ -91,7 +156,7 @@ Zwei Varianten:
   `kube-prometheus-stack`, `loki` und `tempo` bilden zusammen den Observability-Stack (siehe
   `../gitops/README.md` ## Observability-Stack) – Persistenz durchgehend über Longhorn.
 - **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – analog zur
-  CNPG-`Cluster`-CR in `ticketflow/`, nur eben nicht Teil des ticketflow-Charts, weil sie zum
+  CNPG-`Cluster`-CR in `postgres-cluster/`, nur eben nicht Teil eines Anwendungs-Charts, weil sie zum
   Addon-Layer statt zur TicketFlow-Anwendung gehören:
   - [`cert-manager-config/`](cert-manager-config/): `ClusterIssuer` fürs ACME/DNS-01-Setup.
     Siehe [`../gitops/README.md`](../gitops/README.md) ## DNS/ACME für die nötige
@@ -117,7 +182,7 @@ helm template charts/longhorn
 
 [`apicurio/`](apicurio/) deployt Apicurio Registry (JSON-Schema-Registry für die
 Kafka-Event-Contracts `ReservationRequested`/`ReservationResult`, siehe
-`ticketflow/files/schemas/`). War ursprünglich als neunter Wrapper-Chart um
+`kafka-cluster/files/schemas/`). War ursprünglich als weiterer Wrapper-Chart um
 `eshepelyuk/apicurio-registry-helm` (`oci://ghcr.io/eshepelyuk/helm/apicurio-registry`) geplant —
 dasselbe Muster wie unten. Dessen ghcr.io-OCI-Paket liefert aber **403 Forbidden** auf jeden
 anonymen Pull-Versuch (verifiziert sowohl über `docker run ... helm dependency update` als auch
@@ -153,8 +218,7 @@ aktuell `reservation-worker`s echten Deploy blockiert (siehe oben). Kein bestät
 Health-Endpoint für 3.x gefunden (evtl. separater Management-Port statt 8080) — Liveness-/
 Readiness-Probes nutzen deshalb die echte REST-API (`GET /apis/registry/v3/groups`) statt eines
 geratenen Health-Pfads; dieselbe Begründung gilt für die Wartelogik im
-`schema-registrar`-Job in `ticketflow/templates/schema-registry/`. Noch **kein**
-`gitops/apps/apicurio.yaml`-Sync live verifiziert (kein Cluster verfügbar) — `helm lint`/
+`schema-registrar`-Job in `ticketflow/templates/schema-registry/`. Noch kein Sync live verifiziert (kein Cluster verfügbar) — `helm lint`/
 `template` lokal sauber.
 
 ## Resource-Limits, Security-Context, NetworkPolicy

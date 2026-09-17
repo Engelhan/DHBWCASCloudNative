@@ -28,7 +28,7 @@ demand), not to lecture content, per the grading rubric.
 
 Chosen elective topics (fixed, do not add a third without asking — a third only earns bonus
 points and only if Part A is fully done): **W1 Packaging** (Helm chart, `values-dev.yaml` /
-`values-prod.yaml` / values schema) and **W2 GitOps** (ArgoCD, App-of-Apps, auto-sync + self-heal).
+`values-prod.yaml` / values schema) and **W2 GitOps** (ArgoCD, one `ApplicationSet`, auto-sync + self-heal).
 
 ## Domain model (why the infra exists)
 
@@ -61,17 +61,41 @@ Four layers, each owning a distinct concern — don't blur them:
    config here.
 2. **`infra/ansible/`** — configures the VMs, installs k3s, labels nodes, bootstraps ArgoCD.
    Nothing beyond that.
-3. **`gitops/`** (ArgoCD Applications) — everything Kubernetes-level from here on: operators
-   (CNPG, Strimzi, KEDA), the observability stack (kube-prometheus-stack, Loki, Tempo), cluster
-   addons (Longhorn, cert-manager, external-dns), and the app chart itself, as GitOps-synced
-   `Application` resources. Every `Application` points at a chart under `charts/` in this repo
-   (never directly at an upstream Helm repo) — for addons that exist upstream as a chart, that's
-   a small wrapper chart whose `Chart.yaml` declares the upstream chart as a `dependencies`
-   entry, with our values in its own `values.yaml` (see `charts/README.md`); ArgoCD resolves the
-   dependency via `helm dependency build` at sync time. `app-of-apps.yaml` +
-   Longhorn/cert-manager/cert-manager-issuer/external-dns/argocd-ingress/cnpg-operator/
-   strimzi-operator/kube-prometheus-stack/loki/tempo/akhq/apicurio/kafka-cluster/ticketflow-app/keda
-   are written (see `charts/keda`/`gitops/apps/keda.yaml` and the `keda-scaledobject.yaml`
+3. **`gitops/`** — everything Kubernetes-level from here on: operators (CNPG, Strimzi, KEDA), the
+   observability stack (kube-prometheus-stack, Loki, Tempo), cluster addons (Longhorn,
+   cert-manager, external-dns) and the app charts, all as GitOps-synced `Application` resources.
+   **The folder holds exactly two files**: `env/cluster.yaml` and `applicationset.yaml`.
+   - **`gitops/env/cluster.yaml` is the single source of truth** for every deployment-specific
+     value (fork `repoURL`, `targetRevision`, `environment` dev/prod, `dnsZone`, `acmeEmail`,
+     `acmeServer`, `rfc2136.{server,keyName}`, `imageRegistry`, `imageTag`, `namePrefix`), all
+     under one top-level `ticketflow:` key — deliberately NOT `global:`, which Helm propagates
+     into subcharts where upstream charts give it their own meaning. It is read by ArgoCD (git-files
+     generator + multi-source `$values`), by every chart as `.Values.ticketflow.*`, by Ansible
+     (`include_vars` in `gitops_secrets`) and by Terraform (`yamldecode` in `main.tf`). **Never
+     reintroduce any of these values as a literal in a chart or role.**
+   - **`gitops/applicationset.yaml` replaced the former 19 `gitops/apps/*.yaml` files** (plus
+     `app-of-apps.yaml`). Matrix generator: git-files over `env/cluster.yaml` × a list of the 19
+     apps. The list field is `chartPath`, **not** `path` — the git-files generator already
+     occupies `.path` with file metadata and the two would collide in the cross product.
+     `spec.template` is a typed Kubernetes object, so Go expressions may only appear inside
+     string values; everything conditional (sync-wave annotation, `ServerSideApply`,
+     `ignoreDifferences`) lives in `spec.templatePatch` at the bottom, which is a real text
+     template. Element names must stay byte-identical to the old Application names — that is what
+     lets the ApplicationSet adopt existing Applications instead of duplicating them.
+   - The **one literal repo URL left in the whole repo** is the `repoURL` of that git-files
+     generator (chicken-and-egg: it must know which repo to read `env/cluster.yaml` from). A fork
+     therefore edits two things: `env/cluster.yaml` and that one line.
+   - Every chart additionally gets `values-<environment>.yaml` with `ignoreMissingValueFiles:
+     true`, so a chart that later gains a dev/prod split needs no ApplicationSet change.
+   Every `Application` points at a chart under `charts/` in this repo (never directly at an
+   upstream Helm repo) — for addons that exist upstream as a chart, that's a small wrapper chart
+   whose `Chart.yaml` declares the upstream chart as a `dependencies` entry, with our values in
+   its own `values.yaml` (see `charts/README.md`); ArgoCD resolves the dependency via
+   `helm dependency build` at sync time. Longhorn/cert-manager/cert-manager-issuer/external-dns/
+   argocd-ingress/traefik-config/cnpg-operator/strimzi-operator/kube-prometheus-stack/loki/tempo/
+   keda/postgres-cluster/kafka-cluster/apicurio/akhq/ticketflow-app/reservation-worker/
+   notification-worker
+   are written (see `charts/keda`/the `keda` ApplicationSet element and the `keda-scaledobject.yaml`
    template in `charts/reservation-worker` under Current implementation status below — not yet
    live-verified, `helm dependency update` for `charts/keda` itself is blocked locally by this
    machine's TLS-interception proxy, same class of gap as the reservation-worker/notification-
@@ -94,10 +118,10 @@ Four layers, each owning a distinct concern — don't blur them:
    combined-role, matching a real Strimzi setup the user provided as reference — two
    `KafkaTopic`s, and a JMX-Prometheus-Exporter `ConfigMap` for P7; namespace `ticketflow`) plus
    `templates/schema-registry/` (registers `files/schemas/*.schema.json` into Apicurio) is written
-   and deployed via `gitops/apps/kafka-cluster.yaml` (merged to `main`). **`catalog-api`+`frontend`
+   and deployed via the `kafka-cluster` ApplicationSet element (merged to `main`). **`catalog-api`+`frontend`
    are deliberately NOT part of this chart** — team decision, they must not be deployed in the
    same Application as Kafka — they live in their own chart, `charts/ticketflow-app/`, deployed
-   via `gitops/apps/ticketflow-app.yaml`. Both charts share the `ticketflow` Kubernetes namespace
+   via the `ticketflow-app` ApplicationSet element. Both charts share the `ticketflow` Kubernetes namespace
    so `catalog-api` can reach Kafka's bootstrap service by short in-namespace DNS name. KEDA's
    `ScaledObject`/CNPG's `Cluster` CR are not part of either chart — each lives with the workload
    it targets instead (KEDA's `ScaledObject`/`TriggerAuthentication` in `charts/reservation-worker`,
@@ -113,7 +137,7 @@ connectivity-check preflight) from
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role) as Ansible
 roles that call `kubernetes.core.helm` directly — a deliberate exception at the time. That
 approach was superseded on `main` by deploying the same addons (Longhorn, cert-manager,
-external-dns) through `gitops/apps/` instead (see `gitops/README.md`), restoring the boundary
+external-dns) through the GitOps layer instead (see `gitops/README.md`), restoring the boundary
 above. **Don't merge `ansible-bootstrap` into `main`** — it would install the same Helm releases
 a second time via a different tool and fight ArgoCD's `selfHeal`. `system-upgrade-controller`
 (k3s auto-upgrade) has no equivalent in `gitops/` yet — deliberately skipped for now since
@@ -198,18 +222,21 @@ if needed rather than reviving the Ansible role.
 - Real-VM run also confirmed: k3s server/agent join, IPv6 node registration (`kubectl get nodes
   -o wide` shows the real DHBWV6 addresses), and node Ready state all work as designed.
 - `argocd_bootstrap` installs a version-pinned ArgoCD **core** manifest (not HA — single
-  control-plane lab cluster) and applies `gitops/apps/app-of-apps.yaml` **only if that file
-  already exists** (checked via `stat`, skips otherwise instead of failing) — the file now exists
-  (see gitops layer above), so this actually runs; the `stat` guard stays as a safety net for
-  older checkouts/tags without it.
+  control-plane lab cluster) and applies `gitops/applicationset.yaml` **only if that file
+  already exists** (checked via `stat`, skips otherwise instead of failing); the `stat` guard
+  stays as a safety net for older checkouts/tags without it. This is the only object Ansible
+  applies in the GitOps layer — ArgoCD creates the 19 Applications from it.
 - `gitops_secrets` (new role) creates two things GitOps structurally can't provide itself: the
-  ArgoCD repository credential for this repo (**this repo is private** — every `Application` in
-  `gitops/apps/` uses `repoURL: git@github.com:...` SSH, not `https://`, since every one of them
+  ArgoCD repository credential for this repo (**this repo is private** — every generated
+  `Application` uses `repoURL: git@github.com:...` SSH, not `https://`, since every one of them
   points at a chart under `charts/` in this repo, not directly at an upstream Helm repo — see
   Infra layering above; only the upstream Helm repos referenced from within each wrapper chart's
   `Chart.yaml.dependencies` need no credential, ArgoCD builds those via `helm dependency build`)
-  and the RFC2136-TSIG `Secret`s that `cert-manager-issuer.yaml`/`external-dns.yaml` reference via
-  `secretKeyRef`. This is a narrow, deliberate exception to "Ansible does nothing beyond
+  and the RFC2136-TSIG `Secret`s that `charts/cert-manager-config`/`charts/external-dns`
+  reference via `secretKeyRef`. **The repo URL is no longer hardcoded here** — the role reads it
+  via `include_vars` from `gitops/env/cluster.yaml`. It used to be a literal, and was the one
+  place a fork reliably missed: the credential got registered for the *original* repo and every
+  Application stayed `Unknown` with no error pointing at the cause. This is a narrow, deliberate exception to "Ansible does nothing beyond
   k3s/labels/ArgoCD", **not** a repeat of the reverted `ansible-bootstrap` approach: it creates
   zero Helm releases/operators (those stay 100% ArgoCD-owned), only `Secret` objects containing
   credential material that, by design, must never be committed to git and so can't be
@@ -227,7 +254,7 @@ if needed rather than reviving the Ansible role.
   enough to blow past the Kubernetes API's hard 262144-byte annotation-size limit ("Too long"),
   failing the apply after most other objects already got created. Server-side apply doesn't write
   that annotation at all. Found on a real run against DHBWCloud VMs.
-- Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.36.2+k3s1`, ArgoCD `v3.4.5` (latest
+- Pinned versions in `inventory/group_vars/all.yml`: k3s `v1.37.0+k3s1`, ArgoCD `v3.4.5` (latest
   stable, not the 3.5 release candidates at time of writing).
 - **Ansible cannot run as the controller on native Windows** (`ansible-core` fails with
   `check_blocking_io ... WinError 87` — a known Windows limitation; Windows is only supported as
@@ -253,14 +280,12 @@ if needed rather than reviving the Ansible role.
 ## Commands
 
 ```bash
-# Fork personalization (only when deploying under a different DHBW account/repo — skip for
-# work on the original repo). Rewrites the non-secret, git-tracked identity values (fork
-# repoURL, DNS zone, ACME email, TSIG keyname) across gitops/**/*.yaml + charts/**/*.yaml in
-# one pass instead of hand-editing ~9 files. Secrets (TSIG value, OpenStack creds) are
-# untouched by this — those still go through terraform.tfvars/secrets.yml as usual.
-cp deploy.env.example deploy.env   # fill in real values, or set as env vars instead
-python3 scripts/personalize.py
-git diff                           # review before committing
+# Fork personalization (only when deploying under a different DHBW account/repo). There is no
+# script for this any more — scripts/personalize.py and deploy.env.example were deleted, since
+# there is nothing left to spread around: edit gitops/env/cluster.yaml, plus the single literal
+# repoURL in the git-files generator of gitops/applicationset.yaml. Secrets stay where they were
+# (terraform.tfvars / secrets.yml). ArgoCD only ever reads the pushed remote state, so commit AND
+# push before expecting anything to roll out.
 
 # Terraform (infra/terraform/)
 cd infra/terraform
@@ -273,7 +298,7 @@ terraform apply        # also generates ../ansible/inventory/hosts.ini
 source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Voraussetzungen
 cd infra/ansible
 ansible-playbook playbooks/site.yml
-ansible-playbook playbooks/bootstrap-gitops.yml   # re-run only the ArgoCD/App-of-Apps step
+ansible-playbook playbooks/bootstrap-gitops.yml   # re-run only the ArgoCD/ApplicationSet step
 export KUBECONFIG=infra/ansible/kubeconfig
 kubectl get nodes -o wide
 kubectl -n argocd get pods
@@ -295,14 +320,16 @@ docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... &&
 # helm lint/template without a local helm binary (any chart under charts/) - on Windows Git Bash,
 # MSYS_NO_PATHCONV=1 is needed or the -v path gets mangled
 MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 dependency update /charts/<name>
-MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 lint /charts/<name>
-MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 template <name> /charts/<name>
+# NOTE: every chart now needs the central values file, otherwise it aborts with a `required`
+# message (that is deliberate — see the gitops layer above). With a local helm binary:
+helm lint charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
 ```
 
 `load-generator` still has no code. `charts/notification-worker/` can be `helm lint`/`helm
 template`-checked (see its own `values.schema.json`) but is not deployed via a
-`gitops/apps/*.yaml` Application yet. `charts/reservation-worker/` and `charts/akhq/` **are**
-deployed (`gitops/apps/reservation-worker.yaml`/`akhq.yaml`) and both pass `helm lint`/`template`
+ApplicationSet element yet. `charts/reservation-worker/` and `charts/akhq/` **are**
+deployed (the `reservation-worker` ApplicationSet element/`akhq.yaml`) and both pass `helm lint`/`template`
 locally (verified 2026-09-14 with Docker available) — see their bullets under Current
 implementation status for what's still unverified beyond that (live cluster behavior,
 placeholder values). `src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... &&
@@ -318,7 +345,7 @@ commands here once these gaps close instead of leaving this section stale.
   scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
-- **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/apps/app-of-apps.yaml`,
+- **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/applicationset.yaml`,
   `longhorn.yaml`, `cert-manager.yaml`, `cert-manager-issuer.yaml`, `external-dns.yaml`, and
   `argocd-ingress.yaml` — cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm
   instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering above), plus a
@@ -329,7 +356,7 @@ commands here once these gaps close instead of leaving this section stale.
   Traefik `Service`'s `LoadBalancer` status (confirmed against `source/traefik_proxy.go`
   upstream); `charts/argocd-ingress/templates/ingressroute-tcp.yaml` sets that annotation to a
   stable hostname (`values.yaml` → `externalDnsTarget`, `traefik.<zone>`) rather than raw VIPs.
-  That hostname is published by `gitops/apps/traefik-config.yaml` + `charts/traefik-config/`, a
+  That hostname is published by the `traefik-config` ApplicationSet element + `charts/traefik-config/`, a
   `HelmChartConfig` (`helm.cattle.io/v1`) that merges an `external-dns.alpha.kubernetes.io/
   hostname` annotation into k3s' own bundled Traefik `HelmChart` (the documented way to add
   values to a k3s-managed chart without fighting its `helm-controller` for ownership) — for the
@@ -344,23 +371,49 @@ commands here once these gaps close instead of leaving this section stale.
   secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
-  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). `app-of-apps.yaml`
-  excludes itself from its own directory source (`source.directory.exclude`) — without it,
-  self-tracking + `prune: true` risked ArgoCD deleting its own root Application (and cascading
-  through the `resources-finalizer` to every child app); see `gitops/README.md` ## Struktur.
-- **Done:** `scripts/personalize.py` + `deploy.env.example` — lets another student/the professor
-  deploy their own fork by rewriting the git-tracked, non-secret identity values (fork repoURL,
-  DNS zone, ACME email, TSIG keyname) across `gitops/**/*.yaml` + `charts/**/*.yaml` in one pass
-  instead of hand-editing ~9 files; supports env-var overrides too (values are read from the repo
-  itself at runtime via `CANONICAL_SOURCES`, never hardcoded as literals in the script). Secrets
-  are deliberately out of scope (stay in `terraform.tfvars`/`secrets.yml` as before). See root
-  `README.md` ## Betrieb ### Eigenes Deployment.
+  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). The former
+  `app-of-apps.yaml` had to exclude itself from its own directory source
+  (`source.directory.exclude`) — without it, self-tracking + `prune: true` risked ArgoCD deleting
+  its own root Application (and cascading through the `resources-finalizer` to every child app).
+  That whole failure mode is gone with the ApplicationSet, which does not see itself as a managed
+  resource; see `gitops/README.md` ## Struktur.
+- **Done (2026-09-17), not yet live-verified:** central-config + ApplicationSet refactor. Replaces
+  the previous `scripts/personalize.py` + `deploy.env.example` search-and-replace approach (both
+  **deleted**) and the 19 `gitops/apps/*.yaml` files (also deleted) with `gitops/env/cluster.yaml`
+  + `gitops/applicationset.yaml` — see the gitops layer above for the mechanics. What changed
+  beyond that, and is worth knowing before touching any of it:
+  - `charts/cert-manager-config`, `charts/argocd-ingress`, `charts/traefik-config`,
+    `charts/ticketflow-app`, `charts/reservation-worker`, `charts/notification-worker` read their
+    identity/image values from `.Values.ticketflow.*`. Each declares an empty `ticketflow: {}`
+    in `values.yaml` purely so a render without the central file fails with a readable `required`
+    message instead of a nil-pointer.
+  - Two wrapper charts needed the value *inside* an upstream subchart's values, where Helm does
+    not template. `charts/akhq` disables `akhq.ingress` and renders its own
+    `templates/ingress.yaml`; `charts/external-dns` adds `templates/zone-configmap.yaml` and
+    references it from the upstream values as `$(DNS_ZONE)`/`$(RFC2136_ZONE)`/`$(RFC2136_KEYNAME)`
+    — Kubernetes expands `$(VAR)` in `args`, the same mechanism the chart already used for the
+    TSIG secret. **No index-based `helm.parameters`** — those break on any reordering of
+    `extraArgs`.
+  - `infra/ansible/roles/gitops_secrets` and `infra/terraform/main.tf` read the same file
+    (`include_vars` / `yamldecode`). `var.name_prefix` now defaults to `null` and falls back to
+    `ticketflow.namePrefix` via `coalesce`.
+  - **Migration on a running cluster is not a plain apply**: `app-of-apps` carries
+    `resources-finalizer`, so deleting it normally cascades into every Application and its
+    workloads. `kubectl -n argocd patch app app-of-apps --type=merge -p
+    '{"metadata":{"finalizers":null}}'` → `kubectl -n argocd delete app app-of-apps
+    --cascade=orphan` → `kubectl apply -f gitops/applicationset.yaml`, which then adopts the
+    orphans by name. Documented in `gitops/README.md`.
+  - Verified locally: all 19 charts `helm template`/`lint` clean against the central file,
+    `tofu validate`, both Ansible playbooks `--syntax-check`, and an Ansible `include_vars` run
+    proving the path resolves. **Not** verified: any of it against a live cluster (none
+    available), and the ApplicationSet's own rendering by a real ArgoCD — the `templatePatch`
+    output was checked by re-implementing its logic in Python, not by ArgoCD itself.
 - **Committed but not yet re-verified live** (check `kubectl -n argocd get applications` before
   assuming any of this is synced clean — several commits landed after the last confirmed-live
   check): the Longhorn/cert-manager/external-dns wrapper-chart restructure, the ArgoCD/Longhorn/
   cert-manager/external-dns version bumps (latest stable as of this writing), and five new
   wrapper charts + Applications:
-  - `gitops/apps/cnpg-operator.yaml` (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart
+  - the `cnpg-operator` ApplicationSet element (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart
     `0.29.0`, cluster-wide, namespace `cnpg-system`)
   - `strimzi-operator.yaml` (`charts/strimzi-operator/`, Strimzi `1.1.0`,
     `watchAnyNamespace: true`, namespace `kafka`)
@@ -414,13 +467,13 @@ commands here once these gaps close instead of leaving this section stale.
   follow-up once `catalog-api`/`reservation-worker`/`notification-worker` exist),
   `inter.broker.protocol.version` (ZK-era field, meaningless under pure KRaft),
   `message.max.bytes: 200MB` (no justification for our small JSON events, left at the Kafka
-  default). `gitops/apps/kafka-cluster.yaml` (`targetRevision: main`, namespace
+  default). the `kafka-cluster` ApplicationSet element (`targetRevision: main`, namespace
   `ticketflow`, syncs `values-dev.yaml`). Strimzi chart version is pinned as `1.1.0`, which
   doesn't exist in reality (this project's timeline is deliberately forward-dated). First live
   sync attempt failed: the installed CRDs serve `kafka.strimzi.io/v1`, not the `v1beta2` this was
   originally written against — fixed (all other fields matched `kubectl explain` against the
   real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ now exists (see
-  `gitops/apps/akhq.yaml` below); a schema registry (also Carlos' scope) is still **not** part of
+  the `akhq` ApplicationSet element below); a schema registry (also Carlos' scope) is still **not** part of
   this yet — separate follow-up, registry implementation undecided.
 - **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
   Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
@@ -462,7 +515,7 @@ commands here once these gaps close instead of leaving this section stale.
   label selector instead of the usual `Service`+`ServiceMonitor` pair), `replicaCount: 3` +
   `PodDisruptionBudget` by default, and its own `values.schema.json` (the only per-service chart
   in the repo with one so far — everywhere else a schema is tied to the not-yet-started umbrella
-  chart). No `gitops/apps/notification-worker.yaml` yet (out of scope for now — chart is
+  chart). No the `notification-worker` ApplicationSet element yet (out of scope for now — chart is
   lint/template-only, not deployed via ArgoCD). Go deps and both Dockerfile base images
   (`golang`, `distroless/static-debian12`) are pinned to latest-stable and digest-pinned (not
   floating tags) — re-check before rebuilding long after this was written.
@@ -491,7 +544,7 @@ commands here once these gaps close instead of leaving this section stale.
   Deployment's starting value — KEDA (`templates/keda-scaledobject.yaml`, added 2026-09-16, see
   the P6/KEDA bullet below) owns actual replica count from the first scale reconcile on, and
   `PodDisruptionBudget` is enabled by default now that scaling is real), deployed via
-  `gitops/apps/reservation-worker.yaml`.
+  the `reservation-worker` ApplicationSet element.
 
   **Postgres wiring (resolved 2026-09-15, credentials hardcoded 2026-09-16):** originally blocked
   by the same cross-namespace-secret gap as everywhere else (`charts/postgres-cluster` only
@@ -514,7 +567,7 @@ commands here once these gaps close instead of leaving this section stale.
   itself not yet `helm dependency update`-able locally (2026-09-16):** P6 — KEDA scales
   `reservation-worker` on Kafka consumer-group lag instead of CPU (root `README.md` ## P6).
   `charts/keda` (new, wrapper around the upstream `kedacore/charts` chart pinned `2.20.2`) +
-  `gitops/apps/keda.yaml` (namespace `keda`, cluster-wide `watchNamespace` default kept,
+  the `keda` ApplicationSet element (namespace `keda`, cluster-wide `watchNamespace` default kept,
   `syncOptions: [ServerSideApply=true]` — its `scaledjobs` CRD alone is >650KB, same class of
   problem as CNPG/Strimzi/kube-prometheus-stack) is the operator only, same split as
   `charts/cnpg-operator` vs. `charts/postgres-cluster`: the actual `ScaledObject`/
@@ -551,14 +604,14 @@ commands here once these gaps close instead of leaving this section stale.
   maxReplicaCount,lagThreshold,pollingInterval,cooldownPeriod}` are new values, deliberately NOT
   defaulted to KEDA's own generic defaults: `maxReplicaCount: 3` is pinned to
   `reservation-requested`'s actual partition count on the profile that's actually synced right
-  now (`gitops/apps/kafka-cluster.yaml` runs `values-dev.yaml`, 3 partitions — a consumer group
+  now (the `kafka-cluster` ApplicationSet element runs `values-dev.yaml`, 3 partitions — a consumer group
   can't usefully run more consumers than partitions) and needs bumping to 8 alongside any future
   switch to `values-prod.yaml`; `lagThreshold: "10"` and the 30-seat demo event in
   `local/postgres/init.sql` are sized so that a full sellout burst drives a full scale-out to
   `maxReplicaCount`; `pollingInterval: 15`/`cooldownPeriod: 60` are shorter than KEDA's defaults
   (30s/300s) so a screencast shows both scale-up and scale-down without a multi-minute wait.
   `replicaCount: 1` in this chart is now purely the Deployment's starting value, not an ongoing
-  source of truth — `gitops/apps/reservation-worker.yaml` gained an `ignoreDifferences` entry on
+  source of truth — the `reservation-worker` ApplicationSet element gained an `ignoreDifferences` entry on
   `spec.replicas` for the Deployment (the standard ArgoCD + HPA/KEDA pattern), otherwise
   `selfHeal: true` would stomp every KEDA scale event back to `replicaCount: 1` on the next sync
   tick. `podDisruptionBudget.enabled` flipped from `false` to `true` (`minAvailable: 1`) now that
@@ -586,7 +639,7 @@ commands here once these gaps close instead of leaving this section stale.
   same as `charts/ticketflow-app`'s own dev profile — becomes real once any of them scales beyond 1
   (`reservation-worker` via KEDA, see above).
 - **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
-  `https://akhq.io/`, pinned `0.28.0`) + `gitops/apps/akhq.yaml` — Kafka web UI, Carlos' scope.
+  `https://akhq.io/`, pinned `0.28.0`) + the `akhq` ApplicationSet element — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
   Kafka-platform tooling, not part of the TicketFlow app itself; cross-namespace access to the
   bootstrap service in `ticketflow` is fine, only `Secret`s are namespace-scoped, not `Service`s).
@@ -651,7 +704,7 @@ commands here once these gaps close instead of leaving this section stale.
   defaults (`config.resultTopic: "reservation-results"`, `config.kafkaBrokers: ""`) were also
   fixed to the real topic name (`reservation-result`, singular — was a typo/never-updated
   placeholder) and the real bootstrap-service DNS while touching this file, even though that
-  chart still has no `gitops/apps/notification-worker.yaml` Application (unrelated, still not
+  chart still has no the `notification-worker` ApplicationSet element Application (unrelated, still not
   started, see below). Go side: all three services gained SASL/SCRAM-SHA-512 support via
   `github.com/segmentio/kafka-go/sasl/scram` (already a transitive part of the already-vendored
   `segmentio/kafka-go` dependency, `go mod tidy` pulled in `xdg-go/{scram,pbkdf2,stringprep}` as
@@ -708,13 +761,15 @@ commands here once these gaps close instead of leaving this section stale.
   first successful run, set each of the four packages' visibility to "Public" in GitHub's package
   settings (defaults to the repo's private visibility otherwise) — until then pods get
   `ImagePullBackOff` even with a correct tag. `charts/reservation-worker/values.yaml` and
-  `charts/notification-worker/values.yaml` `image.repository` defaults now point at the real
-  ghcr.io path (previously a fake placeholder `ticketflow/<service>`); `catalog-api`/`frontend`
-  have no chart yet so nothing to update there. `scripts/personalize.py` does **not** cover the
-  image registry path yet (only repoURL/DNS/ACME/TSIG) — a fork under a different GitHub owner
-  would need to hand-edit these two `image.repository` values, unlike everything personalize.py
-  already rewrites.
-- **`gitops/apps/reservation-worker.yaml` status (updated 2026-09-15):** `automated`/`selfHeal`,
+  `charts/notification-worker/values.yaml` `image.repository` no longer hold a registry path at
+  all — every chart derives its image from `ticketflow.imageRegistry`/`.imageTag` in
+  `gitops/env/cluster.yaml`, so a fork under a different GitHub owner changes one line. The
+  workflow also gained `workflow_dispatch` (a fresh fork previously had no way to build images
+  without artificially touching a file under `src/`) and a `bump-image-tag` job that writes the
+  new short SHA back into that file — a single job after the matrix, not a step inside it, so the
+  four parallel builds cannot race each other on push. No trigger loop: the workflow only fires on
+  `src/**`, the commit only touches `gitops/`.
+- **`reservation-worker` Application status (updated 2026-09-15, now an ApplicationSet element):** `automated`/`selfHeal`,
   namespace `ticketflow`, no `helm.values` override — no `values-dev.yaml`/`values-prod.yaml`
   split for this chart either, unlike `charts/kafka-cluster`/`charts/kafka-cluster`; all values come
   from `charts/reservation-worker/values.yaml` defaults directly. `image.repository`/`image.tag`/
@@ -771,14 +826,14 @@ commands here once these gaps close instead of leaving this section stale.
   cluster sync yet.
 - **Done:** `charts/ticketflow-app` — standalone Helm chart for `catalog-api`+`frontend`
   (Deployment/Service/ConfigMap/ServiceMonitor/PodDisruptionBudget for catalog-api, same plus
-  Ingress for frontend), deployed via `gitops/apps/ticketflow-app.yaml` (`targetRevision: main`,
+  Ingress for frontend), deployed via the `ticketflow-app` ApplicationSet element (`targetRevision: main`,
   namespace `ticketflow`, shared with `charts/kafka-cluster`'s Kafka so catalog-api reaches the
   bootstrap service by short in-namespace DNS). Team decision: catalog-api/frontend must NOT be
   deployed in the same Application as Kafka — this chart was split out of `charts/kafka-cluster`
   (which originally held both) for exactly that reason; `lint`/`template`/kubeconform all pass
   for both charts post-split.
-- **Not started:** `gitops/apps/notification-worker.yaml`,
-  `gitops/projects/ticketflow-project.yaml`, all `src/load-generator` code,
+- **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`),
+  all `src/load-generator` code,
   `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
   deny-by-default `NetworkPolicy` set + SOPS-encrypted `infra/ansible/secrets.yml`/
   `argocd_deploy_key` (see root `README.md` ## Bonus B1 — still "was getan werden soll", not

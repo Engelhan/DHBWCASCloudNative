@@ -1,43 +1,60 @@
 # gitops/ – ArgoCD (W2)
 
 Ab dem Punkt, an dem Ansible ArgoCD auf dem frischen k3s-Cluster installiert hat
-(`infra/ansible/roles/argocd_bootstrap/`), übernimmt ArgoCD per **App-of-Apps-Pattern** den
-gesamten weiteren Rollout aus diesem Ordner.
+(`infra/ansible/roles/argocd_bootstrap/`), übernimmt ArgoCD den gesamten weiteren Rollout aus
+diesem Ordner — gesteuert über **ein einziges `ApplicationSet`**.
 
 ## Struktur
 
 ```
 gitops/
-├── bootstrap/
-│   └── argocd-install.yaml     # Helm-Values für die ArgoCD-Installation selbst
-├── projects/
-│   └── ticketflow-project.yaml # ArgoCD AppProject: erlaubte Repos/Namespaces/Ressourcen (TODO)
-└── apps/
-    ├── app-of-apps.yaml        # Root-Application, zeigt (nicht-rekursiv) auf diesen Ordner
-    ├── longhorn.yaml           # verteilter Block-Storage, Wrapper-Chart ../charts/longhorn
-    ├── cert-manager.yaml       # cert-manager-Operator, Wrapper-Chart ../charts/cert-manager
-    ├── cert-manager-issuer.yaml # ClusterIssuer, eigener Chart ../charts/cert-manager-config
-    ├── external-dns.yaml       # external-dns, Wrapper-Chart ../charts/external-dns
-    ├── traefik-config.yaml     # HelmChartConfig-Override fuer k3s-Traefik, eigener Chart ../charts/traefik-config
-    ├── argocd-ingress.yaml     # oeffentlicher ArgoCD-Zugriff, eigener Chart ../charts/argocd-ingress
-    ├── cnpg-operator.yaml      # CloudNativePG-Operator, Wrapper-Chart ../charts/cnpg-operator
-    ├── strimzi-operator.yaml   # Strimzi-Kafka-Operator, Wrapper-Chart ../charts/strimzi-operator
-    ├── kube-prometheus-stack.yaml # Prometheus/Alertmanager/Grafana, Wrapper-Chart ../charts/kube-prometheus-stack
-    ├── loki.yaml               # Log-Aggregation, Wrapper-Chart ../charts/loki
-    ├── tempo.yaml              # Trace-Aggregation, Wrapper-Chart ../charts/tempo
-    ├── keda.yaml               # KEDA, Wrapper-Chart ../charts/keda — TODO
-    └── kafka-cluster.yaml      # Kafka-Cluster-Instanz, eigener Chart ../charts/kafka-cluster
+├── env/
+│   └── cluster.yaml         # ZENTRALE Konfiguration: Fork-URL, DNS-Zone, ACME, Images, dev/prod
+└── applicationset.yaml      # erzeugt alle 19 Applications aus einer Liste
 ```
 
-Jede `Application` in diesem Ordner zeigt auf einen Chart unter [`../charts/`](../charts/) in
-diesem Repo — nie direkt auf einen Upstream-Helm-Repo. Für Addons, die es upstream als Chart
-gibt (Longhorn, cert-manager, external-dns, CNPG, Strimzi, kube-prometheus-stack, Loki, Tempo,
-künftig KEDA), ist das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den
-Upstream-Chart, eigene `values.yaml`) statt Application-inline-`helm.valuesObject` — ein
-einheitliches Muster für alle Charts in diesem Repo, siehe `charts/README.md`.
+`env/cluster.yaml` ist die einzige git-getrackte Datei, die für ein eigenes Deployment angepasst
+werden muss. Sie wird an vier Stellen gelesen:
 
-`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack` brauchen zusätzlich
-`syncOptions: [ServerSideApply=true]`: alle drei Upstream-Charts bündeln einzelne CRDs deutlich
+| Leser | wofür |
+|---|---|
+| ArgoCD (git-files-Generator) | Repo-URL, Revision, Environment des ApplicationSet |
+| ArgoCD (Multi-Source `$values`) | reicht die Datei jedem Chart als zusätzliche Values-Datei durch |
+| Helm-Charts | `.Values.ticketflow.*` — DNS-Zone, Image-Registry/-Tag, ACME-Kontakt, TSIG-Key-Name |
+| Terraform / Ansible | `namePrefix` bzw. `repoURL` (siehe `infra/`) |
+
+### Warum ein ApplicationSet statt 19 Application-Dateien
+
+Vorher lag unter `apps/` je eine `Application`-Datei pro Komponente plus eine
+`app-of-apps.yaml` als Root. Die Repo-URL stand damit **19-mal** im Repo (plus einmal in
+`infra/ansible/roles/gitops_secrets/`) — für einen Fork waren das 20 Stellen, von denen eine
+übersehene genügte, damit ArgoCD still auf das Original-Repo zeigte. Jetzt steht sie genau
+einmal: in der `repoURL` des git-Generators in `applicationset.yaml`. Dass sie dort wörtlich
+stehen bleiben muss, ist ein Henne-Ei-Problem — der Generator muss wissen, aus welchem Repo er
+`env/cluster.yaml` überhaupt lesen soll.
+
+Jedes Listen-Element beschreibt eine Application mit `name`, `chartPath`, `namespace` und
+optional `serverSideApply`, `syncWave`, `ignoreReplicas`. Alles, was nicht für alle Applications
+gleich ist, steht im `templatePatch` am Ende der Datei — `spec.template` ist ein typisiertes
+Kubernetes-Objekt, in dem Go-Ausdrücke nur innerhalb von String-Werten funktionieren, nicht als
+`{{- if }}`-Blöcke um YAML-Schlüssel herum.
+
+Jede erzeugte `Application` zeigt auf einen Chart unter [`../charts/`](../charts/) in diesem Repo
+— nie direkt auf ein Upstream-Helm-Repo. Für Addons, die es upstream als Chart gibt (Longhorn,
+cert-manager, external-dns, CNPG, Strimzi, kube-prometheus-stack, Loki, Tempo, KEDA, AKHQ), ist
+das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den Upstream-Chart, eigene
+`values.yaml`), siehe `charts/README.md`.
+
+### dev/prod
+
+Jeder Chart bekommt zusätzlich `values-<ticketflow.environment>.yaml` als Values-Datei, per
+`ignoreMissingValueFiles: true` übersprungen, wo es die Datei nicht gibt. Ein Umschalten von
+`dev` auf `prod` ist deshalb genau eine Zeile in `env/cluster.yaml` und braucht keine Änderung am
+ApplicationSet — auch dann nicht, wenn ein Chart später einen dev/prod-Split bekommt.
+
+`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack`/`keda` brauchen zusätzlich
+`syncOptions: [ServerSideApply=true]`: alle vier Upstream-Charts bündeln einzelne CRDs deutlich
+
 über 262144 Byte (CNPGs `poolers`-CRD über 650 KB, Strimzis `Kafka`-CRD über 330 KB,
 kube-prometheus-stacks `Prometheus`-CRD über 800 KB) — Client-Side-Apply würde die komplette
 Ressource zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
@@ -72,20 +89,28 @@ Namespace `monitoring`, Persistenz durchgehend über Longhorn (bereits Default-S
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
 
-**`app-of-apps.yaml` schließt sich per `source.directory.exclude` selbst aus** der Ressourcenliste
-aus, die es synct — es liegt im selben Ordner, den es (nicht-rekursiv) einliest. Ohne das
-`exclude` würde die Application sich selbst als verwaltete Ressource auffassen; mit
-`prune: true` + `selfHeal: true` hätte ein Sync dann versuchen können, die eigene
-`Application`-Ressource zu löschen (und über deren `resources-finalizer` kaskadierend alle
-Kind-Applications mit ihr) — auf einem laufenden Cluster beobachtet, bevor der Fix live war.
-Jede neue Datei in `apps/` ist automatisch sicher (sie referenziert sich nicht selbst); nur
-`app-of-apps.yaml` selbst braucht dieses `exclude`.
+**Der Root ist kein `Application` mehr, sondern das `ApplicationSet` selbst.** Damit entfällt auch
+der frühere `source.directory.exclude`-Kunstgriff: die alte `app-of-apps.yaml` lag im selben
+Ordner, den sie synchronisierte, und hätte sich mit `prune: true` + `selfHeal: true` sonst selbst
+löschen können (über ihren `resources-finalizer` kaskadierend alle Kind-Applications mit ihr — auf
+einem laufenden Cluster beobachtet, bevor der Fix live war). Ein ApplicationSet verwaltet seine
+Applications, ohne sich selbst als Ressource zu sehen.
+
+**Migration von App-of-Apps auf das ApplicationSet** (einmalig, auf einem bereits laufenden
+Cluster): die alte Root-Application muss ohne Kaskade verschwinden, sonst reißt ihr Finalizer alle
+Workloads mit. Das ApplicationSet übernimmt die verwaisten Applications danach über ihre Namen.
+
+```bash
+kubectl -n argocd patch app app-of-apps --type=merge -p '{"metadata":{"finalizers":null}}'
+kubectl -n argocd delete app app-of-apps --cascade=orphan
+kubectl apply -f gitops/applicationset.yaml
+kubectl -n argocd get applications      # 19 Stueck, keine Duplikate
+```
 
 ## ArgoCD-UI öffentlich erreichbar (`argocd-ingress`)
 
-`gitops/apps/argocd-ingress.yaml` + `charts/argocd-ingress/` machen die ArgoCD-UI über die echte
-DHBW-DNS-Zone erreichbar (`argocd.cas438007-at-cas-dhbw-de.users.dhbw.site` per Default, siehe
-`charts/argocd-ingress/values.yaml`). Statt TLS an Traefik zu terminieren (bräuchte
+Das Element `argocd-ingress` im ApplicationSet + `charts/argocd-ingress/` machen die ArgoCD-UI über die echte
+DHBW-DNS-Zone erreichbar (`argocd.<ticketflow.dnsZone>`, abgeleitet aus `env/cluster.yaml`). Statt TLS an Traefik zu terminieren (bräuchte
 `server.insecure=true` + ConfigMap-Patch + Neustart von `argocd-server`) nutzt der Chart
 TLS-Passthrough: ein `Certificate` erzeugt das Secret `argocd-server-tls`, das ArgoCDs
 API-Server automatisch selbst für sein TLS verwendet (offiziell dokumentiertes Verhalten), eine
@@ -101,7 +126,7 @@ kein DNS-Record, live so beobachtet. Statt hier rohe Traefik-VIPs zu hinterlegen
 Cluster-Rebuild neu vergeben werden und damit gegen "ein Ablauf bringt alles hoch" verstoßen
 würden), setzt `charts/argocd-ingress/templates/ingressroute-tcp.yaml` diese Annotation auf einen
 stabilen Hostnamen (`charts/argocd-ingress/values.yaml` → `externalDnsTarget`,
-`traefik.<zone>`). Dieser Hostname wiederum wird von `gitops/apps/traefik-config.yaml` +
+`traefik.<zone>`). Dieser Hostname wiederum wird vom Element `traefik-config` +
 `charts/traefik-config/` erzeugt: ein `HelmChartConfig`-Objekt (`helm.cattle.io/v1`, Name/
 Namespace `traefik`/`kube-system`) mergt eine `external-dns.alpha.kubernetes.io/hostname`-
 Annotation in k3s' eigenes, gebündeltes Traefik-`HelmChart` — der offiziell dokumentierte Weg,
@@ -126,10 +151,11 @@ Upstream-Helm-Repos selbst (`charts.longhorn.io`, `charts.jetstack.io`,
 Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim Sync per
 `helm dependency build` automatisch.
 
-**Bei einem eigenen Fork** steht `git@github.com:Engelhan/DHBWCASCloudNative.git` in sechs
-Dateien (allen `gitops/apps/*.yaml`) — nicht einzeln suchen und ersetzen, sondern
-`../deploy.env.example` nach `../deploy.env` kopieren, eigene Fork-URL eintragen und
-`python3 ../scripts/personalize.py` laufen lassen, siehe Root-`README.md` ## Betrieb.
+**Bei einem eigenen Fork** wird die Fork-URL an genau zwei Stellen eingetragen:
+`env/cluster.yaml` → `ticketflow.repoURL` (daraus speisen sich alle erzeugten Applications und
+das Credential aus `infra/ansible/roles/gitops_secrets`) und die `repoURL` des git-Generators in
+`applicationset.yaml` (Henne-Ei, siehe ## Struktur). Ein Suchen-und-Ersetzen-Skript dafür gibt es
+nicht mehr — es wurde zusammen mit `gitops/apps/` entfernt, weil es nichts mehr zu verteilen gibt.
 
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
@@ -141,11 +167,20 @@ werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
 
 ## DNS/ACME (cert-manager-issuer, external-dns)
 
-Nutzen die echte DHBW-DNS-Zone `cas438007-at-cas-dhbw-de.users.dhbw.site`
-(self-service.dhbw.cloud) — Zone/TSIG-Keyname stehen in `charts/cert-manager-config/values.yaml`
-bzw. `charts/external-dns/values.yaml` (dieselben Werte an beiden Stellen — bei einem eigenen
-Fork per `../scripts/personalize.py` an beiden Stellen gleichzeitig ersetzbar, siehe ## Privates
-Repo oben). Beide `Application`s sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
+Nutzen die echte DHBW-DNS-Zone aus `env/cluster.yaml` (`ticketflow.dnsZone`, registriert über
+self-service.dhbw.cloud). Zone, RFC2136-Server und TSIG-Key-Name stehen dort **einmal** und
+werden von beiden Charts gelesen — vorher lagen dieselben Werte doppelt in
+`charts/cert-manager-config/values.yaml` und `charts/external-dns/values.yaml` und konnten
+auseinanderlaufen.
+
+`charts/cert-manager-config` liest sie direkt in seinen eigenen Templates. `charts/external-dns`
+kann das nicht, weil die zonenabhängigen Werte in den Values des **gewrappten** Upstream-Charts
+stehen und Helm Values-Dateien nicht templatet: dort rendert `templates/zone-configmap.yaml` eine
+ConfigMap, die per `$(DNS_ZONE)`/`$(RFC2136_ZONE)`/`$(RFC2136_KEYNAME)` in den Container-Args
+expandiert wird — derselbe Mechanismus, den der Chart für
+`--rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)` ohnehin schon nutzt.
+
+Beide `Application`s sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
 
 **Das eigentliche TSIG-Secret steht bewusst NICHT im Repo** (nur die Referenz
 `external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`) — vor dem ersten Sync manuell anlegen:
@@ -177,7 +212,7 @@ deployen.
 ## Verwendung
 
 ```bash
-kubectl apply -f gitops/apps/app-of-apps.yaml   # normalerweise automatisch via argocd_bootstrap
+kubectl apply -f gitops/applicationset.yaml   # normalerweise automatisch via argocd_bootstrap
 argocd app list
 argocd app get longhorn
 argocd app get cert-manager
@@ -185,7 +220,7 @@ argocd app get cert-manager
 
 ## kafka-cluster / ticketflow-app
 
-`gitops/apps/kafka-cluster.yaml` und `gitops/apps/ticketflow-app.yaml` zeigen beide auf
+Die Elemente `kafka-cluster` und `ticketflow-app` zeigen beide auf
 `targetRevision: main`. Beide nutzen `helm.valueFiles: [values-dev.yaml]` — auf dem Lab-Cluster
 bewusst die kleine Variante (1 Kafka-Broker, 1 Replica je App-Service) statt `values-prod.yaml`.
 Destination-Namespace für beide `ticketflow`, per `CreateNamespace=true` — getrennt vom
@@ -203,6 +238,5 @@ Inhaltsänderung). `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** T
 `kafka-cluster` oder `ticketflow-app` — eigene, volleigenständige Charts
 (`charts/notification-worker/`, `charts/postgres-cluster/`) mit eigenen Applications.
 
-`TODO`: `keda.yaml` (mit eigenem Wrapper-Chart unter `../charts/`, analog zu allen anderen
-Addons) und `projects/ticketflow-project.yaml` fehlen noch — alle Applications laufen bislang mit
-`project: default`.
+`TODO`: ein dediziertes `AppProject` (Repo-/Namespace-/Ressourcen-Scoping) fehlt noch — alle
+Applications laufen bislang mit `project: default`.

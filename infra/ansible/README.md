@@ -13,7 +13,7 @@ Bewusst gepinnt statt "latest"/"stable"-Tags zu folgen (Reproduzierbarkeit, sieh
 
 | Komponente | Version | Quelle |
 |---|---|---|
-| k3s | `v1.36.2+k3s1` | [k3s-io/k3s Releases](https://github.com/k3s-io/k3s/releases) |
+| k3s | `v1.37.0+k3s1` | [k3s-io/k3s Releases](https://github.com/k3s-io/k3s/releases) |
 | ArgoCD | `v3.4.5` | [argoproj/argo-cd Releases](https://github.com/argoproj/argo-cd/releases) (neueste stabile Version, nicht die 3.5-Release-Candidates) |
 
 ## IPv6 (DHBWV6) und Dual-Stack
@@ -54,14 +54,14 @@ ansible/
 │   └── hosts.ini.example
 ├── playbooks/
 │   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap -> gitops_secrets
-│   └── bootstrap-gitops.yml # nur ArgoCD/App-of-Apps + gitops_secrets, separat erneut aufrufbar
+│   └── bootstrap-gitops.yml # nur ArgoCD/ApplicationSet + gitops_secrets, separat erneut aufrufbar
 └── roles/
     ├── common/               # Paketindex, Basispakete, deterministischer Hostname
     ├── k3s_server/           # k3s-Server (IPv6-Flags), Node-Token, kubeconfig lokal abholen
     ├── k3s_agent/            # k3s-Agent, Join per Token/URL der Control-Plane
     ├── node_labels/          # topology.ticketflow/region je Worker (aus dem Terraform-Inventory)
-    ├── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, App-of-Apps
-    └── gitops_secrets/       # RFC2136-TSIG-K8s-Secrets fuer cert-manager/external-dns (aus secrets.yml)
+    ├── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, ApplicationSet
+    └── gitops_secrets/       # ArgoCD-Repo-Credential + RFC2136-TSIG-K8s-Secrets (aus secrets.yml)
 ```
 
 ## Warum Ansible und nicht alles in Terraform (`user_data`/cloud-init)
@@ -123,7 +123,7 @@ Das ArgoCD-Admin-Passwort wird am Ende des Playbook-Laufs in der Konsolenausgabe
 Zwei Dinge, die GitOps strukturell nicht selbst bereitstellen kann (ArgoCD ist git-getrieben,
 beide Werte dürfen laut `CLAUDE.md` ## Infra layering **nicht** im Git-Repo stehen): das
 ArgoCD-Repository-Credential fürs private GitHub-Repo selbst, und die RFC2136-TSIG-K8s-Secrets,
-die `gitops/apps/cert-manager-issuer.yaml`/`external-dns.yaml` referenzieren. Die Rolle
+die `charts/cert-manager-config`/`charts/external-dns` referenzieren. Die Rolle
 `gitops_secrets` schließt beide Lücken, läuft aber komplett lokal gegen die abgeholte
 `kubeconfig` (kein SSH, die Geheimnisse landen nie in einer Prozessliste auf den VMs) und
 installiert selbst keine Helm-Charts/Operatoren — das bleibt vollständig GitOps-eigen.
@@ -137,16 +137,20 @@ cat argocd_deploy_key.pub
 ```
 
 Den ausgegebenen Public Key unter GitHub → Repo → Settings → Deploy keys → "Add deploy key" als
-**Read-only**-Key eintragen. `argocd_deploy_key`/`argocd_deploy_key.pub` sind git-ignoriert. Jede
-`Application` in `gitops/apps/` zeigt auf einen Chart in diesem Repo (siehe `gitops/README.md`
-## Struktur) und nutzt deshalb `repoURL: git@github.com:...` (SSH) statt `https://...` — nur die
+**Read-only**-Key eintragen. `argocd_deploy_key`/`argocd_deploy_key.pub` sind git-ignoriert. Jede von
+`gitops/applicationset.yaml` erzeugte `Application` zeigt auf einen Chart in diesem Repo (siehe
+`gitops/README.md` ## Struktur) und nutzt deshalb `repoURL: git@github.com:...` (SSH) statt
+`https://...` — nur die
 Upstream-Helm-Repos, die die Wrapper-Charts in ihrem `Chart.yaml.dependencies` referenzieren
 (Longhorn, cert-manager, external-dns), bleiben unverändert öffentliches HTTPS, die brauchen
 kein Credential.
 
-Bei einem **eigenen Fork** steht diese Repo-URL in sechs Dateien fest verdrahtet — dafür gibt es
-`../scripts/personalize.py` (siehe Root-`README.md` ## Betrieb), statt sie einzeln von Hand zu
-suchen und zu ersetzen.
+Die Rolle liest die Repo-URL nicht mehr aus einem fest verdrahteten Literal, sondern per
+`include_vars` aus `gitops/env/cluster.yaml` (`ticketflow.repoURL`) — derselben Datei, aus der
+auch ArgoCD und alle Charts ihre Werte beziehen. Vorher stand sie hier wörtlich und war damit die
+eine Stelle, die ein Fork zuverlässig übersah: das Credential wurde dann für das **Original**-Repo
+registriert, und sämtliche Applications blieben dauerhaft `Unknown`, ohne dass die Fehlermeldung
+darauf hingewiesen hätte.
 
 **RFC2136-TSIG (sobald die DNS-Zone aktiv ist):**
 

@@ -114,9 +114,11 @@ flowchart TB
 2. Ansible konfiguriert die VMs, installiert k3s (Server auf der Control-Plane, Agents auf den
    Workern), übernimmt die simulierte Region als Kubernetes-Node-Label
    (`topology.ticketflow/region`) und bootstrapt ArgoCD — siehe [`infra/ansible/`](infra/ansible/).
-3. ArgoCD übernimmt ab hier per GitOps (App-of-Apps) den Rest: CNPG-Operator, Strimzi-Operator,
-   KEDA, kube-prometheus-stack und den TicketFlow-Helm-Chart selbst — siehe
-   [`gitops/`](gitops/) und [`charts/kafka-cluster/`](charts/kafka-cluster/).
+3. ArgoCD übernimmt ab hier per GitOps den Rest: ein einziges `ApplicationSet`
+   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugt alle 19 Applications —
+   CNPG-Operator, Strimzi-Operator, KEDA, kube-prometheus-stack und die TicketFlow-Charts selbst.
+   Alle deployment-spezifischen Werte kommen dabei aus der zentralen
+   [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) — siehe [`gitops/`](gitops/).
 4. `catalog-api` nimmt Reservierungsanfragen entgegen und veröffentlicht sie als Event auf Kafka,
    statt synchron in die Datenbank zu schreiben.
 5. `reservation-worker` konsumiert diese Events, sperrt den Sitzplatz transaktional in CNPG-Postgres
@@ -130,65 +132,104 @@ Detailskizze und Screenshots des tatsächlichen Deployments folgen in
 
 ## Betrieb
 
-> `TODO`: Sobald Terraform/Ansible/Charts final sind, exakte, kopierbare Befehle inkl. Beispielwerten
-> hier verifizieren. Geplanter Ablauf:
+Das gesamte Deployment wird über **eine** git-getrackte Konfigurationsdatei gesteuert:
+[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml). Sie wird von Terraform, Ansible, ArgoCD und
+allen Helm-Charts gelesen — Fork-URL, DNS-Zone, ACME-Kontakt, Image-Registry, Image-Tag und die
+Umgebung (`dev`/`prod`) stehen dort jeweils genau einmal. Nur echte Geheimnisse liegen daneben, in
+zwei gitignorierten Dateien.
 
-### Eigenes Deployment (anderer Studierender / Dozent)
+### Einmalig je Fork
 
-Dieses Repo gehört zu einer konkreten DHBW-Kennung (`cas438007`) und einem konkreten privaten
-GitHub-Fork. Für ein eigenes Deployment davon abweichend:
+Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
 
-1. **Repo forken/klonen** unter dem eigenen GitHub-Account (privat, siehe
+1. **Repo forken** unter dem eigenen GitHub-Account, **privat** (siehe
    [`gitops/README.md`](gitops/README.md) ## Privates Repo).
-2. **Personalisierbare, nicht-geheime Werte** (Fork-URL, DNS-Zone, ACME-E-Mail, TSIG-Keyname) an
-   einer Stelle setzen statt in bis zu neun Dateien einzeln zu suchen:
+2. **Python-venv** für Ansible anlegen — muss aus WSL/Linux laufen, nicht aus nativem Windows
+   (`ansible-core` scheitert dort mit `WinError 87`):
    ```bash
-   cp deploy.env.example deploy.env   # eigene Werte eintragen
-   python3 scripts/personalize.py     # schreibt sie in gitops/**/*.yaml + charts/**/*.yaml
-   git diff                           # pruefen, dann committen
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r infra/ansible/requirements.txt
    ```
-   Jeder Wert lässt sich alternativ auch als Umgebungsvariable setzen (siehe
-   `deploy.env.example`) — praktisch für CI oder um `deploy.env` gar nicht erst anzulegen.
-3. **Secrets bleiben davon unberührt** (das Skript fasst nur getrackte, unkritische Werte an) —
-   separat ausfüllen:
-   - `infra/terraform/terraform.tfvars` (aus `.example`): eigene OpenStack-Application-Credentials.
-   - `infra/ansible/secrets.yml` (aus `.example`): eigener RFC2136-TSIG-Secret-*Wert*.
-   - `infra/ansible/argocd_deploy_key`: `ssh-keygen -t ed25519 -f infra/ansible/argocd_deploy_key
-     -N ""`, Public Key als Read-only-Deploy-Key im eigenen Fork eintragen — siehe
-     [`infra/ansible/README.md`](infra/ansible/README.md) ## GitOps-Secrets.
-4. Ab hier der normale Ablauf unten (`terraform apply` → `ansible-playbook site.yml`).
+3. **SSH-Keypair für die VMs**: `~/.ssh/ticketflow_dhbwcloud{,.pub}` (Terraform importiert den
+   Public Key; Pfade sind über `ssh_public_key_path`/`ssh_private_key_path` änderbar).
+4. **DNS-Zone registrieren** auf `self-service.dhbw.cloud` mit RFC2136-Freigabe. Notiert werden
+   Zonenname, TSIG-Key-**Name** und TSIG-Secret-**Wert**.
+5. **ArgoCD-Deploy-Key erzeugen** und den Public Key im eigenen Fork unter *Settings → Deploy keys*
+   als **Read-only** eintragen — ohne ihn kann ArgoCD das private Repo nicht klonen und alle
+   Applications bleiben `Unknown`:
+   ```bash
+   ssh-keygen -t ed25519 -C "argocd-deploy-key@ticketflow" \
+     -f infra/ansible/argocd_deploy_key -N ""
+   cat infra/ansible/argocd_deploy_key.pub
+   ```
+6. **Images bauen lassen**: Workflow `build-images` in *Actions* einmal manuell starten
+   (`workflow_dispatch`). Ein frischer Fork hat sonst noch keine Images, und alle vier Services
+   landen im `ImagePullBackOff`.
+7. **Die vier ghcr.io-Packages auf „Public" stellen** (GitHub → Packages → jeweils *Package
+   settings*). Der eingebaute `GITHUB_TOKEN` kann das nicht selbst setzen; bis dahin scheitert der
+   Pull trotz korrektem Tag.
+8. **DHBW-Netz/VPN**: `certificates.dhbw.cloud` (ACME) ist nur von dort erreichbar.
+
+### Konfigurieren
 
 ```bash
-# 1. Infrastruktur auf der DHBWCloud erzeugen
+# 1. Zentrale Konfiguration - die einzige git-getrackte Datei, die angefasst werden muss
+$EDITOR gitops/env/cluster.yaml
+#    repoURL, dnsZone, acmeEmail, rfc2136.keyName, imageRegistry, namePrefix
+
+# 2. Die eine Repo-URL im git-Generator des ApplicationSet (Henne-Ei, siehe Kommentar dort)
+$EDITOR gitops/applicationset.yaml
+
+# 3. Committen UND in den eigenen Fork pushen.
+#    ArgoCD liest ausschliesslich den Remote-Stand von targetRevision - ein lokal geaenderter,
+#    ungepushter Stand wird nie ausgerollt.
+git commit -am "chore: configure deployment" && git push
+
+# 4. Geheimnisse (beide gitignored, je eine .example-Vorlage daneben)
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+#    -> OpenStack-Application-Credentials, Region, Image, Flavors
+cp infra/ansible/secrets.yml.example infra/ansible/secrets.yml
+#    -> rfc2136_tsig_secret_value (der WERT, nicht der Key-Name)
+```
+
+### Ausrollen
+
+```bash
+# 1. Infrastruktur auf der DHBWCloud erzeugen (generiert auch inventory/hosts.ini)
 cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars   # OpenStack-Credentials/Projekt eintragen
 terraform init
 terraform apply
 
-# 2. VMs konfigurieren, k3s-Cluster aufbauen, ArgoCD bootstrappen
+# 2. VMs konfigurieren, k3s aufbauen, ArgoCD bootstrappen, GitOps-Secrets anlegen.
+#    Der letzte Schritt wendet gitops/applicationset.yaml an - alles Weitere rollt ArgoCD aus.
 cd ../ansible
-ansible-inventory -i inventory/hosts.ini --list        # von Terraform-Output generiert
-ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+ansible-inventory -i inventory/hosts.ini --list
+ansible-playbook playbooks/site.yml
+#    -> das initiale ArgoCD-Admin-Passwort steht in der Playbook-Ausgabe
 
-# 3. Restliche Plattform per GitOps ausrollen (Operatoren, Kafka, Postgres, App)
-export KUBECONFIG=./kubeconfig   # von Ansible aus der Control-Plane geholt
-kubectl apply -f gitops/apps/app-of-apps.yaml
-
-# 4. Rollout prüfen
+# 3. Rollout prüfen (aus dem Repo-Wurzelverzeichnis)
+cd ../..
+export KUBECONFIG=infra/ansible/kubeconfig
+kubectl -n argocd get applicationset ticketflow
+kubectl -n argocd get applications          # 19 Stueck, alle Synced/Healthy
 kubectl get pods -A -o wide
 kubectl get kafka,cluster.postgresql.cnpg.io -A
 
-# 5. Künstlichen Lastpfad auslösen
-cd ../../src/load-generator
+# 4. Künstlichen Lastpfad auslösen
+cd src/load-generator
 k6 run flash-sale.js --env EVENT_ID=demo-event --env VUS=500
 
-# 6. Beobachten
+# 5. Beobachten
 kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
 # -> Dashboard "TicketFlow Overview" öffnen
 ```
 
-Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten (ohne manuelle
-Portal-Klicks) zum laufenden Stack führen.
+Von `dev` auf `prod` (mehr Replicas, Topology-Spread mit Wirkung, engere PodDisruptionBudgets)
+schaltet eine einzige Zeile um — `ticketflow.environment` in `gitops/env/cluster.yaml`. Das
+ApplicationSet zieht daraufhin für jeden Chart die passende `values-<env>.yaml`.
+
+Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten zum laufenden
+Stack führen.
 
 ### Lokale Entwicklung (catalog-api + frontend)
 
@@ -297,7 +338,8 @@ skalieren würde.
 | `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
 
 `reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert;
-`gitops/apps/reservation-worker.yaml` ignoriert `spec.replicas` explizit (`ignoreDifferences`),
+Das Element `reservation-worker` im ApplicationSet ignoriert `spec.replicas` explizit
+(`ignoreDifferences`),
 sonst würde ArgoCDs `selfHeal` jede KEDA-Skalierung sofort wieder zurücksetzen — Standardmuster
 für ArgoCD zusammen mit einem HPA/KEDA-verwalteten Deployment.
 
@@ -317,23 +359,32 @@ Log-Grepping. Eine unbenutzte `Service`-Ressource nur für den Scraper wäre rei
 Alert-Regel macht zusätzlich sichtbar, ab wann die Lastspitze geschäftlich relevant wird
 (Kunden warten spürbar), nicht nur technisch (Lag-Zahl steigt).
 
-**W1 – Packaging (Helm).** *Wahl:* ein Umbrella-Chart `charts/kafka-cluster` mit
-`values-dev.yaml`, `values-prod.yaml` und `values.schema.json` (Muster bereits im ersten
-Service-Chart etabliert, siehe [`charts/notification-worker/values.schema.json`](charts/notification-worker/values.schema.json)).
-*Alternative:* Kustomize mit Base+Overlays. *Begründung:* Kustomize kennt kein Werte-Schema — ein
-vergessener oder falsch typisierter dev-Wert (z. B. eine String- statt Int-Replica-Zahl) fiele
-erst zur Laufzeit im Cluster auf. Mit Helm+`values.schema.json` schlägt `helm lint`/`helm install`
-schon vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder Strimzi-`Kafka`-Resource
-überhaupt angewendet wird — bei zustandsbehafteten Custom Resources ist das der relevantere
-Fehlerzeitpunkt.
+**W1 – Packaging (Helm).** *Wahl:* ein Chart je Komponente, alle nach demselben verbindlichen
+Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für Applikations-Charts) mit
+`values-dev.yaml`, `values-prod.yaml` und `values.schema.json`; übergreifende Werte
+(Image-Registry/-Tag, DNS-Zone, Umgebung) stehen einmalig in
+[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) und werden von ArgoCD per Multi-Source
+`$values` in jeden Chart gereicht. *Alternative:* Kustomize mit Base+Overlays. *Begründung:*
+Kustomize kennt kein Werte-Schema — ein vergessener oder falsch typisierter Wert (etwa eine
+String- statt Int-Replica-Zahl, oder ein leerer Image-Tag) fiele erst zur Laufzeit im Cluster auf.
+Genau das ist hier schon einmal passiert: `notification-worker` lag mit leerem `image.tag` im
+Repo und war ohne `--set` gar nicht deploybar. Mit Helm+`values.schema.json` schlägt
+`helm lint`/`helm template` vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder
+Strimzi-`Kafka`-Ressource überhaupt angewendet wird — bei zustandsbehafteten Custom Resources ist
+das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, dass das Umschalten
+von `dev` auf `prod` (mehr `reservation-worker`-Replicas, echter Topology-Spread, engere
+PodDisruptionBudgets) eine einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
 
-**W2 – GitOps.** *Wahl:* ArgoCD mit App-of-Apps-Pattern, Auto-Sync und Self-Heal.
+**W2 – GitOps.** *Wahl:* ArgoCD mit einem `ApplicationSet` (Matrix aus git-files- und
+list-Generator), Auto-Sync und Self-Heal.
 *Alternative:* reines `kubectl apply`/eine CI-Pipeline ohne Cluster-seitigen Agenten.
 *Begründung:* Ansible bootstrappt bewusst nur so viel, dass ArgoCD läuft; alles danach (Operatoren,
 Kafka, Postgres, App) kommt aus Git. Der Trade-off: eine reine CI-Pipeline hätte keinen laufenden
 Agenten im Cluster, der Drift erkennt — eine manuell (z. B. während eines Incidents) geänderte
 Replica-Zahl bliebe bestehen, bis zufällig die nächste Pipeline läuft, statt automatisch per
-Self-Heal zurückgedreht zu werden. Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
+Self-Heal zurückgedreht zu werden. Das ApplicationSet statt einzelner `Application`-Dateien
+(App-of-Apps) ist dabei bewusst gewählt: vorher stand die Repo-URL 20-mal im Repo, und ein Fork,
+der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Repo lief. Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
 `kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
 
 ## Grenzen
