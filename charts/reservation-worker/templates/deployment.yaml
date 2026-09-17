@@ -49,12 +49,12 @@ spec:
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "reservation-worker.fullname" . }}
+                  name: {{ include "reservation-worker.fullname" . }}-db-credentials
                   key: username
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "reservation-worker.fullname" . }}
+                  name: {{ include "reservation-worker.fullname" . }}-db-credentials
                   key: password
             {{- if .Values.config.kafkaSasl.enabled }}
             - name: KAFKA_SASL_PASSWORD
