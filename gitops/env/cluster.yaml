@@ -77,7 +77,7 @@ ticketflow:
   # Git-Short-SHA des zuletzt gebauten Images, gilt fuer alle vier Services. Wird vom
   # bump-Job in .github/workflows/build-images.yml automatisch fortgeschrieben - hier normalerweise
   # nicht von Hand editieren. Nie "latest" (P3).
-  imageTag: "085c7b8e"
+  imageTag: "a58c36a9"
 
   # --- Infrastruktur ---------------------------------------------------------------------
   # Praefix aller OpenStack-Ressourcennamen (infra/terraform/main.tf liest das per yamldecode).
