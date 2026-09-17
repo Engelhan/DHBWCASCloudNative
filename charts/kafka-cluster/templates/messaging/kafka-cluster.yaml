@@ -149,6 +149,11 @@ spec:
       # wo die Services es per secretKeyRef lesen koennen (siehe _helpers.tpl appNamespace).
       # Ohne dieses Feld wuerden die KafkaUser-CRs schlicht nie reconciled - kein Fehler, nur
       # dauerhaft leerer status und fehlende Secrets.
+      #
+      # GEHOERT ZUSAMMEN MIT charts/strimzi-operator/values.yaml: der Cluster-Operator loescht das
+      # Entity-Operator-Deployment wieder, solange nicht
+      # STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED=true an ihm gesetzt ist (dort via
+      # extraEnvs). Dieses Feld allein reicht nicht.
       watchedNamespace: {{ include "kafka-cluster.appNamespace" . }}
       resources:
         requests:

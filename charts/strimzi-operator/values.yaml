@@ -8,6 +8,22 @@ strimzi-kafka-operator:
   # nicht feststeht.
   watchAnyNamespace: true
 
+  # Ohne dieses Feature-Gate loescht der Cluster-Operator das Entity-Operator-Deployment wieder,
+  # sobald Topic- oder User-Operator ein watchedNamespace != Cluster-Namespace tragen:
+  #   "Entity Operator deployment deleted because Topic Operator and/or User Operator are
+  #    configured with watchedNamespace set to a different namespace but the feature is disabled."
+  # Genau das tut charts/kafka-cluster bewusst (spec.entityOperator.userOperator.watchedNamespace
+  # zeigt auf den App-Namespace, damit das generierte SCRAM-Secret dort landet, wo die Services es
+  # per secretKeyRef lesen koennen - siehe charts/kafka-cluster/templates/_helpers.tpl).
+  # Der Chart hat dafuer keinen eigenen Wert, deshalb ueber extraEnvs (wird in
+  # templates/060-Deployment-strimzi-cluster-operator.yaml gerendert, gegengeprueft). Die RBAC
+  # passt bereits: bei watchAnyNamespace: true erzeugt der Chart fuer die
+  # Entity-Operator-Delegation ein ClusterRoleBinding statt eines namespace-gebundenen
+  # RoleBindings, deckt den App-Namespace also mit ab.
+  extraEnvs:
+    - name: STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED
+      value: "true"
+
   # resources hat der Chart schon sinnvoll vorbelegt (limits 1000m/384Mi, requests 200m/384Mi) -
   # kein Override noetig. podSecurityContext/securityContext sind dagegen Chart-Default leer
   # ({}) - anders als alle anderen Operator-Charts hier nicht von Haus aus gehaertet, deshalb
