@@ -122,8 +122,12 @@ spec:
       # hinweg (Strimzi/Kafka kennt keine Listener-Scope fuer diese Liste), praktisch nutzbar ist
       # der anonyme Zugriff aber nur ueber "unauth", da "plain" weiterhin SASL verlangt - kein
       # externer Zugriffspunkt existiert fuer keinen der beiden Listener (type: internal).
+      # Nur der nackte Name, OHNE "User:"-Praefix - Strimzi haengt das Praefix selbst an jeden
+      # Eintrag an (auch an seine eigenen Operator-Identitaeten). Live im Broker-Log gefunden:
+      # "User:ANONYMOUS" hier wurde sonst zu "User:User:ANONYMOUS" im gerenderten
+      # super.users-String, was nie auf den echten Principal "User:ANONYMOUS" gematcht hat.
       superUsers:
-        - User:ANONYMOUS
+        - ANONYMOUS
 
   # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
   # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber
