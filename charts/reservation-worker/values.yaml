@@ -1,10 +1,11 @@
 image:
   repository: ghcr.io/engelhan/ticketflow-reservation-worker # siehe .github/workflows/build-images.yml
-  # Git-Short-SHA aus build-images.yml, kein :latest (siehe P3) - a0acfac6 ist der neueste
-  # tatsaechlich existierende, gegen ghcr.io verifizierte Tag (kein src/reservation-worker-Commit
-  # seither, siehe git log a0acfac..HEAD -- src/). Bei jedem neuen build-images.yml-Lauf, der
+  # Git-Short-SHA aus build-images.yml, kein :latest (siehe P3). a0acfac6 war stale (vor dem
+  # DB_HOST/DB_USER-Refactor und der SASL-Anbindung gebaut) - 4579b884 (Commit
+  # "chore(reservation-worker): re-trigger image build") ist der neueste, gegen ghcr.io
+  # verifizierte Tag mit aktuellem Code. Bei jedem neuen build-images.yml-Lauf, der
   # src/reservation-worker aendert, hier den dann aktuellen Tag eintragen.
-  tag: "a0acfac6"
+  tag: "4579b884"
   pullPolicy: IfNotPresent
 
 # Startwert, bis das ScaledObject unten (keda.minReplicaCount/.maxReplicaCount) den ersten Scale-
