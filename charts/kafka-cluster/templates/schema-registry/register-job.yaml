@@ -23,9 +23,14 @@ spec:
         app: ticketflow-schema-registrar
     spec:
       restartPolicy: Never
+      # Kein runAsNonRoot/runAsUser hier (anders als sonst im Repo ueblich) - `apk add` unten
+      # braucht Schreibzugriff auf /lib/apk/db, das im alpine-Image root gehoert; als UID 100
+      # schlug das live mit "Unable to lock database: Permission denied" fehl (das genau
+      # deswegen dauerhaft fehlschlagende Backoff-Limit blockierte wiederum einen ArgoCD-Sync,
+      # der auf den Hook wartete - siehe Git-Historie). Schadensbegrenzung bleibt trotzdem
+      # bestehen: kurzlebiger, restartPolicy: Never Ein-Schuss-Job, container-level Haertung
+      # (allowPrivilegeEscalation: false, capabilities drop ALL) unveraendert.
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 100
         seccompProfile:
           type: RuntimeDefault
       containers:
