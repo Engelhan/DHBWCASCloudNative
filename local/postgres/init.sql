@@ -37,19 +37,33 @@ CREATE TABLE reservations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Drei Veranstaltungen in drei Hallen, je 1000 Plaetze. Reihenfolge nach starts_at: catalog-api
+-- liefert GET /events so sortiert und das Frontend zeigt aktuell events[0] - "demo-konzert"
+-- bleibt dadurch das voreingestellte Event.
 INSERT INTO events (id, name, venue, starts_at) VALUES
-    ('demo-konzert', 'TicketFlow Demo-Konzert', 'Halle 1', '2026-11-20T20:00:00+01:00');
+    ('demo-konzert',  'TicketFlow Demo-Konzert',  'Halle 1',          '2026-11-20T20:00:00+01:00'),
+    ('rock-festival', 'TicketFlow Rock-Festival', 'Arena Nord',       '2026-12-05T19:30:00+01:00'),
+    ('klassik-abend', 'TicketFlow Klassik-Abend', 'Konzerthaus Sued', '2027-01-17T19:00:00+01:00');
 
--- 5 Reihen a 6 Plaetze, 3 Kategorien (Reihe 1 = premium, 2-3 = parkett, 4-5 = balkon), ein paar
--- Plaetze quer durch alle Kategorien schon "belegt", damit der Sitzplan im Screencast nicht leer
--- wirkt.
+-- 1000 Plaetze je Halle: 40 Reihen a 25 Plaetze, drei Kategorien (Reihe 1-8 premium,
+-- 9-24 parkett, 25-40 balkon), Preise je Veranstaltung leicht unterschiedlich.
+--
+-- ALLE Plaetze starten auf "free" - kein vorbelegter Sitz mehr. Der Flash-Sale-Lastpfad soll die
+-- Halle selbst leerkaufen; vorbelegte Plaetze haetten nur den Sitzplan im Screencast gefuellt und
+-- dabei die Ausgangslage jedes Lasttests verfaelscht.
 INSERT INTO seats (id, event_id, row_number, seat_number, category, price_cents, status)
 SELECT
-    'demo-konzert-seat-' || r || '-' || s,
-    'demo-konzert',
+    e.id || '-seat-' || r || '-' || s,
+    e.id,
     r,
     s,
-    CASE WHEN r = 1 THEN 'premium' WHEN r IN (2, 3) THEN 'parkett' ELSE 'balkon' END,
-    CASE WHEN r = 1 THEN 7900 WHEN r IN (2, 3) THEN 5900 ELSE 3900 END,
-    CASE WHEN (r, s) IN ((1, 3), (2, 5), (3, 1), (4, 2), (5, 6)) THEN 'occupied' ELSE 'free' END
-FROM generate_series(1, 5) AS r, generate_series(1, 6) AS s;
+    CASE WHEN r <= 8 THEN 'premium' WHEN r <= 24 THEN 'parkett' ELSE 'balkon' END,
+    CASE WHEN r <= 8 THEN e.premium_cents WHEN r <= 24 THEN e.parkett_cents ELSE e.balkon_cents END,
+    'free'
+FROM (VALUES
+    ('demo-konzert',  7900, 5900, 3900),
+    ('rock-festival', 9900, 6900, 4400),
+    ('klassik-abend', 8900, 6400, 4200)
+) AS e (id, premium_cents, parkett_cents, balkon_cents),
+generate_series(1, 40) AS r,
+generate_series(1, 25) AS s;

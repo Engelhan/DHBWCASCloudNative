@@ -100,9 +100,12 @@ gegen eine leere CNPG-Datenbank (echter Cluster-Pfad über
 [`charts/postgres-cluster/`](../../charts/postgres-cluster/)) als auch gegen die von `init.sql`
 bereits vorbefüllte lokale Dev-DB idempotent ist. `reservation-worker` schreibt ausschließlich
 in `reservations`; `events`/`seats` werden nur gelesen (Sitzplatz-Claim) bzw. von `catalog-api`
-gelesen. Die Demo-Seed-Daten (`demo-konzert` + Sitzplan) kommen weiterhin nur aus
-`local/postgres/init.sql` – die reale Cluster-DB hat nach den Migrationen leere `events`/
-`seats`-Tabellen; das Befüllen für den Screencast ist noch offen.
+gelesen. Die Demo-Stammdaten legt `catalog-api` beim Start selbst an
+([`internal/db/migrate.go`](../catalog-api/internal/db/migrate.go), idempotent per
+`ON CONFLICT DO NOTHING`) – **auch im Cluster**: drei Veranstaltungen in drei Hallen mit je 1000
+Plätzen (40 Reihen à 25), alle auf `free`. `local/postgres/init.sql` enthält dasselbe SQL, greift
+aber ausschließlich in docker-compose (der `docker-entrypoint-initdb.d`-Hook existiert nur im
+einfachen `postgres`-Image, nicht in CNPG).
 
 ## Konfiguration
 

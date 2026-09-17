@@ -75,9 +75,11 @@ config:
   # values-dev.yaml (charts/kafka-cluster), das reservation-requested nur 3 Partitionen gibt (ein
   # Consumer pro Partition ist das Maximum innerhalb einer Consumer-Group; mehr Replicas als
   # Partitionen wuerden nur untaetig herumstehen). Bei einem Wechsel auf values-prod.yaml (8
-  # Partitionen) muss dieser Wert auf 8 mitgezogen werden. lagThreshold: "10" passt zum
-  # 30-Sitzplatz-Demo-Event aus local/postgres/init.sql - ein kompletter Sellout-Burst (~30
-  # gleichzeitige Reservierungen) erzeugt genug Lag, um bis auf maxReplicaCount hochzuskalieren.
+  # Partitionen) muss dieser Wert auf 8 mitgezogen werden. lagThreshold: "10" ist bewusst
+  # niedrig: jede Halle hat 1000 Plaetze (drei Veranstaltungen, siehe local/postgres/init.sql bzw.
+  # src/catalog-api/internal/db/migrate.go), ein Flash-Sale-Burst erzeugt also weit mehr als 10
+  # unverarbeitete Nachrichten und skaliert zuverlaessig bis auf maxReplicaCount hoch, ohne dass
+  # der Schwellwert bei kleineren Lasttests gleich unerreichbar wird.
   # pollingInterval/cooldownPeriod bewusst kuerzer als KEDAs Standard (30s/300s), damit ein
   # Flash-Sale-Screencast Skalierung UND Rueckskalierung in vertretbarer Zeit zeigt, statt bis zu
   # 5 Minuten auf das Cooldown zu warten.

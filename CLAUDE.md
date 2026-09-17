@@ -489,8 +489,10 @@ commands here once these gaps close instead of leaving this section stale.
   `GET /events/{id}/seats`, `POST /events/{id}/reservations`, `GET /reservations/{id}`,
   `/healthz`/`/readyz`/`/metrics`, multi-stage Dockerfile → `distroless/static-debian12:nonroot`)
   and `src/frontend/` (plain HTML/CSS/JS, no build step, seat grid + booking form + status
-  polling, `nginx:1.27-alpine` Dockerfile). `local/postgres/init.sql` seeds one demo event
-  (`demo-konzert`, 30 seats) for both. catalog-api deliberately never writes to `reservations` —
+  polling, `nginx:1.27-alpine` Dockerfile). `local/postgres/init.sql` seeds three events in three
+  venues, 1000 seats each (40 rows x 25), all `free` — identical SQL to
+  `src/catalog-api/internal/db/migrate.go`, which is what actually seeds the cluster DB (the
+  `docker-entrypoint-initdb.d` hook only exists in the plain `postgres` image, not in CNPG). catalog-api deliberately never writes to `reservations` —
   only the (not-yet-built) `reservation-worker` will; `GET /reservations/{id}` reports `pending`
   from an in-memory cache until that row exists, so the full `pending`→`confirmed`/`rejected`
   transition can't complete locally yet (confirmed as expected during testing, not a bug) until
@@ -613,9 +615,10 @@ commands here once these gaps close instead of leaving this section stale.
   `reservation-requested`'s actual partition count on the profile that's actually synced right
   now (the `kafka-cluster` ApplicationSet element runs `values-dev.yaml`, 3 partitions — a consumer group
   can't usefully run more consumers than partitions) and needs bumping to 8 alongside any future
-  switch to `values-prod.yaml`; `lagThreshold: "10"` and the 30-seat demo event in
-  `local/postgres/init.sql` are sized so that a full sellout burst drives a full scale-out to
-  `maxReplicaCount`; `pollingInterval: 15`/`cooldownPeriod: 60` are shorter than KEDA's defaults
+  switch to `values-prod.yaml`; `lagThreshold: "10"` is deliberately low against the 1000 seats per
+  venue (three events, see `local/postgres/init.sql` / `src/catalog-api/internal/db/migrate.go`),
+  so a flash-sale burst reliably scales out to `maxReplicaCount` without the threshold being out
+  of reach for smaller load tests; `pollingInterval: 15`/`cooldownPeriod: 60` are shorter than KEDA's defaults
   (30s/300s) so a screencast shows both scale-up and scale-down without a multi-minute wait.
   `replicaCount: 1` in this chart is now purely the Deployment's starting value, not an ongoing
   source of truth — the `reservation-worker` ApplicationSet element gained an `ignoreDifferences` entry on

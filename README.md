@@ -334,7 +334,7 @@ skalieren würde.
 | Wert | dev (aktuell synct) | prod | Begründung |
 |---|---|---|---|
 | `keda.maxReplicaCount` | 3 | 8 | = Partitionszahl von `reservation-requested` je Kafka-Profil (`charts/kafka-cluster` `values-dev.yaml`/`values-prod.yaml`) — mehr Consumer als Partitionen innerhalb einer Consumer-Group wären untätig |
-| `keda.lagThreshold` | 10 | 10 | passt zum 30-Sitzplatz-Demo-Event (`local/postgres/init.sql`): ein kompletter Sellout-Burst treibt die Skalierung bis auf `maxReplicaCount` |
+| `keda.lagThreshold` | 10 | 10 | bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): ein Flash-Sale-Burst erzeugt weit mehr unverarbeitete Nachrichten und skaliert zuverlässig bis `maxReplicaCount`, ohne bei kleineren Lasttests unerreichbar zu sein |
 | `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
 
 `reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert;
