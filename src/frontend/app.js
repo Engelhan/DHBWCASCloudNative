@@ -1,17 +1,23 @@
 const API_BASE_URL = window.API_BASE_URL;
 const SESSION_ID_KEY = "ticketflow_session_id";
+const SELECTED_EVENT_KEY = "ticketflow_selected_event";
 
 const CATEGORY_LABELS = { premium: "Premium", parkett: "Parkett", balkon: "Balkon" };
 const priceFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const dateFormatter = new Intl.DateTimeFormat("de-DE", { dateStyle: "full", timeStyle: "short" });
+const shortDateFormatter = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
 
 const eventNameEl = document.getElementById("event-name");
 const eventMetaEl = document.getElementById("event-meta");
+const eventPickerEl = document.getElementById("event-picker");
+const eventSelectEl = document.getElementById("event-select");
 const hallEl = document.getElementById("hall");
 const availabilitySummaryEl = document.getElementById("availability-summary");
 const categoryLegendEl = document.getElementById("category-legend");
 
 const bookingDialogEl = document.getElementById("booking-dialog");
 const bookingFormEl = document.getElementById("booking-form");
+const dialogEventLabelEl = document.getElementById("dialog-event-label");
 const dialogSeatLabelEl = document.getElementById("dialog-seat-label");
 const dialogSeatCategoryEl = document.getElementById("dialog-seat-category");
 const dialogSeatPriceEl = document.getElementById("dialog-seat-price");
@@ -24,9 +30,16 @@ const statusMessageEl = document.getElementById("status-message");
 
 const errorBannerEl = document.getElementById("error-banner");
 
+let events = [];
 let currentEvent = null;
+// Sitzplaetze der aktuellen Halle, nach seat.id - der Klick-Handler laeuft ueber Delegation am
+// Hallen-Container (ein Listener statt 1000), deshalb wird aus der data-seat-id zurueckgemappt.
+let seatsById = new Map();
 let selectedSeat = null;
 let pollTimer = null;
+// Monoton steigend, damit eine langsame Antwort zu einem inzwischen abgewaehlten Event nicht
+// den Sitzplan des gerade ausgewaehlten ueberschreibt.
+let loadToken = 0;
 
 function seatLabel(seat) {
   return `Reihe ${seat.row_number}, Platz ${seat.seat_number}`;
@@ -50,35 +63,79 @@ function clearError() {
   errorBannerEl.hidden = true;
 }
 
-async function loadEvent() {
+async function loadEvents() {
   try {
     const response = await fetch(`${API_BASE_URL}/events`);
     if (!response.ok) throw new Error(`GET /events fehlgeschlagen (${response.status})`);
-    const events = await response.json();
-    if (!events || events.length === 0) {
+    events = (await response.json()) ?? [];
+    if (events.length === 0) {
       eventNameEl.textContent = "Kein Event verfügbar";
+      eventMetaEl.textContent = "";
+      hallEl.innerHTML = "";
+      availabilitySummaryEl.textContent = "";
       return;
     }
-    currentEvent = events[0];
-    const startsAt = new Date(currentEvent.starts_at).toLocaleString("de-DE", {
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-    eventNameEl.textContent = currentEvent.name;
-    eventMetaEl.textContent = `${currentEvent.venue} · ${startsAt}`;
-    await loadSeats();
+
+    renderEventPicker();
+    // Zuletzt gewaehltes Event nur uebernehmen, wenn es die API noch kennt (Seed-Daten koennen
+    // sich zwischen zwei Deployments aendern) - sonst das naechste Event, also events[0].
+    const remembered = localStorage.getItem(SELECTED_EVENT_KEY);
+    const initial = events.find((e) => e.id === remembered) ?? events[0];
+    await selectEvent(initial.id);
   } catch (err) {
-    showError(`Event konnte nicht geladen werden: ${err.message}`);
+    showError(`Events konnten nicht geladen werden: ${err.message}`);
   }
 }
 
+function renderEventPicker() {
+  eventSelectEl.innerHTML = "";
+  for (const event of events) {
+    const option = document.createElement("option");
+    option.value = event.id;
+    option.textContent = `${event.name} · ${event.venue} · ${shortDateFormatter.format(new Date(event.starts_at))}`;
+    eventSelectEl.appendChild(option);
+  }
+  // Bei genau einem Event waere die Auswahl nur Ballast - Titel und Meta-Zeile zeigen es ohnehin.
+  eventPickerEl.hidden = events.length < 2;
+}
+
+async function selectEvent(eventId) {
+  const event = events.find((e) => e.id === eventId);
+  if (!event) return;
+
+  currentEvent = event;
+  localStorage.setItem(SELECTED_EVENT_KEY, event.id);
+  eventSelectEl.value = event.id;
+
+  // Ein Wechsel setzt den laufenden Buchungsvorgang zurueck: die Statuskarte gehoert zum
+  // vorherigen Event und waere hier nur irrefuehrend.
+  stopPolling();
+  statusCardEl.hidden = true;
+  selectedSeat = null;
+  clearError();
+
+  eventNameEl.textContent = event.name;
+  eventMetaEl.textContent = `${event.venue} · ${dateFormatter.format(new Date(event.starts_at))}`;
+
+  await loadSeats();
+}
+
 async function loadSeats() {
+  const token = ++loadToken;
+  hallEl.replaceChildren(Object.assign(document.createElement("p"), {
+    className: "loading",
+    textContent: "Lade Sitzplätze…",
+  }));
+  availabilitySummaryEl.textContent = "";
+
   try {
     const response = await fetch(`${API_BASE_URL}/events/${currentEvent.id}/seats`);
     if (!response.ok) throw new Error(`GET /events/{id}/seats fehlgeschlagen (${response.status})`);
     const seats = await response.json();
+    if (token !== loadToken) return;
     renderHall(seats);
   } catch (err) {
+    if (token !== loadToken) return;
     showError(`Sitzplätze konnten nicht geladen werden: ${err.message}`);
   }
 }
@@ -86,6 +143,8 @@ async function loadSeats() {
 function renderHall(seats) {
   const freeCount = seats.filter((s) => s.status === "free").length;
   availabilitySummaryEl.textContent = `${freeCount} von ${seats.length} Plätzen frei`;
+
+  seatsById = new Map(seats.map((seat) => [seat.id, seat]));
 
   const categoriesSeen = new Map();
   const rows = new Map();
@@ -95,7 +154,9 @@ function renderHall(seats) {
     if (!categoriesSeen.has(seat.category)) categoriesSeen.set(seat.category, seat.price_cents);
   }
 
-  hallEl.innerHTML = "";
+  // Eine Halle hat 1000 Plaetze (40 Reihen x 25) - alles in einem DocumentFragment aufbauen und
+  // genau einmal einhaengen, statt 1000 einzelne Layout-/Paint-Durchlaeufe auszuloesen.
+  const fragment = document.createDocumentFragment();
   for (const rowNumber of [...rows.keys()].sort((a, b) => a - b)) {
     const rowSeats = rows.get(rowNumber).sort((a, b) => a.seat_number - b.seat_number);
     const category = rowSeats[0].category;
@@ -103,9 +164,15 @@ function renderHall(seats) {
     const rowEl = document.createElement("div");
     rowEl.className = "row";
 
+    const categoryLabel = CATEGORY_LABELS[category] ?? category;
+    const price = priceFormatter.format(rowSeats[0].price_cents / 100);
     const labelEl = document.createElement("div");
     labelEl.className = "row-label";
-    labelEl.innerHTML = `<span class="cat-dot ${category}"></span> Reihe ${rowNumber} · ${CATEGORY_LABELS[category] ?? category} · ${priceFormatter.format(rowSeats[0].price_cents / 100)}`;
+    // Bewusst ohne Kategoriename: bei 40 Reihen wiederholt er sich nur und macht die Spalte so
+    // breit, dass die Beschriftung abgeschnitten wird. Die Farbe des Punktes trägt die Kategorie,
+    // aufgeschlüsselt in der Legende unter dem Sitzplan; der Klartext steht im title.
+    labelEl.title = `Reihe ${rowNumber} · ${categoryLabel} · ${price}`;
+    labelEl.innerHTML = `<span class="cat-dot ${category}"></span> Reihe ${rowNumber} · ${price}`;
     rowEl.appendChild(labelEl);
 
     const seatsEl = document.createElement("div");
@@ -119,15 +186,16 @@ function renderHall(seats) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `seat ${seat.status}`;
+      button.dataset.seatId = seat.id;
       button.textContent = seat.seat_number;
       button.title = seatLabel(seat);
       button.disabled = seat.status !== "free";
-      button.addEventListener("click", () => openBookingDialog(seat, button));
       seatsEl.appendChild(button);
     });
     rowEl.appendChild(seatsEl);
-    hallEl.appendChild(rowEl);
+    fragment.appendChild(rowEl);
   }
+  hallEl.replaceChildren(fragment);
 
   categoryLegendEl.innerHTML = "";
   for (const [category, priceCents] of categoriesSeen) {
@@ -136,6 +204,17 @@ function renderHall(seats) {
     categoryLegendEl.appendChild(item);
   }
 }
+
+eventSelectEl.addEventListener("change", (event) => {
+  selectEvent(event.target.value);
+});
+
+hallEl.addEventListener("click", (event) => {
+  const button = event.target.closest("button.seat");
+  if (!button || button.disabled) return;
+  const seat = seatsById.get(button.dataset.seatId);
+  if (seat) openBookingDialog(seat, button);
+});
 
 function openBookingDialog(seat, button) {
   clearError();
@@ -146,10 +225,12 @@ function openBookingDialog(seat, button) {
   }
   button.classList.add("selected");
 
+  dialogEventLabelEl.textContent = `${currentEvent.name} · ${currentEvent.venue}`;
   dialogSeatLabelEl.textContent = seatLabel(seat);
   dialogSeatCategoryEl.textContent = CATEGORY_LABELS[seat.category] ?? seat.category;
   dialogSeatPriceEl.textContent = priceFormatter.format(seat.price_cents / 100);
   bookingFormEl.reset();
+  bookingDialogEl.returnValue = "";
   bookingDialogEl.showModal();
 }
 
@@ -179,10 +260,13 @@ bookingFormEl.addEventListener("submit", async (event) => {
     last_name: formData.get("last_name"),
     email: formData.get("email"),
   };
+  // Festhalten, gegen welches Event gebucht wurde - waehrend des Pollings kann der Nutzer
+  // laengst ein anderes ausgewaehlt haben.
+  const bookedEventId = currentEvent.id;
 
   try {
     const response = await fetch(
-      `${API_BASE_URL}/events/${currentEvent.id}/reservations`,
+      `${API_BASE_URL}/events/${bookedEventId}/reservations`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,7 +285,7 @@ bookingFormEl.addEventListener("submit", async (event) => {
     bookingDialogEl.returnValue = "submit";
     bookingDialogEl.close();
     setStatus("pending", "In Bearbeitung", "Deine Buchung wird verarbeitet…");
-    startPolling(reservationId);
+    startPolling(reservationId, bookedEventId);
   } catch (err) {
     showError(`Buchung fehlgeschlagen: ${err.message}`);
   }
@@ -215,7 +299,7 @@ function setStatus(status, title, detail) {
   statusMessageEl.textContent = detail;
 }
 
-function startPolling(reservationId) {
+function startPolling(reservationId, bookedEventId) {
   stopPolling();
   const startedAt = Date.now();
   const POLL_INTERVAL_MS = 2000;
@@ -230,12 +314,13 @@ function startPolling(reservationId) {
       if (reservation.status === "confirmed") {
         setStatus("confirmed", "Bestätigt", "Dein Sitzplatz ist reserviert.");
         stopPolling();
+        if (currentEvent.id === bookedEventId) await loadSeats();
         return;
       }
       if (reservation.status === "rejected") {
         setStatus("rejected", "Ausgebucht", "Dieser Sitzplatz konnte nicht reserviert werden.");
         stopPolling();
-        await loadSeats();
+        if (currentEvent.id === bookedEventId) await loadSeats();
         return;
       }
 
@@ -257,4 +342,4 @@ function stopPolling() {
   }
 }
 
-loadEvent();
+loadEvents();

@@ -13,6 +13,10 @@
       <p class="eyebrow">TicketFlow</p>
       <h1 id="event-name">Lade Event…</h1>
       <p id="event-meta" class="event-meta"></p>
+      <div id="event-picker" class="event-picker" hidden>
+        <label for="event-select">Veranstaltung</label>
+        <select id="event-select"></select>
+      </div>
     </div>
   </header>
 
@@ -20,7 +24,7 @@
     <section id="seat-section" class="panel">
       <div class="panel-header">
         <h2>Sitzplatzauswahl</h2>
-        <p id="availability-summary" class="availability-summary"></p>
+        <p id="availability-summary" class="availability-summary" aria-live="polite"></p>
       </div>
 
       <div class="stage-row" aria-hidden="true">
@@ -28,8 +32,10 @@
         <div class="stage">Bühne</div>
       </div>
 
-      <div id="hall" aria-live="polite">
-        <p class="loading">Lade Sitzplätze…</p>
+      <div class="hall-scroll">
+        <div id="hall" role="group" aria-label="Sitzplan">
+          <p class="loading">Lade Sitzplätze…</p>
+        </div>
       </div>
 
       <ul id="category-legend" class="category-legend"></ul>
@@ -55,6 +61,7 @@
     <form id="booking-form" method="dialog">
       <h2>Buchung</h2>
       <dl class="seat-summary">
+        <div class="seat-summary-event"><dt>Event</dt><dd id="dialog-event-label"></dd></div>
         <div><dt>Platz</dt><dd id="dialog-seat-label"></dd></div>
         <div><dt>Kategorie</dt><dd id="dialog-seat-category"></dd></div>
         <div><dt>Preis</dt><dd id="dialog-seat-price"></dd></div>
