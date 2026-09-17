@@ -488,8 +488,15 @@ commands here once these gaps close instead of leaving this section stale.
   `pgx/v5` read-only DB access, `segmentio/kafka-go` producer, routes `GET /events`,
   `GET /events/{id}/seats`, `POST /events/{id}/reservations`, `GET /reservations/{id}`,
   `/healthz`/`/readyz`/`/metrics`, multi-stage Dockerfile → `distroless/static-debian12:nonroot`)
-  and `src/frontend/` (plain HTML/CSS/JS, no build step, seat grid + booking form + status
-  polling, `nginx:1.27-alpine` Dockerfile). `local/postgres/init.sql` seeds three events in three
+  and `src/frontend/` (plain HTML/CSS/JS, no build step, event picker + seat grid + booking form +
+  status polling, `nginx:1.27-alpine` Dockerfile). The frontend renders **all** events from
+  `GET /events` into a `<select>` (remembered in `localStorage`, falling back to `events[0]`), not
+  just the first one. A hall is 40x25 = 1000 seats, so the seat grid uses one delegated click
+  listener on `#hall` plus `data-seat-id` (never 1000 listeners) and builds into a
+  `DocumentFragment`; seat/column sizes are `:root` CSS variables and `.hall-scroll` scrolls
+  horizontally so the page itself never does. Verified in headless Chromium against a mock API at
+  1280/900/500px and, via an iframe, at 390px - see `src/frontend/README.md` ## Darstellung von
+  1000 Plaetzen. `local/postgres/init.sql` seeds three events in three
   venues, 1000 seats each (40 rows x 25), all `free` — identical SQL to
   `src/catalog-api/internal/db/migrate.go`, which is what actually seeds the cluster DB (the
   `docker-entrypoint-initdb.d` hook only exists in the plain `postgres` image, not in CNPG). catalog-api deliberately never writes to `reservations` —
