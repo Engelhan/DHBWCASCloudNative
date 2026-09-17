@@ -98,22 +98,24 @@ catalogApi:
   # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
   # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
   # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
+  # Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
+  # zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
+  # beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
+  # Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
+  # credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
+  # "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
+  # Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
+  # zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
+  # beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
+  # Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
+  # credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
+  # "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
   database:
-    host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
+    host: ""
     port: "5432"
-    name: "postgres"
+    name: ""
     sslMode: "require"
-
-  # Der Chart legt das Credentials-Secret selbst an (Name: <release>-catalog-api-db-credentials),
-  # weil charts/postgres-cluster seines im Namespace "application" ablegt und secretKeyRef keine
-  # Namespace-Grenzen ueberschreiten kann - gleiches Muster wie charts/reservation-worker.
-  # Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt statt CHANGE_ME/
-  # --set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - muss mit
-  # charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen.
-  databaseSecret:
-    create: true
-    username: "postgres"
-    password: "ticketflow"
+    credentialsSecretName: ""
 
   service:
     port: 8080

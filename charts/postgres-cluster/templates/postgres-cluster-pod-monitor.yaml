@@ -2,8 +2,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: "{{ .Values.database.name }}-postgres-cluster"
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  name: "{{ include "postgres-cluster.clusterName" . }}"
   # Ohne dieses Label greift der podMonitorSelector von kube-prometheus-stack nicht (Chart-Default
   # "release: <helm-release-name>") und die CNPG-Metriken werden schlicht nie gescrapt - alle
   # anderen Monitore im Repo tragen es bereits.
@@ -14,5 +13,5 @@ spec:
     - port: metrics
   selector:
     matchLabels:
-      cnpg.io/cluster: "{{ .Values.database.name }}-postgres-cluster"
+      cnpg.io/cluster: "{{ include "postgres-cluster.clusterName" . }}"
 {{- end }}

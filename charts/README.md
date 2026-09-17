@@ -28,7 +28,7 @@ charts/<name>/
 
 Feste Key-Reihenfolge in `values.yaml` (je Komponente, falls der Chart mehrere rendert):
 `image`, `replicaCount`, `resources`, `podSecurityContext`, `securityContext`, `config`,
-`database`/`databaseSecret`/`secret`, `service`, `ingress`, `serviceMonitor`/`podMonitor`,
+`database`/`secret`, `service`, `ingress`, `serviceMonitor`/`podMonitor`,
 `networkPolicy`, `podDisruptionBudget`, `topologySpreadConstraint`.
 
 Regeln:
@@ -56,9 +56,8 @@ Die Kafka-Plattform läuft getrennt von der Anwendung:
 
 | Namespace | Charts |
 |---|---|
-| `ticketflow` | `ticketflow-app` (catalog-api + frontend), `reservation-worker`, `notification-worker` |
+| `ticketflow` | `ticketflow-app` (catalog-api + frontend), `reservation-worker`, `notification-worker`, **`postgres-cluster`** |
 | `kafka` | `strimzi-operator`, `kafka-cluster`, `apicurio`, `akhq` |
-| `application` | `postgres-cluster` |
 | `monitoring`, `longhorn-system`, `cert-manager`, `external-dns`, `cnpg-system`, `keda` | die jeweiligen Addons |
 
 Beide App-Namen stehen in `gitops/env/cluster.yaml` (`ticketflow.namespaces.app`/`.kafka`); jeder
@@ -140,24 +139,24 @@ PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigene
 `values.schema.json`) — deployt als Element `reservation-worker`. Abweichungen von
 `notification-worker`s Vorlage: `replicaCount: 1` statt `3` — der Service wird von KEDA auf
 Kafka-Consumer-Lag skaliert (P6, Element `keda`), ein hoher statischer Default wäre daneben
-irreführend; und ein zusätzliches `database`/`databaseSecret`-Wertepaar statt
+irreführend; und ein zusätzlicher `database`-Block statt
 `notification-worker`s SMTP/TLS-Secret-Feldern, weil der Service transaktional in CNPG-Postgres
 schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 
-**Postgres-Anbindung (gelöst, 2026-09-15):** `charts/postgres-cluster` legt nur ein
-`username`/`password`-`Secret` im Namespace `application` an, kein fertiges `DATABASE_URL`, und
-`reservation-worker` liegt (wie `charts/ticketflow-app`) im Namespace `ticketflow` (siehe
-## Namespace-Aufteilung unten) —
-Kubernetes-`Secret`s sind nicht Namespace-übergreifend referenzierbar. Gelöst nach demselben
-Muster wie `catalog-api`/`notification-worker` (Niklas' Vorgabe, siehe deren Chart-Kommentare):
-der Chart legt sein Postgres-Credentials-`Secret` **selbst** an
-(`templates/secret.yaml`, `databaseSecret.{create,username,password}`, Lab-Zugangsdaten fest im
-Repo hinterlegt statt `CHANGE_ME` – müssen mit `charts/postgres-cluster` `values.yaml`
-`database.owner`/`.password` übereinstimmen), statt ein extern kopiertes Secret zu referenzieren.
-Die Anwendung baut ihren Connection-String selbst aus `database.{host,port,name,sslMode}`
-(ConfigMap) + diesem Secret zusammen (Keys `username`/`password`, explizit auf `DB_USER`/
-`DB_PASSWORD` gemappt statt per `envFrom`, da die Schlüsselnamen nicht zu den erwarteten
-Env-Var-Namen passen).
+**Postgres-Anbindung (vereinfacht, 2026-09-17):** Der CNPG-Cluster lag ursprünglich im eigenen
+Namespace `application`, weshalb `catalog-api` und `reservation-worker` sein `username`/
+`password`-`Secret` nicht per `secretKeyRef` lesen konnten (keine Namespace-Grenzen) und beide
+Charts die Zugangsdaten stattdessen in ein **eigenes** Secret duplizierten — dieselben Werte an
+drei Stellen, die von Hand übereinstimmen mussten. Seit `charts/postgres-cluster` im selben
+Namespace wie die Anwendung läuft, entfällt das: beide Charts referenzieren direkt das von dort
+angelegte `<ticketflow.postgres.databaseName>-postgres-user` (Keys `username`/`password`, dasselbe
+Secret, das auch die CNPG-`Cluster`-CR als Bootstrap-Secret nutzt). Die chart-eigenen
+`secret.yaml`-Templates und die `databaseSecret`-Werteblöcke sind entfallen; das Passwort steht
+nur noch in `charts/postgres-cluster/values.yaml`.
+
+Host, Datenbankname und Secret-Name leiten sich aus `ticketflow.postgres.databaseName` ab
+(`<name>-postgres-cluster-rw` bzw. `<name>-postgres-user`), `database.{host,name,credentialsSecretName}`
+bleiben als Override leer.
 
 ## Addon-Charts
 

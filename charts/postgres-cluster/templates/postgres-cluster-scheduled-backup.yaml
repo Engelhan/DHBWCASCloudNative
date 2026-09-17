@@ -3,14 +3,13 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: "{{ $.Values.database.name }}-postgres-cluster-daily-backup"
-  namespace: {{ $.Values.namespace | default $.Release.Namespace }}
+  name: "{{ include "postgres-cluster.databaseName" $ }}-postgres-cluster-daily-backup"
 spec:
   schedule: {{ $backup.schedule | quote }}
   backupOwnerReference: cluster
   immediate: true
   cluster:
-    name: "{{ $.Values.database.name }}-postgres-cluster"
+    name: "{{ include "postgres-cluster.clusterName" $ }}"
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io

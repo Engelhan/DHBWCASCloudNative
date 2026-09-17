@@ -61,3 +61,24 @@ URL der Apicurio-Registry - laeuft im selben Kafka-Namespace.
 {{- define "reservation-worker.schemaRegistryUrl" -}}
 {{- .Values.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}
+{{/*
+Postgres-Anbindung. Die Datenbank laeuft seit 2026-09-17 im SELBEN Namespace wie diese Anwendung
+(gitops/env/cluster.yaml -> ticketflow.namespaces.app), weshalb hier weder ein eigener
+Connection-String noch ein dupliziertes Credentials-Secret noetig ist: beide Werte leiten sich aus
+ticketflow.postgres.databaseName ab und zeigen direkt auf das, was charts/postgres-cluster anlegt.
+*/}}
+{{- define "reservation-worker.databaseHost" -}}
+{{- .Values.database.host | default (printf "%s-postgres-cluster-rw" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- end -}}
+
+{{- define "reservation-worker.databaseName" -}}
+{{- .Values.database.name | default (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName) -}}
+{{- end -}}
+
+{{/*
+Von charts/postgres-cluster erzeugtes Secret mit den Keys "username"/"password" - dasselbe, das
+die CNPG-Cluster-CR als bootstrap-Secret nutzt. Kein chart-eigenes Duplikat mehr.
+*/}}
+{{- define "reservation-worker.databaseSecretName" -}}
+{{- .Values.database.credentialsSecretName | default (printf "%s-postgres-user" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- end -}}

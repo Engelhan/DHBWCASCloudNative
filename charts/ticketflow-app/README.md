@@ -66,14 +66,12 @@ SASL-`Secret` erreicht catalog-api trotz der Namespace-Grenze, weil `charts/kafk
 **Datenbank-Zugangsdaten:** `catalog-api` baut den Postgres-Connection-String selbst aus
 `catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + einem Secret (Keys `username`/
 `password`) zusammen — Team-Entscheidung, siehe `src/catalog-api/README.md` ## Konfiguration.
-Das Secret muss im **selben Namespace** (`ticketflow`) liegen wie `catalog-api` (Kubernetes
-erlaubt kein `secretKeyRef` über Namespace-Grenzen), `charts/postgres-cluster` legt sein eigenes
-Secret aber in Namespace `application` an — deshalb legt **dieser Chart selbst** eines an
-(`templates/catalog-api/secret.yaml`, Name `<release>-catalog-api-db-credentials`), gesteuert über
-`catalogApi.databaseSecret.{create,username,password}`. Die Werte sind bewusst die Lab-Zugangsdaten
-direkt im Repo (kein `CHANGE_ME`, siehe Kommentar in `values.yaml`) und müssen **manuell mit
-`charts/postgres-cluster` values.yaml `database.owner`/`.password` übereinstimmen**. DB-Name ist
-aktuell `postgres` (Default von `charts/postgres-cluster`), nicht `ticketflow`.
+`charts/postgres-cluster` läuft seit 2026-09-17 im **selben Namespace** wie dieser Chart, deshalb
+wird sein Secret direkt referenziert statt dupliziert: `database.credentialsSecretName` ist leer
+und wird zu `<ticketflow.postgres.databaseName>-postgres-user` aufgelöst, `database.host` zu
+`<...>-postgres-cluster-rw`. Vorher lag die Datenbank in `application`, was `secretKeyRef` über die
+Namespace-Grenze unmöglich machte und ein chart-eigenes Secret mit derselben, von Hand
+gepflegten Kopie der Zugangsdaten erzwang.
 
 ## values-dev.yaml vs. values-prod.yaml
 

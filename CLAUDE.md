@@ -394,6 +394,13 @@ commands here once these gaps close instead of leaving this section stale.
     — Kubernetes expands `$(VAR)` in `args`, the same mechanism the chart already used for the
     TSIG secret. **No index-based `helm.parameters`** — those break on any reordering of
     `extraArgs`.
+  - Namespaces themselves are centralized too: `ticketflow.namespaces.{app,kafka}` plus
+    `ticketflow.kafka.clusterName` / `ticketflow.postgres.databaseName`. Every client derives its
+    Kafka bootstrap address, Apicurio URL, Postgres host and Postgres Secret name from those
+    instead of spelling them out — the Kafka bootstrap DNS alone used to be written out in four
+    `values.yaml` in parallel. `charts/akhq` is the one exception and uses a short in-namespace
+    name, because its value lives in the wrapped upstream chart's values where Helm does not
+    template.
   - `infra/ansible/roles/gitops_secrets` and `infra/terraform/main.tf` read the same file
     (`include_vars` / `yamldecode`). `var.name_prefix` now defaults to `null` and falls back to
     `ticketflow.namePrefix` via `coalesce`.
@@ -548,7 +555,7 @@ commands here once these gaps close instead of leaving this section stale.
 
   **Postgres wiring (resolved 2026-09-15, credentials hardcoded 2026-09-16):** originally blocked
   by the same cross-namespace-secret gap as everywhere else (`charts/postgres-cluster` only
-  creates a `username`/`password` `Secret` in namespace `application`, this chart deploys into
+  creates a `username`/`password` `Secret` in namespace `application`, this chart deployed into
   `ticketflow`). Resolved per Niklas' team-wide decision (see the `catalog-api`/`ticketflow-app`
   bullet below): the chart creates its **own** `Secret` (`templates/secret.yaml`,
   `databaseSecret.{create,username,password}`) instead of referencing an externally copied one.

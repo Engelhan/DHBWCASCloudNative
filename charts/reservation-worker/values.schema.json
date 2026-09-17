@@ -6,7 +6,6 @@
     "replicaCount",
     "config",
     "database",
-    "databaseSecret",
     "ticketflow",
     "resources",
     "podSecurityContext",
@@ -171,15 +170,13 @@
     "database": {
       "type": "object",
       "required": [
-        "host",
         "port",
-        "name",
         "sslMode"
       ],
       "properties": {
         "host": {
           "type": "string",
-          "minLength": 1
+          "description": "Leer = <ticketflow.postgres.databaseName>-postgres-cluster-rw (gleicher Namespace)."
         },
         "port": {
           "type": "string",
@@ -187,30 +184,22 @@
         },
         "name": {
           "type": "string",
-          "minLength": 1
+          "description": "Leer = ticketflow.postgres.databaseName."
         },
         "sslMode": {
           "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "databaseSecret": {
-      "type": "object",
-      "required": [
-        "create",
-        "username",
-        "password"
-      ],
-      "properties": {
-        "create": {
-          "type": "boolean"
+          "enum": [
+            "disable",
+            "allow",
+            "prefer",
+            "require",
+            "verify-ca",
+            "verify-full"
+          ]
         },
-        "username": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
+        "credentialsSecretName": {
+          "type": "string",
+          "description": "Leer = <ticketflow.postgres.databaseName>-postgres-user (von charts/postgres-cluster angelegt)."
         }
       }
     },
@@ -236,7 +225,8 @@
         "imageRegistry",
         "imageTag",
         "kafka",
-        "namespaces"
+        "namespaces",
+        "postgres"
       ],
       "properties": {
         "imageRegistry": {
@@ -274,6 +264,18 @@
           ],
           "properties": {
             "clusterName": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "postgres": {
+          "type": "object",
+          "required": [
+            "databaseName"
+          ],
+          "properties": {
+            "databaseName": {
               "type": "string",
               "minLength": 1
             }

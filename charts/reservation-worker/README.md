@@ -39,10 +39,11 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
 - **KEDA (P6):** `config.keda.*` steuert das `ScaledObject`. `spec.replicas` des Deployments wird
   von ArgoCD bewusst nicht verglichen (`ignoreReplicas` am Element `reservation-worker` in
   `gitops/applicationset.yaml`) — sonst würde `selfHeal` jede Skalierung zurücksetzen.
-- **Postgres-Zugangsdaten:** der Chart legt sein Secret selbst an
-  (`<release>-db-credentials`), weil `charts/postgres-cluster` seines im Namespace `application`
-  ablegt und `secretKeyRef` keine Namespace-Grenzen überschreitet. Die Werte müssen mit
-  `charts/postgres-cluster` `values.yaml` `database.owner`/`.password` übereinstimmen.
+- **Postgres-Zugangsdaten:** kommen direkt aus dem von `charts/postgres-cluster` angelegten
+  Secret `<ticketflow.postgres.databaseName>-postgres-user` (Keys `username`/`password`) —
+  Datenbank und Anwendung teilen sich seit 2026-09-17 denselben Namespace, ein chart-eigenes
+  Duplikat ist nicht mehr nötig. Host und Datenbankname leiten sich aus demselben zentralen Wert
+  ab.
 - **Kafka-SASL (B2):** `config.kafkaSasl.secretName` referenziert das vom Strimzi User Operator
   automatisch angelegte Secret — nicht von diesem Chart erzeugt.
 

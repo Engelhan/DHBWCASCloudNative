@@ -3,12 +3,11 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: "allow-apiserver-to-{{ .Values.database.name }}-postgres-cluster"
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  name: "allow-apiserver-to-{{ include "postgres-cluster.clusterName" . }}"
 spec:
   podSelector:
     matchLabels:
-      cnpg.io/cluster: {{ .Values.database.name }}-postgres-cluster
+      cnpg.io/cluster: {{ include "postgres-cluster.clusterName" . }}
   policyTypes:
     - Ingress
   ingress:
@@ -30,7 +29,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              cnpg.io/cluster: {{ .Values.database.name }}-postgres-cluster
+              cnpg.io/cluster: {{ include "postgres-cluster.clusterName" . }}
       ports:
         - port: 5432
           protocol: TCP

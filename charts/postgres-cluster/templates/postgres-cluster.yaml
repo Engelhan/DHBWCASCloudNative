@@ -1,8 +1,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: "{{ .Values.database.name }}-postgres-cluster"
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  name: "{{ include "postgres-cluster.clusterName" . }}"
 spec:
   instances: {{ .Values.instances }}
   primaryUpdateMethod: {{ .Values.database.primaryUpdateMethod | default "switchover" }}
@@ -39,10 +38,10 @@ spec:
     {{- $import := .Values.import | default dict -}}
     {{- if and (eq $backup.enabled true) (eq $backup.restoreFromBackup true) }}
     recovery:
-      database: {{ .Values.database.name | quote }}
+      database: {{ include "postgres-cluster.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
       secret:
-        name: "{{ .Values.database.name }}-postgres-user"
+        name: "{{ include "postgres-cluster.userSecretName" . }}"
       source: restoreServer
       {{- if .Values.backup.timestampToRestoreFrom }}
       recoveryTarget:
@@ -50,10 +49,10 @@ spec:
       {{- end }}
     {{- else }}
     initdb:
-      database: {{ .Values.database.name | quote }}
+      database: {{ include "postgres-cluster.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
       secret:
-        name: "{{ .Values.database.name }}-postgres-user"
+        name: "{{ include "postgres-cluster.userSecretName" . }}"
       encoding: UTF-8
       localeCollate: en_US.UTF-8
       localeCType: en_US.UTF-8
@@ -74,7 +73,7 @@ spec:
     - name: barman-cloud.cloudnative-pg.io
       isWALArchiver: true
       parameters:
-        barmanObjectName: "{{ $.Values.database.name }}-postgres-cluster-backup"
+        barmanObjectName: "{{ include "postgres-cluster.databaseName" $ }}-postgres-cluster-backup"
         serverName: {{ $backup.s3.backupFolderName | quote }}
   {{- end }}
 
@@ -109,7 +108,7 @@ spec:
         user: {{ $import.user }}
         dbname: {{ $import.databaseToImport }}
       password:
-        name: {{ $.Values.database.name }}-import-password
+        name: {{ include "postgres-cluster.databaseName" $ }}-import-password
         key: password
     {{- end }}
     {{- if and (eq $backup.enabled true) (eq $backup.restoreFromBackup true) }}
@@ -117,7 +116,7 @@ spec:
       plugin:
         name: barman-cloud.cloudnative-pg.io
         parameters:
-          barmanObjectName: "{{ $.Values.database.name }}-postgres-cluster-restore"
+          barmanObjectName: "{{ include "postgres-cluster.databaseName" $ }}-postgres-cluster-restore"
           serverName: {{ $backup.restoreBackupFolderName | quote }}
     {{- end }}
   {{- end }}

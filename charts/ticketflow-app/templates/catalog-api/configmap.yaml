@@ -13,9 +13,9 @@ data:
   KAFKA_SASL_ENABLED: {{ .Values.catalogApi.config.kafkaSasl.enabled | quote }}
   KAFKA_SASL_USERNAME: {{ .Values.catalogApi.config.kafkaSasl.username | quote }}
   CORS_ALLOWED_ORIGIN: {{ .Values.catalogApi.config.corsAllowedOrigin | quote }}
-  DB_HOST: {{ .Values.catalogApi.database.host | quote }}
+  DB_HOST: {{ include "ticketflow-app.databaseHost" . | quote }}
   DB_PORT: {{ .Values.catalogApi.database.port | quote }}
-  DB_NAME: {{ .Values.catalogApi.database.name | quote }}
+  DB_NAME: {{ include "ticketflow-app.databaseName" . | quote }}
   DB_SSLMODE: {{ .Values.catalogApi.database.sslMode | quote }}
   REGISTRY_URL: {{ include "ticketflow-app.schemaRegistryUrl" . | quote }}
   REGISTRY_GROUP_ID: {{ .Values.catalogApi.config.registryGroupId | quote }}

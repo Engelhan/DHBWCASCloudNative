@@ -100,26 +100,25 @@ config:
 # Username/Passwort (Secret unten) zusammen - gleiches Muster wie charts/ticketflow-app
 # catalogApi.database, CNPG (charts/postgres-cluster) liefert ohnehin nur username/password
 # getrennt, kein fertiges DATABASE_URL.
+  # Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
+# zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
+# beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
+# Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
+# credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
+# "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
+# Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
+# zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
+# beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
+# Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
+# credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
+# "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
 database:
-  host: "postgres-postgres-cluster-rw.application.svc.cluster.local"
+  host: ""
   port: "5432"
-  name: "postgres"
+  name: ""
   sslMode: "require"
+  credentialsSecretName: ""
 
-# Chart legt das Secret selbst an (Niklas' Vorgabe, analog zu charts/notification-worker/
-# templates/secret.yaml und charts/ticketflow-app catalogApi.databaseSecret - kein externes
-# Copy-Skript mehr). Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt
-# statt CHANGE_ME/--set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - muss mit
-# charts/postgres-cluster values.yaml database.owner/.password uebereinstimmen (dort ebenfalls
-# hardcoded, siehe dessen Kommentar).
-databaseSecret:
-  create: true
-  username: "postgres"
-  password: "ticketflow"
-
-# PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (reiner
-# Kafka-Consumer, Kubelet-Probes gehen direkt an den Pod), daher auch keine eigene
-# Service-Ressource in diesem Chart - siehe templates/podmonitor.yaml.
 podMonitor:
   enabled: true
   interval: 30s

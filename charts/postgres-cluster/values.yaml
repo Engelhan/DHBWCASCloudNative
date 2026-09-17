@@ -1,6 +1,12 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers gibt.
+# Der Datenbankname kommt von dort (ticketflow.postgres.databaseName), weil catalog-api und
+# reservation-worker daraus ebenfalls Service- und Secret-Namen ableiten.
+ticketflow: {}
+
 instances: 2
-# Namespace for rendered resources. Falls back to the Helm release namespace when empty.
-namespace: ""
+# Kein namespace-Wert mehr: es gilt der Namespace der ArgoCD-Application
+# (ticketflow.namespaces.app), derselbe wie bei den Anwendungs-Charts.
 
 image:
   # Container image repository used by CloudNativePG.
@@ -13,16 +19,18 @@ image:
   tag: "18.4-202608030910-standard-trixie@sha256:f0cc49632b5cc1e51f65ba03658c89bd31d64ea2672b14843a808a8d281417e1"
 
 database:
-  # Logical database name used for the cluster and secrets.
-  name: postgres
+  # Logischer Datenbankname steht zentral in gitops/env/cluster.yaml
+  # (ticketflow.postgres.databaseName) - hier bewusst kein zweiter Wert.
   # Database owner created during bootstrap.
   owner: postgres
   # Lab credentials (2026-09-16, hardcoded on explicit user request - Uni lab project, not a
   # live system, simple/consistent handling over CHANGE_ME-then-forget; same password used for
-  # AKHQ basic-auth and the Kafka SASL "akhq" user, see charts/akhq/values.yaml). Must match
-  # catalogApi.databaseSecret/databaseSecret.password in charts/ticketflow-app and
-  # charts/reservation-worker (those charts duplicate this value into their own chart-owned
-  # Secret instead of referencing this one cross-namespace, see their comments).
+  # AKHQ basic-auth and the Kafka SASL "akhq" user, see charts/akhq/values.yaml).
+  #
+  # Seit der Zusammenlegung von Datenbank- und App-Namespace (2026-09-17) ist dies die EINZIGE
+  # Stelle, an der das Passwort steht: catalog-api und reservation-worker referenzieren das hier
+  # erzeugte Secret "<databaseName>-postgres-user" direkt per secretKeyRef, statt es wie vorher in
+  # ein eigenes, chart-eigenes Secret zu duplizieren.
   password: ticketflow
   primaryUpdateMethod: switchover
   primaryUpdateStrategy: supervised

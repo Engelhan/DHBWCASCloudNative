@@ -3,7 +3,7 @@
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
-  name: "{{ $.Values.database.name }}-postgres-cluster-backup"
+  name: "{{ include "postgres-cluster.databaseName" $ }}-postgres-cluster-backup"
 spec:
   instanceSidecarConfiguration:
     # Fix Issue https://github.com/cloudnative-pg/cloudnative-pg/issues/8427
@@ -18,10 +18,10 @@ spec:
     endpointURL: {{ $backup.s3.endpointURL | quote }}
     s3Credentials:
       accessKeyId:
-        name: "s3-{{ $.Values.database.name }}-backup-creds"
+        name: "s3-{{ include "postgres-cluster.databaseName" $ }}-backup-creds"
         key: ACCESS_KEY
       secretAccessKey:
-        name: "s3-{{ $.Values.database.name }}-backup-creds"
+        name: "s3-{{ include "postgres-cluster.databaseName" $ }}-backup-creds"
         key: SECRET_KEY
     wal:
       compression: gzip

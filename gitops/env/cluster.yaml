@@ -51,6 +51,10 @@ ticketflow:
   # Namespace der KafkaUser-CRs - wird aus diesen beiden Werten abgeleitet, statt als
   # ausgeschriebener DNS-Name in fuenf values.yaml zu stehen.
   namespaces:
+    # Anwendung UND Datenbank. Der CNPG-Cluster liegt bewusst hier und nicht in einem eigenen
+    # Namespace: catalog-api und reservation-worker koennen sein Credentials-Secret dadurch direkt
+    # per secretKeyRef lesen (Kubernetes erlaubt das nicht ueber Namespace-Grenzen), statt die
+    # Zugangsdaten in jedem Chart ein zweites Mal zu hinterlegen.
     app: ticketflow
     kafka: kafka
 
@@ -58,6 +62,13 @@ ticketflow:
     # Name der Strimzi-Kafka-CR. Der Bootstrap-Service heisst daraus abgeleitet
     # "<clusterName>-kafka-bootstrap" - Strimzis eigene Namenskonvention, nicht frei waehlbar.
     clusterName: ticketflow-kafka
+
+  postgres:
+    # Logischer Datenbankname. charts/postgres-cluster leitet daraus die CNPG-Cluster-CR
+    # ("<databaseName>-postgres-cluster"), deren rw-Service und das Credentials-Secret
+    # ("<databaseName>-postgres-user", Keys username/password) ab; catalog-api und
+    # reservation-worker greifen genau darauf zu.
+    databaseName: postgres
 
   # --- Container-Images ------------------------------------------------------------------
   # ghcr.io verlangt kleingeschriebene Namen - der GitHub-Owner ist hier bewusst lowercase,

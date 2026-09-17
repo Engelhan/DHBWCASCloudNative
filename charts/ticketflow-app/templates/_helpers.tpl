@@ -94,3 +94,24 @@ Port 9092 ist Strimzis "plain"-Listener (seit B2 SASL_PLAINTEXT).
 {{- define "ticketflow-app.schemaRegistryUrl" -}}
 {{- .Values.catalogApi.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}
+{{/*
+Postgres-Anbindung. Die Datenbank laeuft seit 2026-09-17 im SELBEN Namespace wie diese Anwendung
+(gitops/env/cluster.yaml -> ticketflow.namespaces.app), weshalb hier weder ein eigener
+Connection-String noch ein dupliziertes Credentials-Secret noetig ist: beide Werte leiten sich aus
+ticketflow.postgres.databaseName ab und zeigen direkt auf das, was charts/postgres-cluster anlegt.
+*/}}
+{{- define "ticketflow-app.databaseHost" -}}
+{{- .Values.catalogApi.database.host | default (printf "%s-postgres-cluster-rw" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- end -}}
+
+{{- define "ticketflow-app.databaseName" -}}
+{{- .Values.catalogApi.database.name | default (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName) -}}
+{{- end -}}
+
+{{/*
+Von charts/postgres-cluster erzeugtes Secret mit den Keys "username"/"password" - dasselbe, das
+die CNPG-Cluster-CR als bootstrap-Secret nutzt. Kein chart-eigenes Duplikat mehr.
+*/}}
+{{- define "ticketflow-app.databaseSecretName" -}}
+{{- .Values.catalogApi.database.credentialsSecretName | default (printf "%s-postgres-user" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- end -}}

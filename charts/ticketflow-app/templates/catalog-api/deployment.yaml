@@ -42,15 +42,18 @@ spec:
             - configMapRef:
                 name: {{ include "ticketflow-app.componentName" $ctx }}
           env:
+            # Aus dem von charts/postgres-cluster angelegten Secret (Keys "username"/"password") -
+            # Datenbank und Anwendung teilen sich denselben Namespace, ein chart-eigenes Duplikat
+            # ist deshalb nicht mehr noetig.
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ticketflow-app.componentName" $ctx }}-db-credentials
+                  name: {{ include "ticketflow-app.databaseSecretName" $ }}
                   key: username
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ticketflow-app.componentName" $ctx }}-db-credentials
+                  name: {{ include "ticketflow-app.databaseSecretName" $ }}
                   key: password
             {{- if .Values.catalogApi.config.kafkaSasl.enabled }}
             - name: KAFKA_SASL_PASSWORD
