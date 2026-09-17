@@ -10,7 +10,7 @@ metadata:
 spec:
   secretName: {{ .Values.tlsSecretName }}
   dnsNames:
-    - {{ .Values.hostname | quote }}
+    - {{ include "argocd-ingress.hostname" . | quote }}
   issuerRef:
     name: {{ .Values.clusterIssuerName }}
     kind: ClusterIssuer

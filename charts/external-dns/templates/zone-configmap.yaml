@@ -1,0 +1,21 @@
+# Eigenes Template in einem ansonsten reinen Wrapper-Chart - noetig, weil die zonenabhaengigen
+# Werte (domainFilters, --rfc2136-zone, --rfc2136-tsig-keyname, --rfc2136-host) in den Values des
+# GEWRAPPTEN Upstream-Charts stehen, und Helm Values-Dateien nicht templatet: aus values.yaml
+# heraus kommt man an .Values.ticketflow.* nicht heran.
+#
+# Loesung ohne index-basierte helm.parameters: die Werte landen hier in einer ConfigMap, werden
+# unten in values.yaml als Container-Env eingeblendet und in den Argumenten als "$(VAR)"
+# referenziert. Kubernetes expandiert $(VAR) in args aus dem Container-Env - genau der
+# Mechanismus, den dieser Chart fuer --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET) ohnehin schon
+# nutzt. Damit bleibt gitops/env/cluster.yaml die einzige Quelle der DNS-Zone.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-dns-zone
+  labels:
+    app.kubernetes.io/name: external-dns
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  DNS_ZONE: {{ required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone | quote }}
+  RFC2136_SERVER: {{ required "ticketflow.rfc2136.server fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.rfc2136.server | quote }}
+  RFC2136_KEYNAME: {{ required "ticketflow.rfc2136.keyName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.rfc2136.keyName | quote }}

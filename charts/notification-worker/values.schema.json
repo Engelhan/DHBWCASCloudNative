@@ -2,7 +2,11 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "notification-worker",
   "type": "object",
-  "required": ["image", "replicaCount", "config"],
+  "required": [
+    "replicaCount",
+    "config",
+    "ticketflow"
+  ],
   "properties": {
     "replicaCount": {
       "type": "integer",
@@ -10,71 +14,162 @@
     },
     "image": {
       "type": "object",
-      "required": ["repository", "tag"],
+      "description": "Optionaler Override. Normalerweise leer - Registry/Tag kommen aus ticketflow.imageRegistry/.imageTag.",
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
+        "repository": {
+          "type": "string"
+        },
         "tag": {
           "type": "string",
-          "minLength": 1,
-          "not": { "const": "latest" }
+          "not": {
+            "const": "latest"
+          }
         },
-        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
     "config": {
       "type": "object",
-      "required": ["kafkaBrokers", "resultTopic", "consumerGroup", "registryUrl", "kafkaSasl"],
+      "required": [
+        "kafkaBrokers",
+        "resultTopic",
+        "consumerGroup",
+        "registryUrl",
+        "kafkaSasl"
+      ],
       "properties": {
-        "kafkaBrokers": { "type": "string", "minLength": 1 },
-        "resultTopic": { "type": "string", "minLength": 1 },
-        "consumerGroup": { "type": "string", "minLength": 1 },
-        "notifyMaxRetries": { "type": "integer", "minimum": 0 },
-        "registryUrl": { "type": "string", "minLength": 1 },
-        "registryGroupId": { "type": "string", "minLength": 1 },
+        "kafkaBrokers": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resultTopic": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerGroup": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notifyMaxRetries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "registryUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registryGroupId": {
+          "type": "string",
+          "minLength": 1
+        },
         "kafkaTls": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean" }
+            "enabled": {
+              "type": "boolean"
+            }
           }
         },
         "kafkaSasl": {
           "type": "object",
-          "required": ["enabled"],
+          "required": [
+            "enabled"
+          ],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "username": { "type": "string" },
-            "secretName": { "type": "string" }
+            "enabled": {
+              "type": "boolean"
+            },
+            "username": {
+              "type": "string"
+            },
+            "secretName": {
+              "type": "string"
+            }
           },
           "if": {
-            "properties": { "enabled": { "const": true } },
-            "required": ["enabled"]
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
           },
           "then": {
-            "required": ["username", "secretName"],
+            "required": [
+              "username",
+              "secretName"
+            ],
             "properties": {
-              "username": { "type": "string", "minLength": 1 },
-              "secretName": { "type": "string", "minLength": 1 }
+              "username": {
+                "type": "string",
+                "minLength": 1
+              },
+              "secretName": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
         "smtp": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean" },
-            "host": { "type": "string" },
-            "from": { "type": "string" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "tlsMode": { "type": "string", "enum": ["none", "starttls", "tls"] }
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "tlsMode": {
+              "type": "string",
+              "enum": [
+                "none",
+                "starttls",
+                "tls"
+              ]
+            }
           },
           "if": {
-            "properties": { "enabled": { "const": true } },
-            "required": ["enabled"]
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
           },
           "then": {
-            "required": ["host", "from"],
+            "required": [
+              "host",
+              "from"
+            ],
             "properties": {
-              "host": { "type": "string", "minLength": 1 },
-              "from": { "type": "string", "minLength": 1 }
+              "host": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         }
@@ -83,17 +178,51 @@
     "secret": {
       "type": "object",
       "properties": {
-        "create": { "type": "boolean" },
-        "kafkaTlsCaCert": { "type": "string" },
-        "kafkaTlsClientCert": { "type": "string" },
-        "kafkaTlsClientKey": { "type": "string" }
+        "create": {
+          "type": "boolean"
+        },
+        "kafkaTlsCaCert": {
+          "type": "string"
+        },
+        "kafkaTlsClientCert": {
+          "type": "string"
+        },
+        "kafkaTlsClientKey": {
+          "type": "string"
+        }
       }
     },
     "podDisruptionBudget": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "minAvailable": { "type": "integer", "minimum": 0 }
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ticketflow": {
+      "type": "object",
+      "description": "Zentrale Werte aus gitops/env/cluster.yaml (von ArgoCD per Multi-Source durchgereicht).",
+      "required": [
+        "imageRegistry",
+        "imageTag"
+      ],
+      "properties": {
+        "imageRegistry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageTag": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "latest"
+          }
+        }
       }
     }
   },
@@ -102,23 +231,46 @@
       "config": {
         "properties": {
           "kafkaTls": {
-            "properties": { "enabled": { "const": true } },
-            "required": ["enabled"]
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
           }
         },
-        "required": ["kafkaTls"]
+        "required": [
+          "kafkaTls"
+        ]
       }
     },
-    "required": ["config"]
+    "required": [
+      "config"
+    ]
   },
   "then": {
     "properties": {
       "secret": {
-        "required": ["kafkaTlsCaCert", "kafkaTlsClientCert", "kafkaTlsClientKey"],
+        "required": [
+          "kafkaTlsCaCert",
+          "kafkaTlsClientCert",
+          "kafkaTlsClientKey"
+        ],
         "properties": {
-          "kafkaTlsCaCert": { "type": "string", "minLength": 1 },
-          "kafkaTlsClientCert": { "type": "string", "minLength": 1 },
-          "kafkaTlsClientKey": { "type": "string", "minLength": 1 }
+          "kafkaTlsCaCert": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kafkaTlsClientCert": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kafkaTlsClientKey": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }

@@ -14,4 +14,4 @@ spec:
   valuesContent: |-
     service:
       annotations:
-        external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname }}
+        external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname | default (printf "traefik.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) }}

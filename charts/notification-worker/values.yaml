@@ -1,6 +1,20 @@
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
+# Registry und Tag kommen zentral aus gitops/env/cluster.yaml (ticketflow.imageRegistry /
+# .imageTag) - ein Image-Bump beruehrt damit genau eine Stelle im Repo und gilt fuer alle vier
+# Services gleichzeitig; .github/workflows/build-images.yml schreibt den Tag dort automatisch
+# fort. Die beiden Felder hier sind nur ein bewusster Einzelfall-Override (z.B. ein Test-Build
+# aus einer anderen Registry) und bleiben normalerweise leer. Nie :latest (P3) - das verbietet
+# auch values.schema.json.
 image:
-  repository: ghcr.io/engelhan/ticketflow-notification-worker # siehe .github/workflows/build-images.yml
-  tag: "" # Pflichtfeld beim Deploy (Git-Short-SHA aus build-images.yml, kein Default, nie :latest, siehe P3)
+  repository: ""
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Mehrere Consumer-Instanzen derselben CONSUMER_GROUP teilen sich die Partitionen von

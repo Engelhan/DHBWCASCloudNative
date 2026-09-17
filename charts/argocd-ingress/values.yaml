@@ -1,7 +1,17 @@
-# Aendern, falls ein anderer Hostname gewuenscht ist - muss innerhalb der aktivierten
-# RFC2136-Zone liegen (siehe charts/cert-manager-config/values.yaml rfc2136.zone), sonst kann
-# weder cert-manager (dns01) noch external-dns dafuer einen Record/Zertifikat ausstellen.
-hostname: "argocd.cas438007-at-cas-dhbw-de.users.dhbw.site"
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
+# Leer lassen: der Hostname wird per Default aus der zentralen DNS-Zone abgeleitet
+# ("argocd.<ticketflow.dnsZone>", siehe gitops/env/cluster.yaml und templates/_helpers.tpl).
+# Nur setzen, falls ein abweichender Name gewuenscht ist - er muss dann weiterhin innerhalb der
+# aktivierten RFC2136-Zone liegen, sonst kann weder cert-manager (dns01) noch external-dns
+# dafuer einen Record/ein Zertifikat ausstellen.
+hostname: ""
 
 clusterIssuerName: certificate-cluster-issuer
 tlsSecretName: argocd-server-tls
@@ -23,6 +33,8 @@ traefikEntryPoint: websecure
 # haerten: Ziel ist der stabile Hostname, den charts/traefik-config auf Traefiks eigenem
 # LoadBalancer-Service veroeffentlicht (external-dns' "service"-Source kann Targets DORT
 # problemlos automatisch aus dem Service-Status ableiten) - external-dns loest daraus ein
-# CNAME auf, das bei jedem VIP-Wechsel automatisch mitzieht. Muss mit
-# charts/traefik-config/values.yaml traefikHostname uebereinstimmen.
-externalDnsTarget: "traefik.cas438007-at-cas-dhbw-de.users.dhbw.site"
+# CNAME auf, das bei jedem VIP-Wechsel automatisch mitzieht.
+#
+# Leer lassen: leitet sich per Default als "traefik.<ticketflow.dnsZone>" ab - dieselbe Ableitung
+# wie in charts/traefik-config, beide koennen damit nicht mehr auseinanderlaufen.
+externalDnsTarget: ""

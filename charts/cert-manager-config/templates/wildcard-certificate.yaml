@@ -2,7 +2,7 @@
 {{- if ne .Values.challenge "dns01" }}
 {{- fail "wildcardCertificate.enabled erfordert challenge: dns01 (Wildcards koennen nicht per http01 validiert werden)" }}
 {{- end }}
-# Ein Wildcard-Zertifikat fuer *.<rfc2136.zone> statt Zertifikate pro Host.
+# Ein Wildcard-Zertifikat fuer *.<ticketflow.dnsZone> statt Zertifikate pro Host.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -11,7 +11,7 @@ metadata:
 spec:
   secretName: {{ .Values.wildcardCertificate.secretName }}
   dnsNames:
-    - "*.{{ .Values.rfc2136.zone }}"
+    - "*.{{ (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}"
   issuerRef:
     name: {{ .Values.clusterIssuerName }}
     kind: ClusterIssuer

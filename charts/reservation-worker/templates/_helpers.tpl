@@ -1,3 +1,16 @@
+{{/*
+Vollstaendiger Image-Name. Registry und Tag kommen zentral aus gitops/env/cluster.yaml
+(ticketflow.imageRegistry / .imageTag), damit ein Image-Bump nur EINE Stelle im Repo beruehrt -
+.github/workflows/build-images.yml schreibt den Tag dort automatisch fort. image.repository bzw.
+image.tag in values.yaml bleiben als bewusster Einzelfall-Override moeglich (z.B. ein Test-Build
+aus einer privaten Registry), sind aber normalerweise leer.
+*/}}
+{{- define "reservation-worker.image" -}}
+{{- $repo := .Values.image.repository | default (printf "%s/ticketflow-reservation-worker" (required "ticketflow.imageRegistry fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageRegistry)) -}}
+{{- $tag := .Values.image.tag | default (required "ticketflow.imageTag fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageTag) -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+
 {{- define "reservation-worker.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

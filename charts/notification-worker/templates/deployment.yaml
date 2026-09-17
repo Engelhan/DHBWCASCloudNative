@@ -18,7 +18,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: notification-worker
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "notification-worker.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

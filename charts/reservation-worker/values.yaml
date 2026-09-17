@@ -1,11 +1,20 @@
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
+# Registry und Tag kommen zentral aus gitops/env/cluster.yaml (ticketflow.imageRegistry /
+# .imageTag) - ein Image-Bump beruehrt damit genau eine Stelle im Repo und gilt fuer alle vier
+# Services gleichzeitig; .github/workflows/build-images.yml schreibt den Tag dort automatisch
+# fort. Die beiden Felder hier sind nur ein bewusster Einzelfall-Override (z.B. ein Test-Build
+# aus einer anderen Registry) und bleiben normalerweise leer. Nie :latest (P3) - das verbietet
+# auch values.schema.json.
 image:
-  repository: ghcr.io/engelhan/ticketflow-reservation-worker # siehe .github/workflows/build-images.yml
-  # Git-Short-SHA aus build-images.yml, kein :latest (siehe P3). a0acfac6 war stale (vor dem
-  # DB_HOST/DB_USER-Refactor und der SASL-Anbindung gebaut) - 4579b884 (Commit
-  # "chore(reservation-worker): re-trigger image build") ist der neueste, gegen ghcr.io
-  # verifizierte Tag mit aktuellem Code. Bei jedem neuen build-images.yml-Lauf, der
-  # src/reservation-worker aendert, hier den dann aktuellen Tag eintragen.
-  tag: "4579b884"
+  repository: ""
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Startwert, bis das ScaledObject unten (keda.minReplicaCount/.maxReplicaCount) den ersten Scale-

@@ -1,9 +1,19 @@
-# Nutzt die echte DHBW-DNS-Zone (self-service.dhbw.cloud) - siehe
-# ../cert-manager-config/values.yaml, das denselben Zone-/TSIG-Key fuer den
-# cert-manager-dns01-Solver nutzt. Muss unter dem Dependency-Alias "external-dns" verschachtelt
-# sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
+# Nutzt die echte DHBW-DNS-Zone aus gitops/env/cluster.yaml (ticketflow.dnsZone/.rfc2136.*) -
+# dieselbe Quelle, aus der sich auch ../cert-manager-config speist. Da Helm Values-Dateien nicht
+# templatet, kommen die Werte NICHT direkt hier hinein, sondern per "$(VAR)" aus der ConfigMap
+# external-dns-zone (siehe templates/zone-configmap.yaml). Alles unter dem Dependency-Alias
+# "external-dns" wird an das gewrappte Upstream-Chart durchgereicht (siehe Chart.yaml).
 #
-# Voraussetzung (VOR dem ersten Sync manuell angelegt, nicht im Repo):
+# Voraussetzung (VOR dem ersten Sync, bewusst nicht im Repo): das TSIG-Secret. Wird von
+# infra/ansible/roles/gitops_secrets angelegt, manuell waere es:
 #   kubectl create namespace external-dns
 #   kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
 #     --from-literal=secret=<TSIG-Wert>
@@ -37,14 +47,32 @@ external-dns:
     - A
     - AAAA
     - CNAME
+  # Wird vom Chart als --domain-filter=<Wert> gerendert; Kubernetes expandiert $(DNS_ZONE)
+  # daraus aus dem Container-Env (siehe env: unten).
   domainFilters:
-    - cas438007-at-cas-dhbw-de.users.dhbw.site
+    - $(DNS_ZONE)
   env:
     - name: RFC2136_TSIG_SECRET
       valueFrom:
         secretKeyRef:
           name: external-dns-rfc2136-tsig
           key: secret
+    # Aus templates/zone-configmap.yaml, gespeist aus gitops/env/cluster.yaml.
+    - name: DNS_ZONE
+      valueFrom:
+        configMapKeyRef:
+          name: external-dns-zone
+          key: DNS_ZONE
+    - name: RFC2136_SERVER
+      valueFrom:
+        configMapKeyRef:
+          name: external-dns-zone
+          key: RFC2136_SERVER
+    - name: RFC2136_KEYNAME
+      valueFrom:
+        configMapKeyRef:
+          name: external-dns-zone
+          key: RFC2136_KEYNAME
   extraArgs:
     # Ziel-Netze, die External DNS NIE veroeffentlicht (private/NAT-Adressen aus
     # Node-/Ingress-Status).
@@ -55,17 +83,18 @@ external-dns:
     - --exclude-target-net=169.254.0.0/16 # IPv4 Link-Local
     - --exclude-target-net=fc00::/7 # IPv6 ULA
     - --exclude-target-net=fe80::/10 # IPv6 Link-Local
-    # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname; auch
-    # Nameserver fuer den cert-manager-dns01-Solver, siehe ../cert-manager-config/values.yaml.
-    - --rfc2136-host=141.72.5.244
+    # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud); auch Nameserver fuer den
+    # cert-manager-dns01-Solver, siehe ../cert-manager-config/values.yaml. Adresse/Zone/Key-Name
+    # kommen aus gitops/env/cluster.yaml ueber die ConfigMap external-dns-zone.
+    - --rfc2136-host=$(RFC2136_SERVER)
     - --rfc2136-port=53
-    - --rfc2136-zone=cas438007-at-cas-dhbw-de.users.dhbw.site
+    - --rfc2136-zone=$(DNS_ZONE)
     # $(VAR) wird von Kubernetes aus dem Container-Env aufgeloest (siehe env: oben) - das
     # eigentliche Secret steht NICHT hier im Repo, sondern in einem vorab angelegten K8s-Secret
     # (external-dns-rfc2136-tsig).
     - --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)
     - --rfc2136-tsig-secret-alg=hmac-sha512
-    - --rfc2136-tsig-keyname=user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
+    - --rfc2136-tsig-keyname=$(RFC2136_KEYNAME)
     - --rfc2136-tsig-axfr
   # Kein rbac.additionalPermissions noetig: der Chart fuegt die traefik.io-RBAC-Regeln
   # (ingressroutes/-tcps/-udps) automatisch hinzu, sobald "traefik-proxy" in sources steht.

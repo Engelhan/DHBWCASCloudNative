@@ -1,13 +1,20 @@
-# DHBW-DNS-Zone/ACME-Kontakt der eigenen Zone (self-service.dhbw.cloud) - dieselbe Zone/derselbe
-# TSIG-Key wie in gitops/apps/external-dns.yaml.
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
+# ACME-Kontakt, ACME-Server, DNS-Zone und TSIG-Key-Name stehen NICHT mehr hier, sondern zentral
+# in gitops/env/cluster.yaml (ticketflow.acmeEmail / .acmeServer / .dnsZone / .rfc2136.*) -
+# dieselbe Quelle, aus der sich auch charts/external-dns und alle Ingress-Hostnamen speisen.
 #
-# Voraussetzung (VOR dem ersten Sync manuell angelegt, nicht im Repo):
+# Voraussetzung (VOR dem ersten Sync, bewusst NICHT im Repo): das TSIG-Secret. Wird von
+# infra/ansible/roles/gitops_secrets aus infra/ansible/secrets.yml angelegt, manuell waere es:
 #   kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
 #     --from-literal=secret=<TSIG-Wert>
 
-email: "cas438007@cas.dhbw.de"
-# DHBW-internes ACME-Verzeichnis (nur aus dem DHBW-Netz/VPN erreichbar).
-acmeServer: "https://certificates.dhbw.cloud"
 clusterIssuerName: certificate-cluster-issuer
 privateKeySecretName: cert-manager-private-key-secret
 
@@ -21,18 +28,15 @@ privateKeySecretName: cert-manager-private-key-secret
 challenge: dns01 # dns01 | http01
 
 rfc2136:
-  # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur der Hostname.
-  host: "141.72.5.244"
+  # Adresse/Zone/Key-Name kommen aus gitops/env/cluster.yaml (siehe oben). Hier bleiben nur die
+  # Werte, die fuer jedes Deployment gleich sind.
   port: 53
-  zone: "cas438007-at-cas-dhbw-de.users.dhbw.site"
-  tsigKeyName: "user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124"
   tsigAlgorithm: hmac-sha512
-  # Verweist nur auf ein manuell/per External-Secret angelegtes Secret - der Wert selbst steht
+  # Verweist nur auf ein per Ansible/External-Secret angelegtes Secret - der Wert selbst steht
   # bewusst NICHT im Repo (siehe Aktivierungs-Hinweis oben).
   tsigSecretName: cert-manager-rfc2136-tsig
 
 # Traefik serviert dieses Zertifikat fuer jeden HTTPS-Host ohne spezifischeres Zertifikat.
-# Nur sinnvoll, sobald rfc2136.zone gesetzt ist (Wildcard braucht dns01).
 wildcardCertificate:
   enabled: false
   secretName: wildcard-tls

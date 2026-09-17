@@ -1,3 +1,11 @@
+# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
+# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
+# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Lokal deshalb immer:
+#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+ticketflow: {}
+
 # AKHQ (https://akhq.io) - Web-UI fuer den Strimzi-Kafka-Cluster (Topics/Consumer-Groups/
 # Messages/Schema-Registry). Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
 # reservation-worker), siehe CLAUDE.md ## Team. Wrapper um den Upstream-Chart, gleiches Muster
@@ -162,14 +170,15 @@ akhq:
             groups:
               - reader
 
+  # Bewusst aus: der Ingress wird von diesem Chart selbst gerendert
+  # (templates/ingress.yaml), weil sein Hostname aus der zentralen DNS-Zone abgeleitet wird -
+  # siehe den ingress-Block ausserhalb dieses "akhq:"-Blocks weiter unten.
   ingress:
-    enabled: true
-    ingressClassName: traefik
-    annotations:
-      cert-manager.io/cluster-issuer: certificate-cluster-issuer
-    hosts:
-      - akhq.cas438007-at-cas-dhbw-de.users.dhbw.site
-    tls:
-      - secretName: akhq-tls
-        hosts:
-          - akhq.cas438007-at-cas-dhbw-de.users.dhbw.site
+    enabled: false
+
+# Einstellungen fuer den chart-eigenen Ingress (templates/ingress.yaml). Der Hostname selbst steht
+# hier NICHT - er ist immer "akhq.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml.
+ingress:
+  className: traefik
+  clusterIssuerName: certificate-cluster-issuer
+  tlsSecretName: akhq-tls

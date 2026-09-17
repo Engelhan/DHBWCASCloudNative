@@ -11,12 +11,12 @@ metadata:
   annotations:
     # Erforderlich, damit external-dns' traefik-proxy-Source ueberhaupt einen Record erzeugt -
     # siehe Kommentar bei externalDnsTarget in values.yaml.
-    external-dns.alpha.kubernetes.io/target: {{ .Values.externalDnsTarget | quote }}
+    external-dns.alpha.kubernetes.io/target: {{ include "argocd-ingress.externalDnsTarget" . | quote }}
 spec:
   entryPoints:
     - {{ .Values.traefikEntryPoint }}
   routes:
-    - match: "HostSNI(`{{ .Values.hostname }}`)"
+    - match: "HostSNI(`{{ include "argocd-ingress.hostname" . }}`)"
       services:
         - name: {{ .Values.argocdServer.serviceName }}
           port: {{ .Values.argocdServer.servicePort }}
