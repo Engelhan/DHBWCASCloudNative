@@ -15,6 +15,16 @@
   --cat-parkett: #6a4c93;
   --cat-balkon: #00897b;
   --radius: 12px;
+  /* 40 Reihen x 25 Plaetze pro Halle (siehe src/catalog-api/internal/db/migrate.go): eine Reihe
+     ist damit 25*--seat-w + 24*--seat-gap + --aisle-w breit. Die Werte sind so gewaehlt, dass
+     eine volle Reihe plus Reihenbeschriftung in --content-max passt; darunter scrollt
+     .hall-scroll horizontal, statt das Layout zu sprengen. */
+  --seat-w: 1.7rem;
+  --seat-h: 1.5rem;
+  --seat-gap: 0.25rem;
+  --aisle-w: 0.75rem;
+  --row-label-w: 8rem;
+  --content-max: 1060px;
   font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
 }
 
@@ -38,7 +48,7 @@ body {
 }
 
 main {
-  max-width: 760px;
+  max-width: var(--content-max);
   margin: -2.5rem auto 3rem;
   padding: 0 1.25rem;
   display: flex;
@@ -53,8 +63,47 @@ main {
 }
 
 .hero-inner {
-  max-width: 760px;
+  max-width: var(--content-max);
   margin: 0 auto;
+}
+
+/* Event-Auswahl im Hero: liegt auf dem Farbverlauf, deshalb helle Kontur statt Panel-Rahmen.
+   Die Optionen brauchen explizite Farben - sonst erben sie vom Verlauf und werden unlesbar. */
+.event-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+}
+
+.event-picker label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.85;
+}
+
+#event-select {
+  font: inherit;
+  font-size: 0.9rem;
+  max-width: min(100%, 34rem);
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.16);
+  color: white;
+  cursor: pointer;
+}
+
+#event-select:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+#event-select option {
+  background: var(--panel-bg);
+  color: var(--text);
 }
 
 .eyebrow {
@@ -87,7 +136,10 @@ main {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1rem;
+  /* Umbruch noetig: "1000 von 1000 Plaetzen frei" ist mit white-space: nowrap breiter als eine
+     schmale Viewport-Haelfte und wuerde die Seite sonst horizontal scrollbar machen. */
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
   margin-bottom: 1.25rem;
 }
 
@@ -109,7 +161,7 @@ main {
 
 .stage-row {
   display: grid;
-  grid-template-columns: 9rem 1fr;
+  grid-template-columns: var(--row-label-w) 1fr;
   gap: 0.75rem;
   margin-bottom: 2rem;
 }
@@ -128,11 +180,21 @@ main {
   text-transform: uppercase;
 }
 
+.hall-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+}
+
 #hall {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  margin-bottom: 1.5rem;
+  gap: 0.3rem;
+  /* max-content, damit die Reihen im Scroll-Container ihre echte Breite behalten statt
+     zusammengestaucht zu werden; min-width haelt sie bei wenigen Plaetzen trotzdem buendig. */
+  width: max-content;
+  min-width: 100%;
 }
 
 .loading {
@@ -141,7 +203,7 @@ main {
 
 .row {
   display: grid;
-  grid-template-columns: 9rem 1fr;
+  grid-template-columns: var(--row-label-w) max-content;
   align-items: center;
   gap: 0.75rem;
 }
@@ -150,9 +212,14 @@ main {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--text-muted);
   white-space: nowrap;
+  /* Beim horizontalen Scrollen soll sichtbar bleiben, in welcher Reihe/Kategorie man gerade ist. */
+  position: sticky;
+  left: 0;
+  background: var(--panel-bg);
+  z-index: 1;
 }
 
 .row-label .cat-dot {
@@ -164,25 +231,27 @@ main {
 
 .row-seats {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--seat-gap);
   justify-content: center;
 }
 
 .aisle {
-  width: 1.25rem;
+  width: var(--aisle-w);
 }
 
 .seat {
-  width: 2.4rem;
-  height: 2.1rem;
+  width: var(--seat-w);
+  height: var(--seat-h);
+  flex: none;
+  padding: 0;
   border: none;
-  border-radius: 7px 7px 3px 3px;
+  border-radius: 6px 6px 2px 2px;
   cursor: pointer;
   color: white;
-  font-size: 0.75rem;
+  font-size: 0.62rem;
   font-weight: 600;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.15);
-  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  transition: transform 0.1s ease;
 }
 
 .seat:not(:disabled):hover {
@@ -276,6 +345,10 @@ dialog#booking-dialog::backdrop {
   padding: 0.75rem;
   background: color-mix(in srgb, var(--text) 5%, transparent);
   border-radius: 8px;
+}
+
+.seat-summary-event {
+  grid-column: 1 / -1;
 }
 
 .seat-summary dt {
@@ -415,7 +488,19 @@ dialog#booking-dialog::backdrop {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 480px) {
-  .row { grid-template-columns: 1fr; }
-  .row-label { justify-content: center; }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr; gap: 0.15rem; }
+  .row-label { justify-content: flex-start; padding-right: 0.5rem; }
+  .row-seats { justify-content: flex-start; }
+  .stage-row { grid-template-columns: 1fr; }
+  #hall { gap: 0.55rem; }
+  .availability-summary { white-space: normal; }
+}
+
+/* Weder der Sitz-Hover noch der Auswahl-Puls sollen laufen, wenn der Nutzer reduzierte
+   Bewegung verlangt - bei 1000 Kacheln ist das besonders unangenehm. */
+@media (prefers-reduced-motion: reduce) {
+  .seat, .status-card:not([hidden]) { transition: none; animation: none; }
+  .seat:not(:disabled):hover { transform: none; }
+  .seat.selected { animation: none; }
 }
