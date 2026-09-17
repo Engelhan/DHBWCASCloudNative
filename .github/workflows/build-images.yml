@@ -16,6 +16,10 @@ on:
     branches: [main]
     paths:
       - "src/**"
+  # Manuell ausloesbar, damit ein frisch geforktes Repo die Images bauen kann, ohne erst
+  # kuenstlich eine Datei unter src/ aendern zu muessen - vorher war das ein echter Blocker beim
+  # ersten Deployment eines Forks (ohne Images: ImagePullBackOff fuer alle vier Services).
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -54,3 +58,49 @@ jobs:
           docker build -t "$SHA_TAG" -t "$LATEST_TAG" src/${{ matrix.service }}
           docker push "$SHA_TAG"
           docker push "$LATEST_TAG"
+
+  # Traegt den soeben gebauten Tag in die zentrale Konfigurationsdatei ein - erst damit landet ein
+  # neuer Build ueberhaupt im Cluster (ArgoCD synct gitops/env/cluster.yaml, die Charts leiten
+  # daraus ihre Image-Namen ab). Vorher musste der Short-SHA nach jedem Build von Hand in bis zu
+  # vier values.yaml nachgetragen werden.
+  #
+  # Bewusst ein EIGENER Job nach der Matrix (needs: build) statt eines Schritts darin: die vier
+  # Matrix-Jobs laufen parallel und wuerden sich sonst beim Pushen gegenseitig ueberholen. So
+  # entsteht genau ein Commit, und zwar erst, wenn alle vier Images wirklich gepusht sind.
+  #
+  # Keine Endlosschleife: dieser Workflow triggert nur auf Aenderungen unter src/**, der Commit
+  # hier beruehrt ausschliesslich gitops/ - er loest also keinen weiteren Lauf aus.
+  bump-image-tag:
+    needs: build
+    runs-on: ubuntu-latest
+    # Nur auf main. Ein manueller Lauf (workflow_dispatch) auf einem anderen Branch soll die
+    # zentrale Konfiguration nicht umschreiben.
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Set ticketflow.imageTag in gitops/env/cluster.yaml
+        run: |
+          set -euo pipefail
+          SHA_TAG="${GITHUB_SHA::8}"
+          # Gezielt nur die imageTag-Zeile ersetzen, statt die Datei per YAML-Tool neu zu
+          # serialisieren - so bleiben die ausfuehrlichen Kommentare darin unveraendert.
+          sed -i -E "s|^(  imageTag: ).*|\1\"${SHA_TAG}\"|" gitops/env/cluster.yaml
+          grep -q "imageTag: \"${SHA_TAG}\"" gitops/env/cluster.yaml
+
+          if git diff --quiet -- gitops/env/cluster.yaml; then
+            echo "imageTag steht bereits auf ${SHA_TAG} - nichts zu tun."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gitops/env/cluster.yaml
+          git commit -m "chore: bump image tag to ${SHA_TAG}"
+          # Rebase gegen den Fall, dass waehrend des Builds ein weiterer Commit auf main landete.
+          git pull --rebase origin main
+          git push origin main
