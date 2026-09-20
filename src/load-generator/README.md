@@ -6,27 +6,57 @@ wachsen → Wirkung im Grafana-Dashboard).
 
 ## Szenario "Flash Sale"
 
-Simuliert hunderte gleichzeitige Nutzer, die beim Vorverkaufsstart eines einzelnen, knapp
-kontingentierten Events Sitzplätze reservieren wollen:
+Simuliert viele gleichzeitige Nutzer, die beim Vorverkaufsstart eines einzelnen Events
+Sitzplätze reservieren wollen (`flash-sale.js`):
 
-1. Ramp-up auf `VUS` virtuelle Nutzer innerhalb weniger Sekunden.
-2. Jeder Nutzer wählt einen zufälligen freien Sitzplatz des Ziel-Events und ruft
-   `POST /events/{id}/reservations` auf `catalog-api` auf.
-3. Ein Teil der Anfragen läuft absichtlich auf denselben Sitzplatz, um Konfliktbehandlung
-   (`ReservationRejected`) sichtbar zu machen.
+1. `setup()` lädt einmalig die freien Sitzplätze des Ziel-Events (nicht pro Anfrage – die
+   eigentliche Last soll `POST /events/{id}/reservations` treffen, nicht das Nachschauen).
+2. Ramp-up auf `VUS` virtuelle Nutzer innerhalb von 10s, hält `DURATION`, rampt in 5s ab
+   (`options.scenarios.flash_sale`, Executor `ramping-vus`).
+3. Jeder Nutzer wählt einen Sitzplatz und ruft `POST /events/{id}/reservations` auf
+   `catalog-api` auf. Ein fester Anteil (`HOT_SEAT_RATIO`, Default 20%) trifft absichtlich
+   immer denselben Sitzplatz, um echte Sitzplatzkonflikte (`ReservationRejected` im
+   `reservation-worker`) zu erzeugen – ohne das entstehen bei genug freien Plätzen kaum
+   zufällige Konflikte.
+4. `202`/`409` gelten beide als erwartetes Ergebnis (kein Testfehler) – nur andere Statuscodes
+   zählen als `reservations_other_error`.
 
 ## Werkzeug
 
-`TODO`: [k6](https://k6.io/) als Kandidat (leichtgewichtig, gut skriptbar, Prometheus-Remote-Write
-möglich, damit Lastmetriken neben App-Metriken im selben Dashboard erscheinen). Alternative:
-Locust – Begründung folgt in der Root-README, sobald final entschieden.
+[k6](https://k6.io/) – leichtgewichtig, gut skriptbar (JavaScript), kein zusätzlicher Server
+nötig (anders als Locust, das einen eigenen Master/Worker-Prozess braucht). Installation:
+`brew install k6` (macOS) bzw. siehe [k6-Docs](https://k6.io/docs/get-started/installation/).
 
-## Verwendung (geplant)
+## Verwendung
 
 ```bash
+cd src/load-generator
 k6 run flash-sale.js \
-  --env API_URL=https://ticketflow.<cluster-domain> \
-  --env EVENT_ID=demo-event \
+  --env API_URL=https://ticketflow.<dns-zone> \
+  --env EVENT_ID=demo-konzert \
   --env VUS=500 \
   --env DURATION=3m
 ```
+
+Lokal gegen den docker-compose-Stack (siehe Root-README `## Betrieb`):
+
+```bash
+docker compose up -d
+k6 run flash-sale.js --env API_URL=http://localhost:8080 --env EVENT_ID=demo-konzert --env VUS=50 --env DURATION=30s
+```
+
+**Lokal beobachtet:** bei einem Testlauf mit 30 VUs/15s liefen 878 Requests durch (694×`202`,
+183×`409` durch den Hot-Seat-Mechanismus, 0 unerwartete Fehler) – `reservation-worker`
+verarbeitete den entstandenen Kafka-Backlog anschließend sichtbar zeitversetzt ab (lokal nur
+eine Worker-Instanz, kein KEDA) – im echten Cluster ist genau dieser Consumer-Lag das Signal,
+auf das KEDA mit zusätzlichen Replicas reagiert (siehe `charts/keda`, P6).
+
+## Ergebnisse einordnen
+
+k6 zählt `202`/`409` als Erfolg (siehe `options.thresholds`), da ein abgelehnter Sitzplatz ein
+korrektes, erwartetes Ergebnis des Flash-Sale-Szenarios ist, kein Fehler des Systems. Die
+eigentliche Kapazitätsaussage (wie viele Reservierungen/Sekunde `reservation-worker` verarbeiten
+kann, wie schnell KEDA hochskaliert) liest man aus den Prometheus-Metriken der Services selbst
+(`reservation_requests_total`, `reservations_processed_total`), nicht aus den k6-Zahlen –
+`custom.reservations_accepted`/`reservations_conflicted` in der k6-Ausgabe zeigen nur, was
+`catalog-api` unmittelbar beim Annehmen der Anfrage zurückgegeben hat.
