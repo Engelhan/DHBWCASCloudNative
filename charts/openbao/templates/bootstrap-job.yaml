@@ -53,26 +53,34 @@ spec:
             - |
               set -eu
 
-              # OpenBaos Image ist (wie Vaults, von dem es geforkt ist) Alpine-basiert - curl
-              # nachinstallieren fuer die direkten Kubernetes-API-Aufrufe unten. Zur
-              # Implementierungszeit gegenpruefen, falls sich das Basis-Image je aendert.
-              apk add --no-cache curl >/dev/null 2>&1 || true
+              # Live gefundener Bug (2026-09-23): "apk add --no-cache curl" schlaegt in diesem
+              # Cluster fehl (curl bleibt danach "not found") - vermutlich derselbe Klasse von
+              # Netzwerk-/Proxy-Einschraenkung, die in diesem Repo schon frueher
+              # Paket-Installationen in Containern blockiert hat (siehe CLAUDE.md, docker-compose-
+              # Go-Modul-Downloads/charts/keda). Das Image ist tatsaechlich Alpine (bestaetigt via
+              # /etc/os-release), aber "apk" selbst braucht Netzwerkzugriff auf einen Paketspiegel -
+              # curl NACHZUINSTALLIEREN ist damit der falsche Ansatz. Stattdessen "wget"
+              # verwenden, das im Image bereits vorhanden ist (kein Install noetig) - BusyBox-wget
+              # unterstuetzt zwar nur GET/POST (kein PATCH/PUT), das reicht hier aber: der
+              # POST-Aufruf unten wird nur erreicht, wenn das Secret laut vorherigem GET noch NICHT
+              # existiert (Idempotenz-Guard weiter unten), ein Update-Fall tritt im Normalbetrieb
+              # also nie ein. HTTPS-Zertifikatspruefung braucht kein eigenes wget-Flag (BusyBox-wget
+              # hat keins) - die Umgebungsvariable SSL_CERT_FILE wird von der zugrunde liegenden
+              # TLS-Bibliothek gelesen, live gegen einen echten 403 (statt eines TLS-Fehlers) als
+              # Anfrage-Antwort verifiziert.
+              export SSL_CERT_FILE=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
 
               NAMESPACE="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
               TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
-              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
               APISERVER=https://kubernetes.default.svc
 
-              kubeapi() {
-                method="$1"; path="$2"; body="${3:-}"
-                if [ -n "$body" ]; then
-                  curl -sS --cacert "$CACERT" -H "Authorization: Bearer $TOKEN" \
-                    -H "Content-Type: application/merge-patch+json" -X "$method" \
-                    --data "$body" "$APISERVER$path"
-                else
-                  curl -sS --cacert "$CACERT" -H "Authorization: Bearer $TOKEN" \
-                    -X "$method" "$APISERVER$path"
-                fi
+              kubeapi_get() {
+                wget -qO- --header "Authorization: Bearer $TOKEN" "$APISERVER$1" 2>/dev/null
+              }
+              kubeapi_post() {
+                wget -qO- --header "Authorization: Bearer $TOKEN" \
+                  --header "Content-Type: application/json" --post-data "$2" \
+                  "$APISERVER$1" 2>&1
               }
 
               HEADLESS="openbao-internal"
@@ -119,7 +127,7 @@ spec:
               # Vorhandenes Secret lesen (falls von einem frueheren Lauf vorhanden) - macht den
               # Rest des Skripts unabhaengig davon, ob dies der allererste Bootstrap oder ein
               # erneuter Sync ist.
-              EXISTING="$(kubeapi GET "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" 2>/dev/null || true)"
+              EXISTING="$(kubeapi_get "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" || true)"
               UNSEAL_KEY="$(echo "$EXISTING" | grep -o '"key1":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
               ROOT_TOKEN="$(echo "$EXISTING" | grep -o '"root_token":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
 
@@ -134,8 +142,19 @@ spec:
                 UNSEAL_KEY_B64="$(printf '%s' "$UNSEAL_KEY" | base64 | tr -d '\n')"
                 ROOT_TOKEN_B64="$(printf '%s' "$ROOT_TOKEN" | base64 | tr -d '\n')"
                 SECRET_JSON="{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"name\":\"openbao-unseal-keys\"},\"data\":{\"key1\":\"$UNSEAL_KEY_B64\",\"root_token\":\"$ROOT_TOKEN_B64\"}}"
-                kubeapi POST "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null \
-                  || kubeapi PATCH "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" "$SECRET_JSON" >/dev/null
+                # Nur POST (Create), kein PATCH-Fallback mehr - BusyBox-wget kann keine beliebige
+                # HTTP-Methode setzen (nur GET/POST via --post-data). Reicht hier: dieser Zweig
+                # wird nur erreicht, wenn "bao status" gerade erst "initialized: false" gemeldet
+                # hat, das Secret existiert an dieser Stelle also so gut wie nie schon.
+                #
+                # "|| echo ... >&2": ein wget-Fehler hier (z.B. Konflikt, falls das Secret entgegen
+                # obiger Annahme doch schon existiert) darf das Skript nicht per "set -e" abbrechen
+                # - UNSEAL_KEY/ROOT_TOKEN sind zu diesem Zeitpunkt bereits im Speicher, der Rest
+                # des Skripts (entsiegeln, KV/Auth/Policy) funktioniert auch ohne die persistierte
+                # Kopie, nur der Auto-Unseal-Sidecar haette bei einem spaeteren Pod-Neustart dann
+                # nichts zum Lesen.
+                kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null \
+                  || echo "WARNUNG: Secret openbao-unseal-keys konnte nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
               fi
 
               if [ -z "$UNSEAL_KEY" ]; then
