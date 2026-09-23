@@ -410,31 +410,75 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
 > (Aufgabenstellung: "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe"). Bis dahin dient
 > er als Umsetzungsplan; Verweise auf Dateien werden ergänzt, sobald sie existieren.
 
-**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll:* Deny-by-default
-Network Policies je Namespace (`kafka`, `cnpg-system`, künftiger `ticketflow`-App-Namespace) plus
-explizite Allow-Regeln für die tatsächlich benötigten Pfade — `catalog-api`/`reservation-worker` →
-CNPG-Primary auf Port 5432, `catalog-api`/`reservation-worker`/`notification-worker` → Kafka-Broker
-auf 9092/9093, Prometheus → `/metrics` auf allen drei Services, ArgoCD → Kubernetes-API-Server.
-Drei Charts haben ein solches Netzwerk-Policy-Netz bereits scope-geprüft aktiv (`cert-manager`,
-`kube-prometheus-stack`, `tempo`, siehe `charts/README.md` ## Resource-Limits, Security-Context,
-NetworkPolicy); CNPG, Strimzi, Longhorn und `external-dns` bringen aber kein eigenes
-`networkPolicy`-Feld mit (dort müssten die Policies selbst geschrieben werden) und
-`notification-worker`/`loki` haben ihr Toggle bewusst noch aus. Dazu: die bislang rein
-gitignoreten `infra/ansible/secrets.yml` (RFC2136-TSIG) und `infra/ansible/argocd_deploy_key`
-werden SOPS-verschlüsselt (age-Backend) eingecheckt statt nur lokal zu existieren und
-out-of-band verteilt zu werden — Ansible entschlüsselt sie zur Laufzeit über ein
-`community.sops`-Lookup-Plugin, ein `.sops.yaml` legt fest, welche Felder verschlüsselt werden.
-*Alternative:* Sealed Secrets (Controller-basiert) oder Vault (eigener Dienst) statt SOPS.
-*Begründung:* Sealed Secrets bräuchte einen zusätzlichen, selbst zu betreibenden
-zustandsbehafteten Controller nur für diesen einen Zweck; Vault wäre für ein Laborsetup mit
-überschaubarer Secret-Zahl deutlich überdimensioniert. SOPS verschlüsselt einzelne Dateien ohne
-zusätzlichen Cluster-Dienst und passt zum bestehenden Muster
-(`secrets.yml.example`/`terraform.tfvars.example`) — die verschlüsselte Datei kann committet
-werden, ohne das bisherige `delegate_to: localhost`-Modell von `gitops_secrets` zu ändern.
-*Nachweis im Betrieb (geplant):* `kubectl describe networkpolicy -A` zeigt die Deny-by-default-
-Policies; ein Pod ohne passendes Label kann nachweislich **nicht** gegen CNPG:5432 oder den
-Kafka-Broker verbinden (negative Probe); `git show` zeigt die SOPS-verschlüsselte
-`secrets.yml`, `sops -d` (nur mit dem richtigen age-Key) das Klartext-Ergebnis.
+**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll (NetworkPolicy-Hälfte):*
+Deny-by-default Network Policies je Namespace (`kafka`, `cnpg-system`, künftiger
+`ticketflow`-App-Namespace) plus explizite Allow-Regeln für die tatsächlich benötigten Pfade —
+`catalog-api`/`reservation-worker` → CNPG-Primary auf Port 5432,
+`catalog-api`/`reservation-worker`/`notification-worker` → Kafka-Broker auf 9092/9093, Prometheus
+→ `/metrics` auf allen drei Services, ArgoCD → Kubernetes-API-Server. Drei Charts haben ein
+solches Netzwerk-Policy-Netz bereits scope-geprüft aktiv (`cert-manager`, `kube-prometheus-stack`,
+`tempo`, siehe `charts/README.md` ## Resource-Limits, Security-Context, NetworkPolicy); CNPG,
+Strimzi, Longhorn und `external-dns` bringen aber kein eigenes `networkPolicy`-Feld mit (dort
+müssten die Policies selbst geschrieben werden) und `notification-worker`/`loki` haben ihr Toggle
+bewusst noch aus.
+
+*Umgesetzt (Secret-Vault-Hälfte):* Applikations-Secrets, die vorher chart-eigen/hardcodiert im
+Repo lagen (Postgres-App-User, AKHQs Kafka-SASL-Passwort, AKHQs Basic-Auth-Passwort-Hash,
+`notification-worker`s SMTP-/Kafka-mTLS-Platzhalter), werden jetzt über **OpenBao**
+(HashiCorp-Vault-Fork, `charts/openbao`) verwaltet — ein eigener, hochverfügbarer Secret-Vault mit
+**PostgreSQL als Storage-Backend** (`charts/openbao-postgres`, `ha_enabled = "true"`, 3
+OpenBao-Replicas über die drei simulierten Regionen verteilt, P4) — und per **External Secrets
+Operator** (`charts/external-secrets-operator` + `charts/openbao-secretstore`) als native
+Kubernetes-`Secret`s synchronisiert. Bestehende Deployments
+(`catalog-api`/`reservation-worker`/`notification-worker`/`akhq`) ändern sich dadurch nicht — sie
+lesen weiterhin per `secretKeyRef`/`envFrom`, nur die Quelle wechselt. Init/Unseal/KV-Seeding
+laufen vollständig GitOps-nativ über einen Helm-Hook-Job in `charts/openbao`
+(`templates/bootstrap-job.yaml`, analog zum bestehenden Apicurio-Schema-Registrierungs-Job in
+`charts/kafka-cluster`) statt über eine zusätzliche Ansible-Rolle — passt zu P2 ("ein Ablauf
+bringt alles hoch") und W2, kein manueller Zusatzschritt außer der empfohlenen einmaligen
+Sicherung von `openbao-unseal-keys` nach dem ersten Sync (`kubectl -n openbao get secret
+openbao-unseal-keys -o yaml`). Bewusste Vereinfachung: Shamir-Schlüssel-Schwelle `1-von-1` statt
+z. B. `3-von-5` — für ein Laborsetup ohne mehrere vertrauenswürdige Operator:innen wäre eine echte
+Schlüsselverteilung Overhead ohne Sicherheitsgewinn; der Auto-Unseal-Sidecar (pollt lokal `bao
+status`, entsiegelt bei Bedarf automatisch aus einem gemounteten Secret) muss dadurch nur einen
+Key statt eines Schwellenwerts koordinieren.
+
+Seit 2026-09-23 fließen auch Secrets in die umgekehrte Richtung: ein `PushSecret` (ESOs
+Gegenstück zu `ExternalSecret`, K8s → Vault statt Vault → K8s) spiegelt die von Strimzi
+(`catalog-api`/`reservation-worker`/`notification-worker`-`KafkaUser`-Passwörter) und CNPG
+(Postgres-App-User-Credential, jetzt vom Operator selbst statt von uns generiert) erzeugten
+Zugangsdaten zusätzlich nach OpenBao — nicht um eine Namespace-Grenze zu überbrücken (beide Seiten
+liegen im selben Namespace), sondern damit OpenBao wirklich *jedes* Credential im Cluster als
+zentrale Audit-Fläche zeigt, nicht nur die selbst erzeugten. Bewusst ausgenommen bleibt OpenBaos
+eigenes Storage-Backend-Credential (`charts/openbao-postgres`) — das wäre zirkulär, die Vault kann
+ihr eigenes Bootstrap-Passwort nicht enthalten, bevor sie damit entsiegelt ist.
+
+*Alternative:* SOPS (age-Backend), verschlüsselte Dateien direkt im Repo eingecheckt, von Ansible
+zur Laufzeit entschlüsselt — oder Sealed Secrets (Controller-basiert).
+*Begründung:* SOPS ist für ein Laborsetup mit überschaubarer Secret-Zahl einfacher, aber statisch —
+jede Rotation ist ein Git-Commit, und es gibt keinen zentralen Ort, an dem ein Angreifer, der ein
+einzelnes Deployment kompromittiert, nicht auch gleich den Git-Verlauf mit allen historischen
+Chiffretext-Versionen einsehen könnte (SOPS entschlüsselt zwar zur Laufzeit, aber der
+Chiffretext-Verlauf bleibt für jeden mit Repo-Zugriff und dem age-Key entschlüsselbar). Sealed
+Secrets bräuchte einen zusätzlichen, selbst zu betreibenden zustandsbehafteten Controller nur für
+diesen einen Zweck. Ein eigener Vault-Dienst ist für dieses Laborsetup baustellenintensiver (3
+zusätzliche Replicas + eigene Postgres-HA-Instanz + Bootstrap-Job), liefert dafür aber echte
+Rotation ohne Git-Commit, eine zentrale Audit-Fläche und — passend zum Domain-Tie dieses Projekts
+(Flash-Sale-Traffic verlangt, dass kein einzelner Service-Ausfall die Verfügbarkeit der Secrets
+für alle anderen Services gefährdet) — echte Hochverfügbarkeit über simulierte Regionen hinweg,
+dieselbe Region-Fake-Topologie wie bei Kafka/CNPG.
+*Nachweis im Betrieb:* `kubectl -n openbao get pods` zeigt 3 laufende, entsiegelte
+OpenBao-Replicas; ein simuliertes Pod-Kill der aktuell aktiven Instanz (`kubectl delete pod
+openbao-X -n openbao`) zeigt Failover auf einen bereits entsiegelten Standby ohne manuelles
+Eingreifen (Postgres-Backend-Leader-Wahl); ein Neustart/Ersatz-Pod zeigt den Auto-Unseal-Sidecar
+beim automatischen `bao operator unseal`, ohne einen erneuten manuellen Schritt; `kubectl -n
+<app-namespace> get externalsecret` zeigt `SecretSynced`; `kubectl -n <app-namespace> get
+pushsecret` zeigt `Synced` für die Strimzi-/CNPG-Credentials, `bao kv get secret/kafka/catalog-api`
+bzw. `bao kv get secret/postgres/app-user` zeigt den gespiegelten Wert; die NetworkPolicy-Hälfte
+bleibt geplant
+— `kubectl describe networkpolicy -A` zeigt dann die Deny-by-default-Policies, ein Pod ohne
+passendes Label kann nachweislich **nicht** gegen CNPG:5432 oder den Kafka-Broker verbinden
+(negative Probe).
 
 **B2 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
 hinaus.** *Was umgesetzt wurde:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
@@ -446,14 +490,18 @@ kafka-users.yaml`, generiert aus `values.yaml` `kafka.users`: `catalog-api` darf
 `reservation-requested` (+ die eigene Consumer-Group) und `Write` auf `reservation-result`;
 `notification-worker` darf ausschließlich `Read` auf `reservation-result` (+ eigene
 Consumer-Group). Der Kafka-Cluster läuft in einem **eigenen Namespace** (`kafka`), getrennt von
-der Anwendung (`ticketflow`) — für die Secrets folgt daraus zweierlei: die `KafkaUser`-CRs von
-`catalog-api`/`reservation-worker`/`notification-worker` werden bewusst im **App**-Namespace
-angelegt (`spec.entityOperator.userOperator.watchedNamespace`), damit das vom User Operator
-erzeugte Secret dort landet, wo die Services es per `secretKeyRef` lesen können; **AKHQ**
-(schreibgeschützt konfiguriert) läuft dagegen im Kafka-Namespace und bekommt ein vorgegebenes
-Passwort über `spec.authentication.password.valueFrom.secretKeyRef` auf ein selbst angelegtes,
-austauschbares Secret. Der Grund ist in beiden Fällen derselbe: Kubernetes erlaubt kein
-`secretKeyRef` über Namespace-Grenzen. *Alternative:* ein einziges, geteiltes Client-Secret für alle
+der Anwendung (`ticketflow`) — für die Secrets folgt daraus zweierlei: die `KafkaUser`-CRs aller
+vier Identitäten (`catalog-api`/`reservation-worker`/`notification-worker`/`akhq`) werden bewusst
+im **App**-Namespace angelegt (`spec.entityOperator.userOperator.watchedNamespace`), damit das vom
+User Operator erzeugte Secret dort landet, wo `catalog-api`/`reservation-worker`/
+`notification-worker` es direkt per `secretKeyRef` lesen können — alle vier lassen Strimzi ihr
+Passwort mittlerweile gleich generieren, keine Sonderbehandlung mehr. **AKHQ**
+(schreibgeschützt konfiguriert) läuft aber im Kafka-Namespace und kann das App-Namespace-Secret
+deshalb nicht per `secretKeyRef` erreichen (Kubernetes erlaubt das nicht über Namespace-Grenzen);
+seit B1 (siehe `## Bonus`) löst ein `PushSecret`/`ExternalSecret`-Paar über OpenBao genau das —
+AKHQs Kafka-Passwort wird wie bei den anderen drei von Strimzi generiert, nach OpenBao gespiegelt
+und von dort in AKHQs eigenen Namespace zurückgesynct, statt wie zuvor chart-seitig vorgegeben zu
+werden. *Alternative:* ein einziges, geteiltes Client-Secret für alle
 Producer/Consumer (der in der Vorlesung/GridFlex gezeigte Umfang), oder Kafka-ACLs händisch per
 `kafka-acls.sh` statt deklarativ über `KafkaUser`. *Begründung:* Ein geteiltes Secret ist
 funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht aber jeden Service

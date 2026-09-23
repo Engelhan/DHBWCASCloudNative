@@ -52,16 +52,17 @@ Jeder Chart bekommt zusätzlich `values-<ticketflow.environment>.yaml` als Value
 `dev` auf `prod` ist deshalb genau eine Zeile in `env/cluster.yaml` und braucht keine Änderung am
 ApplicationSet — auch dann nicht, wenn ein Chart später einen dev/prod-Split bekommt.
 
-`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack`/`keda` brauchen zusätzlich
-`syncOptions: [ServerSideApply=true]`: alle vier Upstream-Charts bündeln einzelne CRDs deutlich
-
-über 262144 Byte (CNPGs `poolers`-CRD über 650 KB, Strimzis `Kafka`-CRD über 330 KB,
-kube-prometheus-stacks `Prometheus`-CRD über 800 KB) — Client-Side-Apply würde die komplette
+`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack`/`keda`/`external-secrets-operator`
+brauchen zusätzlich `syncOptions: [ServerSideApply=true]`: alle fünf Upstream-Charts bündeln
+einzelne CRDs deutlich über bzw. (bei `external-secrets-operator`) knapp unter 262144 Byte (CNPGs
+`poolers`-CRD über 650 KB, Strimzis `Kafka`-CRD über 330 KB, kube-prometheus-stacks
+`Prometheus`-CRD über 800 KB, `external-secrets-operator`s `secretstores`/`clustersecretstores`
+je ~252 KB reines YAML, gemessen) — Client-Side-Apply würde die komplette
 Ressource zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
 Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler wie beim
 ArgoCD-Install selbst, siehe `CLAUDE.md` ## Infra layering (Ansible specifics) —
-Server-Side-Apply schreibt diese Annotation gar nicht erst. Loki/Tempo bringen selbst keine CRDs
-mit, brauchen das nicht.
+Server-Side-Apply schreibt diese Annotation gar nicht erst. Loki/Tempo/`openbao`/
+`openbao-postgres`/`openbao-secretstore` bringen selbst keine CRDs mit, brauchen das nicht.
 
 ## Observability-Stack (kube-prometheus-stack, Loki, Tempo)
 
@@ -245,3 +246,52 @@ Inhaltsänderung). `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** T
 
 `TODO`: ein dediziertes `AppProject` (Repo-/Namespace-/Ressourcen-Scoping) fehlt noch — alle
 Applications laufen bislang mit `project: default`.
+
+## OpenBao / Secret-Vault (B1)
+
+Vier Applications: `openbao-postgres` (OpenBaos eigene CNPG-`Cluster`-CR, Namespace `openbao`),
+`openbao` (der eigentliche Secret-Vault, HA über PostgreSQL-Storage-Backend, gleicher Namespace),
+`external-secrets-operator` (Namespace `external-secrets`) und `openbao-secretstore` (die eine
+`ClusterSecretStore`-CR gegen OpenBao, ebenfalls im Namespace `external-secrets`, weil sie mit dem
+Operator zusammengehört). Details zu Chart-Aufbau/Werten stehen in `CLAUDE.md` ## Current
+implementation status; hier nur der GitOps-spezifische Teil.
+
+**Kein `syncWave` auf keiner der vier Applications** — wie bei `cnpg-operator`→`postgres-cluster`/
+`strimzi-operator`→`kafka-cluster` verlässt sich das auf `selfHeal`, statt eine explizite
+Reihenfolge zu erzwingen. Die tatsächliche Abhängigkeitskette bis alles zum ersten Mal grün ist,
+ist trotzdem länger als bei jedem anderen Addon-Paar in diesem Repo: `cnpg-operator` →
+`openbao-postgres` → `openbao` (Bootstrap-Hook-Job läuft) → `openbao-secretstore` (wird `Valid`)
+→ jede migrierte `ExternalSecret` (`charts/postgres-cluster`, `charts/kafka-cluster`,
+`charts/akhq`, `charts/notification-worker`) kann erst danach syncen. ArgoCD zeigt beim ersten
+echten Rollout deshalb erwartungsgemäß vorübergehend `OutOfSync`/`Error`/`Degraded` auf mehreren
+dieser Applications gleichzeitig, bis jedes Glied per `selfHeal` nachgezogen hat — kein Bug,
+sondern derselbe "deklarativ da, funktional wartend"-Fall wie beim `cert-manager-config`
+`ClusterIssuer`, der ebenfalls erst nach dem TSIG-Secret funktioniert (siehe ## DNS/ACME oben).
+
+**Seit 2026-09-23 zusätzlich `PushSecret` (K8s → OpenBao, das Gegenstück zu `ExternalSecret`) für
+`charts/postgres-cluster` und `charts/kafka-cluster`:** CNPGs und Strimzis selbst generierte
+Credentials werden nach OpenBao gespiegelt, damit die Vault wirklich jedes Credential im Cluster
+zeigt (zentrale Audit-Fläche, nicht nur eine Namespace-Überbrückung). Für `postgres-cluster`
+verbessert das sogar die Abhängigkeitskette: die CNPG-`Cluster`-CR bootstrapt jetzt unabhängig von
+OpenBao (kein vorgegebenes `bootstrap.initdb.secret` mehr, CNPG generiert es selbst) — nur der
+Rückweg zur konventionell benannten Secret-Kopie, die `catalog-api`/`reservation-worker`
+tatsächlich per `secretKeyRef` lesen, hängt noch am `PushSecret`→OpenBao→`ExternalSecret`-Dreieck.
+Vorher musste die Datenbank selbst auf einen bereits entsiegelten, befüllten Vault warten, bevor
+sie überhaupt initialisieren konnte — das ist mit dieser Umstellung entfallen.
+
+**Bootstrap ist vollständig GitOps-nativ, keine Ansible-Rolle:** `charts/openbao` bringt einen
+`post-install,post-upgrade`-Helm-Hook-`Job` mit (`templates/bootstrap-job.yaml`), der bei jedem
+Sync automatisch Init/Unseal/KV-Setup übernimmt — analog zum bestehenden
+Apicurio-Schema-Registrierungs-Job in `charts/kafka-cluster`. Einzige empfohlene manuelle Aktion
+nach dem allerersten erfolgreichen Sync: eine Offline-Sicherung des Unseal-Keys/Root-Tokens außerhalb
+des Clusters ziehen (ein Helm-Hook-Job kann anders als eine Ansible-Rolle nicht auf die Maschine
+des Operators schreiben):
+
+```bash
+kubectl -n openbao get secret openbao-unseal-keys -o yaml > openbao-unseal-keys.backup.yaml
+# openbao-unseal-keys.backup.yaml sicher (z.B. verschlüsselt) ablegen, NICHT committen.
+```
+
+Ohne dieses Backup ist der Shamir-`1-von-1`-Key (bewusste Laborvereinfachung, siehe Root-README
+## Bonus B1) ausschließlich im gleichnamigen K8s-Secret vorhanden — geht dieses verloren, sind die
+in OpenBao gespeicherten Werte nicht wiederherstellbar.
