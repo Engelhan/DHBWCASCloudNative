@@ -94,11 +94,19 @@ spec:
               # selbst weiter unten herbeifuehrt - klassischer Deadlock im Skript selbst, live als
               # endlos wiederholtes "warte auf openbao-0..." beobachtet. Fix: nur Exit-Code 1
               # bedeutet "weiter warten", 0 UND 2 bedeuten "Prozess laeuft, antwortet korrekt".
+              #
+              # Zweiter, eng verwandter Bug beim ersten Fixversuch: "bao status; rc=$?" als zwei
+              # getrennte Anweisungen loest unter "set -e" (oben gesetzt) sofortigen Skriptabbruch
+              # aus, SOBALD "bao status" nicht-null zurueckgibt - "rc=$?" wird dann nie erreicht.
+              # "set -e" ignoriert den Exit-Code nur, wenn der Befehl Teil einer Bedingung ist
+              # (if/while/until-Test oder vor "||"/"&&") - ein einzelner Befehl als eigene Zeile
+              # zaehlt nicht dazu. Live beobachtet: Job endete sofort mit Exit-Code 2, ganz ohne
+              # Log-Ausgabe (starb, bevor "rc=$?" oder gar das erste "echo" erreicht wurde). Fix:
+              # "|| rc=$?" haengt den Fehlerfall direkt an denselben Befehl.
               wait_for_pod() {
                 pod="$1"
                 while true; do
-                  BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1
-                  rc=$?
+                  BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1 && rc=0 || rc=$?
                   [ "$rc" -ne 1 ] && break
                   echo "warte auf $pod..."
                   sleep 3
