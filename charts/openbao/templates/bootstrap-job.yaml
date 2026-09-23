@@ -86,9 +86,20 @@ spec:
               # anders als bei reservation-worker/KEDA).
               PODS="{{ range $i := until $replicas }}openbao-{{ $i }} {{ end }}"
 
+              # Live gefundener Bug (2026-09-23): "bao status" gibt Exit-Code 2 zurueck, wenn die
+              # Instanz erreichbar, aber (wie bei jeder frischen Installation) noch versiegelt
+              # ist - nur Exit-Code 1 bedeutet "nicht erreichbar/Fehler", 0 heisst entsiegelt.
+              # "until bao status; do ...; done" wertete JEDEN Nicht-Null-Exit als "noch nicht
+              # bereit" und wartete damit auf einen Zustand (entsiegelt), den erst dieses Skript
+              # selbst weiter unten herbeifuehrt - klassischer Deadlock im Skript selbst, live als
+              # endlos wiederholtes "warte auf openbao-0..." beobachtet. Fix: nur Exit-Code 1
+              # bedeutet "weiter warten", 0 UND 2 bedeuten "Prozess laeuft, antwortet korrekt".
               wait_for_pod() {
                 pod="$1"
-                until BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1; do
+                while true; do
+                  BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1
+                  rc=$?
+                  [ "$rc" -ne 1 ] && break
                   echo "warte auf $pod..."
                   sleep 3
                 done
