@@ -147,14 +147,24 @@ spec:
                 # wird nur erreicht, wenn "bao status" gerade erst "initialized: false" gemeldet
                 # hat, das Secret existiert an dieser Stelle also so gut wie nie schon.
                 #
-                # "|| echo ... >&2": ein wget-Fehler hier (z.B. Konflikt, falls das Secret entgegen
-                # obiger Annahme doch schon existiert) darf das Skript nicht per "set -e" abbrechen
-                # - UNSEAL_KEY/ROOT_TOKEN sind zu diesem Zeitpunkt bereits im Speicher, der Rest
-                # des Skripts (entsiegeln, KV/Auth/Policy) funktioniert auch ohne die persistierte
-                # Kopie, nur der Auto-Unseal-Sidecar haette bei einem spaeteren Pod-Neustart dann
-                # nichts zum Lesen.
-                kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null \
-                  || echo "WARNUNG: Secret openbao-unseal-keys konnte nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
+                # Live gefundener Vorfall (2026-09-23): direkt nach einem frischen ArgoCD-Sync
+                # (ServiceAccount/RoleBinding gerade erst neu angelegt) schlug genau dieser Aufruf
+                # einmalig mit HTTP 401 fehl, obwohl dieselbe Kombination aus Token/Request
+                # Sekunden spaeter manuell einwandfrei funktionierte - vermutlich kurze
+                # RBAC-/Token-Propagationsverzoegerung direkt nach dem Sync. Besonders teuer hier:
+                # ein fehlgeschlagener Schreibversuch bedeutet einen UNWIEDERBRINGLICH verlorenen
+                # Unseal-Key (Shamir 1-von-1, kein zweiter Weg, ihn zu erhalten) - deshalb mehrere
+                # Versuche mit kurzer Pause, bevor aufgegeben wird.
+                write_ok=0
+                for _ in 1 2 3 4 5; do
+                  if kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null 2>&1; then
+                    write_ok=1
+                    break
+                  fi
+                  sleep 3
+                done
+                [ "$write_ok" -eq 1 ] \
+                  || echo "WARNUNG: Secret openbao-unseal-keys konnte auch nach mehreren Versuchen nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
               fi
 
               if [ -z "$UNSEAL_KEY" ]; then
