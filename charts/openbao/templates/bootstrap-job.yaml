@@ -1,0 +1,205 @@
+# Init/Unseal/KV-Seeding bei jedem ArgoCD-Sync, vollstaendig GitOps-nativ (kein Ansible) - Muster:
+# charts/kafka-cluster/templates/schema-registry/register-job.yaml (gleicher Hook-Typ,
+# restartPolicy: Never, Container-Haertung, Wartelogik per Retry-Loop statt geratenem
+# Health-Endpoint).
+#
+# Erreicht jede OpenBao-Instanz DIREKT ueber das Pod-eigene DNS des vom Upstream-Chart
+# erzeugten Headless-Service (StatefulSet-Konvention "<pod>.<headless-service>.<namespace>.svc") -
+# kein kubectl exec, keine erhoehte RBAC noetig, nur normale Pod-zu-Pod-Netzwerkerreichbarkeit auf
+# Port 8200. Service-Name "openbao-internal" folgt der ueblichen Vault/OpenBao-Helm-Konvention
+# "<fullname>-internal" mit Release-Name "openbao" - gegen den real gerenderten Manifest-Output
+# verifizieren, bevor der erste echte Sync erwartet wird (siehe Plan-Datei ## Verifikation). Die
+# Pod-Liste selbst wird aus .Values.openbao.server.ha.replicas generiert, nicht hartkodiert -
+# siehe Kommentar bei PODS= unten.
+#
+# Idempotenz: das Skript liest zuerst ein evtl. bereits vorhandenes "openbao-unseal-keys"-Secret
+# (fruehere Laeufe) und verhaelt sich danach fuer den allerersten Bootstrap UND jeden spaeteren
+# ArgoCD-Sync identisch - kein Sonderfall "frisch initialisiert" vs. "bereits initialisiert".
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openbao-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: openbao-bootstrap
+    spec:
+      restartPolicy: Never
+      serviceAccountName: openbao-bootstrap
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bootstrap
+          image: {{ .Values.bootstrapJob.image | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.bootstrapJob.resources | nindent 12 }}
+          env:
+            - name: EXTERNAL_SECRETS_NAMESPACE
+              value: {{ .Values.externalSecretsNamespace | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              # OpenBaos Image ist (wie Vaults, von dem es geforkt ist) Alpine-basiert - curl
+              # nachinstallieren fuer die direkten Kubernetes-API-Aufrufe unten. Zur
+              # Implementierungszeit gegenpruefen, falls sich das Basis-Image je aendert.
+              apk add --no-cache curl >/dev/null 2>&1 || true
+
+              NAMESPACE="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              APISERVER=https://kubernetes.default.svc
+
+              kubeapi() {
+                method="$1"; path="$2"; body="${3:-}"
+                if [ -n "$body" ]; then
+                  curl -sS --cacert "$CACERT" -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/merge-patch+json" -X "$method" \
+                    --data "$body" "$APISERVER$path"
+                else
+                  curl -sS --cacert "$CACERT" -H "Authorization: Bearer $TOKEN" \
+                    -X "$method" "$APISERVER$path"
+                fi
+              }
+
+              HEADLESS="openbao-internal"
+              {{ $replicas := .Values.openbao.server.ha.replicas | int }}
+              # Pod-Liste wird aus .Values.openbao.server.ha.replicas generiert (aktuell {{ $replicas }}),
+              # nicht hartkodiert - eine Aenderung der Replica-Zahl (values.yaml/values-prod.yaml)
+              # ist selbst ein Helm-Upgrade und loest den post-upgrade-Hook mit der NEUEN Pod-Liste
+              # erneut aus. Laufzeit-Discovery ueber die Kubernetes-API waere hier redundant: ein
+              # manuelles "kubectl scale" am ArgoCD-selfHeal vorbei wird ohnehin auf den
+              # deklarierten Wert zurueckgedreht (kein ignoreDifferences auf spec.replicas hier,
+              # anders als bei reservation-worker/KEDA).
+              PODS="{{ range $i := until $replicas }}openbao-{{ $i }} {{ end }}"
+
+              # Live gefundener Bug (2026-09-23): "bao status" gibt Exit-Code 2 zurueck, wenn die
+              # Instanz erreichbar, aber (wie bei jeder frischen Installation) noch versiegelt
+              # ist - nur Exit-Code 1 bedeutet "nicht erreichbar/Fehler", 0 heisst entsiegelt.
+              # "until bao status; do ...; done" wertete JEDEN Nicht-Null-Exit als "noch nicht
+              # bereit" und wartete damit auf einen Zustand (entsiegelt), den erst dieses Skript
+              # selbst weiter unten herbeifuehrt - klassischer Deadlock im Skript selbst, live als
+              # endlos wiederholtes "warte auf openbao-0..." beobachtet. Fix: nur Exit-Code 1
+              # bedeutet "weiter warten", 0 UND 2 bedeuten "Prozess laeuft, antwortet korrekt".
+              wait_for_pod() {
+                pod="$1"
+                while true; do
+                  BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1
+                  rc=$?
+                  [ "$rc" -ne 1 ] && break
+                  echo "warte auf $pod..."
+                  sleep 3
+                done
+              }
+              for p in $PODS; do wait_for_pod "$p"; done
+
+              export BAO_ADDR="http://openbao-0.$HEADLESS.$NAMESPACE.svc:8200"
+
+              # Vorhandenes Secret lesen (falls von einem frueheren Lauf vorhanden) - macht den
+              # Rest des Skripts unabhaengig davon, ob dies der allererste Bootstrap oder ein
+              # erneuter Sync ist.
+              EXISTING="$(kubeapi GET "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" 2>/dev/null || true)"
+              UNSEAL_KEY="$(echo "$EXISTING" | grep -o '"key1":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
+              ROOT_TOKEN="$(echo "$EXISTING" | grep -o '"root_token":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
+
+              INITIALIZED="$(bao status -format=json 2>/dev/null | grep -o '"initialized":[a-z]*' | cut -d: -f2 || echo false)"
+
+              if [ "$INITIALIZED" != "true" ]; then
+                echo "initialisiere OpenBao (Shamir 1-von-1, bewusste Laborvereinfachung)..."
+                INIT_OUTPUT="$(bao operator init -key-shares=1 -key-threshold=1 -format=json)"
+                UNSEAL_KEY="$(echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
+                ROOT_TOKEN="$(echo "$INIT_OUTPUT" | grep -o '"root_token":"[^"]*"' | sed 's/.*:"//; s/"$//')"
+
+                UNSEAL_KEY_B64="$(printf '%s' "$UNSEAL_KEY" | base64 | tr -d '\n')"
+                ROOT_TOKEN_B64="$(printf '%s' "$ROOT_TOKEN" | base64 | tr -d '\n')"
+                SECRET_JSON="{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"name\":\"openbao-unseal-keys\"},\"data\":{\"key1\":\"$UNSEAL_KEY_B64\",\"root_token\":\"$ROOT_TOKEN_B64\"}}"
+                kubeapi POST "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null \
+                  || kubeapi PATCH "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" "$SECRET_JSON" >/dev/null
+              fi
+
+              if [ -z "$UNSEAL_KEY" ]; then
+                echo "FEHLER: kein Unseal-Key bekannt (weder initialisiert noch im Secret gefunden) - manueller Eingriff noetig" >&2
+                exit 1
+              fi
+
+              echo "entsiegle alle drei Instanzen..."
+              for p in $PODS; do
+                BAO_ADDR="http://$p.$HEADLESS.$NAMESPACE.svc:8200" bao operator unseal "$UNSEAL_KEY" >/dev/null 2>&1 || true
+              done
+
+              if [ -z "$ROOT_TOKEN" ]; then
+                echo "kein Root-Token bekannt (Secret vermutlich manuell veraendert) - ueberspringe KV/Auth/Policy-Setup" >&2
+                exit 0
+              fi
+
+              export BAO_TOKEN="$ROOT_TOKEN"
+
+              bao secrets enable -path=secret kv-v2 2>&1 | grep -v "already in use" || true
+              bao auth enable kubernetes 2>&1 | grep -v "already enabled" || true
+              bao write auth/kubernetes/config kubernetes_host="https://kubernetes.default.svc:443" >/dev/null
+
+              # Kein Heredoc hier: die YAML-Block-Scalar-Einrueckung dieses gesamten Skripts wuerde
+              # jede Heredoc-Terminator-Zeile mit fuehrenden Leerzeichen versehen und den
+              # Terminator damit unbrauchbar machen (<<-, das nur Tabs entfernt, hilft bei
+              # Leerzeichen-Einrueckung nicht) - stattdessen die Policy in eine Datei schreiben.
+              #
+              # create+read+update auf data UND metadata (nicht nur "read"): External Secrets
+              # pusht seit der PushSecret-Erweiterung (Strimzi-/CNPG-generierte Secrets werden
+              # nach OpenBao gespiegelt, siehe charts/kafka-cluster/charts/postgres-cluster) auch
+              # eigene Werte in die Vault - laut externaler-secrets.io-Doku fuer den
+              # Vault-Provider/KV-v2 braucht Push explizit Rechte auf BEIDE Pfade, nicht nur
+              # "secret/data/*". Vorher war dieser Pfad reines "read" - Push war zu dem Zeitpunkt
+              # noch nicht vorgesehen.
+              printf 'path "secret/data/*" {\n  capabilities = ["create", "read", "update"]\n}\npath "secret/metadata/*" {\n  capabilities = ["create", "read", "update", "list"]\n}\n' > /tmp/external-secrets-policy.hcl
+              bao policy write external-secrets /tmp/external-secrets-policy.hcl >/dev/null
+
+              bao write auth/kubernetes/role/external-secrets \
+                bound_service_account_names=external-secrets \
+                bound_service_account_namespaces="$EXTERNAL_SECRETS_NAMESPACE" \
+                policies=external-secrets \
+                ttl=1h >/dev/null
+
+              genpass() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32; }
+
+              seed_if_missing() {
+                path="$1"; shift
+                if ! bao kv get "$path" >/dev/null 2>&1; then
+                  echo "seede $path..."
+                  bao kv put "$path" "$@" >/dev/null
+                fi
+              }
+
+              # Rein interne Service-zu-Service-Credentials OHNE eigenen Operator, der sie
+              # generieren koennte - vom Job selbst zufaellig generiert, kein Mensch waehlt sie
+              # vorab (siehe Root-README ## Bonus B1). AKHQs Basic-Auth-Login-Passwort ist der
+              # letzte verbleibende Fall: dafuer existiert kein Operator, der es generieren
+              # koennte (es ist kein Kafka-SCRAM-Credential, sondern ein reines UI-Login).
+              #
+              # KEIN "secret/postgres/app-user" und KEIN "secret/kafka/*" mehr hier (bis
+              # 2026-09-23 stand hier noch "secret/kafka/akhq-user"): CNPG generiert das
+              # Postgres-App-User-Credential und Strimzi generiert ALLE vier KafkaUser-Passwoerter
+              # (auch akhqs, seit AKHQ an dieselbe Strimzi-Auto-Generierung angeglichen wurde wie
+              # catalog-api/reservation-worker/notification-worker) jetzt selbst - je ein
+              # PushSecret spiegelt sie hierher (charts/postgres-cluster/
+              # templates/postgres-user-pushsecret.yaml,
+              # charts/kafka-cluster/templates/messaging/kafka-user-pushsecrets.yaml). Der
+              # Bootstrap-Job wuerde sonst gegen die echten, operator-generierten Werte
+              # gegenschreiben.
+              seed_if_missing secret/akhq/basic-auth password="$(genpass)"
+              seed_if_missing secret/notification-worker/smtp username="" password=""
+              seed_if_missing secret/notification-worker/kafka-tls ca-cert="" client-cert="" client-key=""
+
+              echo "OpenBao-Bootstrap abgeschlossen"

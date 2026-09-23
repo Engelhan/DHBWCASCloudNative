@@ -1,0 +1,17 @@
+{{- $backup := .Values.backup | default dict -}}
+{{- if eq $backup.enabled true }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: "{{ include "openbao-postgres.databaseName" $ }}-postgres-cluster-daily-backup"
+spec:
+  schedule: {{ $backup.schedule | quote }}
+  backupOwnerReference: cluster
+  immediate: true
+  cluster:
+    name: "{{ include "openbao-postgres.clusterName" $ }}"
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+
+{{- end }}

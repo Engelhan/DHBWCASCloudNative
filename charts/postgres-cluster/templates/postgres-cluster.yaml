@@ -40,8 +40,6 @@ spec:
     recovery:
       database: {{ include "postgres-cluster.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
-      secret:
-        name: "{{ include "postgres-cluster.userSecretName" . }}"
       source: restoreServer
       {{- if .Values.backup.timestampToRestoreFrom }}
       recoveryTarget:
@@ -51,8 +49,14 @@ spec:
     initdb:
       database: {{ include "postgres-cluster.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
-      secret:
-        name: "{{ include "postgres-cluster.userSecretName" . }}"
+      # Bewusst KEIN "secret:"-Feld (seit B1, Root-README ## Bonus - vorher stand hier ein
+      # chart-eigenes, per ExternalSecret aus OpenBao befuelltes Secret): CNPG generiert das
+      # App-User-Credential jetzt selbst (Secret "<clusterName>-app", siehe _helpers.tpl
+      # postgres-cluster.appSecretName), ein PushSecret spiegelt es nach OpenBao
+      # (templates/postgres-user-pushsecret.yaml) und ein ExternalSecret synct es von dort unter
+      # dem konventionellen Namen zurueck (templates/postgres-user-secret.yaml), den
+      # catalog-api/reservation-worker per secretKeyRef erwarten - gleiche Begruendung wie bei
+      # charts/openbao-postgres, hier zusaetzlich fuer die zentrale Audit-Flaeche in OpenBao.
       encoding: UTF-8
       localeCollate: en_US.UTF-8
       localeCType: en_US.UTF-8

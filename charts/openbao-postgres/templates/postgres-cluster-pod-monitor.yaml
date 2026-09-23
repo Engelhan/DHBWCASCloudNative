@@ -1,0 +1,17 @@
+{{- if eq .Values.monitoring true }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: "{{ include "openbao-postgres.clusterName" . }}"
+  # Ohne dieses Label greift der podMonitorSelector von kube-prometheus-stack nicht (Chart-Default
+  # "release: <helm-release-name>") und die CNPG-Metriken werden schlicht nie gescrapt - alle
+  # anderen Monitore im Repo tragen es bereits.
+  labels:
+    {{- toYaml .Values.podMonitor.labels | nindent 4 }}
+spec:
+  podMetricsEndpoints:
+    - port: metrics
+  selector:
+    matchLabels:
+      cnpg.io/cluster: "{{ include "openbao-postgres.clusterName" . }}"
+{{- end }}

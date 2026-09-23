@@ -133,13 +133,15 @@ kafka:
     # akhq: schreibgeschuetzte Kafka-Ops-UI (siehe Root-README ## B2 "AKHQ schreibgeschuetzt
     # konfiguriert") - braucht Sicht auf ALLE Topics/Consumer-Groups (nicht nur die beiden oben),
     # deshalb Resource-Name "*" (Kafkas eingebauter ACL-Wildcard fuer "jede Resource dieses Typs",
-    # kein Praefix-Pattern). Passwort wird NICHT vom User Operator generiert, sondern explizit aus
-    # akhqUser.passwordSecretName vorgegeben (siehe kafka-akhq-user-secret.yaml) - AKHQ laeuft im
-    # Namespace "kafka", nicht "ticketflow", ein generiertes Secret koennte AKHQs Deployment per
-    # secretKeyRef also nicht direkt (Namespace-Grenze) erreichen. Passwort siehe akhqUser unten,
-    # muss mit charts/akhq/values.yaml kafkaSasl.password uebereinstimmen.
+    # kein Praefix-Pattern). Seit 2026-09-23 KEIN passwordSecretName mehr - das Passwort wird wie
+    # bei catalog-api/reservation-worker/notification-worker vom Strimzi User Operator selbst
+    # generiert (Secret "akhq" im App-Namespace, Keys password/sasl.jaas.config). Dass AKHQs Pod
+    # im Namespace "kafka" laeuft und dieses Secret damit nicht direkt per secretKeyRef lesen
+    # kann (Namespace-Grenze), wird jetzt genau wie bei den drei anderen Usern geloest: ein
+    # PushSecret (kafka-user-pushsecrets.yaml) spiegelt es nach OpenBao, und
+    # charts/akhq/templates/kafka-sasl-secret.yaml holt es von dort wieder heraus - keine
+    # AKHQ-spezifische Sonderbehandlung mehr.
     - name: akhq
-      passwordSecretName: akhq-kafka-user-password
       acls:
         - resource: { type: topic, name: "*", patternType: literal }
           operations: [Describe, DescribeConfigs, Read]
@@ -154,14 +156,6 @@ kafka:
     # "unauth"-Listener und ist dort per authorization.superUsers (kafka-cluster.yaml) als
     # "User:ANONYMOUS" freigeschaltet - keine ACL/ KafkaUser noetig.
 
-  akhqUser:
-    passwordSecretName: akhq-kafka-user-password
-    # Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt hier hinterlegt statt CHANGE_ME/
-    # --set, da fuer diesen Kurs kein produktionsartiges Geheimnis) - dasselbe Passwort wie
-    # charts/akhq/values.yaml secrets.akhq.security.basic-auth (dort schon so gehandhabt), aus
-    # Gruenden der einfachen Handhabung. Muss mit charts/akhq/values.yaml kafkaSasl.password
-    # uebereinstimmen.
-    password: "ticketflow"
 
 # Apicurio Registry (charts/apicurio), siehe templates/schema-registry/ und charts/README.md
 # ## apicurio. Die URL ist die vom Apicurio-Chart gerenderte Service-DNS (Release-Name "apicurio",

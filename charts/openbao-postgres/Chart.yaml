@@ -1,0 +1,8 @@
+apiVersion: v2
+name: openbao-postgres
+description: CNPG-Cluster (PostgreSQL) fuer OpenBaos eigenes Storage-Backend - siehe charts/README.md
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  category: database

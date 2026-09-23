@@ -94,7 +94,7 @@ Four layers, each owning a distinct concern — don't blur them:
    `helm dependency build` at sync time. Longhorn/cert-manager/cert-manager-issuer/external-dns/
    argocd-ingress/traefik-config/cnpg-operator/strimzi-operator/kube-prometheus-stack/loki/tempo/
    keda/postgres-cluster/kafka-cluster/apicurio/akhq/ticketflow-app/reservation-worker/
-   notification-worker
+   notification-worker/external-secrets-operator/openbao-postgres/openbao/openbao-secretstore
    are written (see `charts/keda`/the `keda` ApplicationSet element and the `keda-scaledobject.yaml`
    template in `charts/reservation-worker` under Current implementation status below — not yet
    live-verified, `helm dependency update` for `charts/keda` itself is blocked locally by this
@@ -104,7 +104,13 @@ Four layers, each owning a distinct concern — don't blur them:
    `poolers` CRD >650KB, Strimzi's `Kafka` CRD >330KB, kube-prometheus-stack's `Prometheus` CRD
    >800KB, KEDA's `scaledjobs` CRD >650KB) — their Applications need
    `syncOptions: [ServerSideApply=true]`, same fix as the ArgoCD install itself (see Ansible
-   specifics below). Loki/Tempo ship no CRDs, don't need it. Observability persistence goes
+   specifics below). `external-secrets-operator`'s `secretstores`/`clustersecretstores` CRDs
+   measured ~252KB raw YAML each (chart 2.11.0) — close enough to the limit, and client-side
+   apply's JSON-encoded `last-applied-configuration` annotation can exceed the raw YAML size, that
+   it gets `ServerSideApply=true` too rather than verifying the exact margin. Loki/Tempo ship no
+   CRDs, don't need it; neither does `openbao` (verified: zero CRDs in the upstream chart) or
+   `openbao-postgres`/`openbao-secretstore` (both fully-custom, single-CR charts, same class as
+   `postgres-cluster`). Observability persistence goes
    through Longhorn
    throughout (already the default StorageClass); Loki runs `SingleBinary` mode with a bundled
    MinIO as its S3-compatible chunk store, Tempo uses its local filesystem backend — both are
@@ -324,14 +330,26 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/charts":/charts alpine/helm:3.16.3 d
 # message (that is deliberate — see the gitops layer above). With a local helm binary:
 helm lint charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
 helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# charts/openbao's dependency-alias values ("openbao:") are easy to get wrong the first time
+# (e.g. server.image.repository must NOT include the registry, unlike most other charts here —
+# see Current implementation status) - always render and grep the actual image/env lines instead
+# of trusting a clean `helm lint` alone:
+helm template openbao charts/openbao -f charts/openbao/values.yaml -f gitops/env/cluster.yaml | grep -A2 "image:"
+
+# OpenBao bootstrap check (after ArgoCD has synced openbao/openbao-postgres - the bootstrap Job
+# runs automatically as a Helm post-install/post-upgrade hook, no separate command needed)
+export KUBECONFIG=infra/ansible/kubeconfig
+kubectl -n openbao get pods
+kubectl -n openbao exec openbao-0 -- bao status
+kubectl -n external-secrets get clustersecretstore openbao
+kubectl -n ticketflow get externalsecret
 ```
 
 `load-generator` is a plain k6 script (`src/load-generator/flash-sale.js`), not a Helm
-chart/Kubernetes workload — run it directly with `k6 run`, see its README. `charts/notification-worker/` can be `helm lint`/`helm
-template`-checked (see its own `values.schema.json`) but is not deployed via a
-ApplicationSet element yet. `charts/reservation-worker/` and `charts/akhq/` **are**
-deployed (the `reservation-worker` ApplicationSet element/`akhq.yaml`) and both pass `helm lint`/`template`
-locally (verified 2026-09-14 with Docker available) — see their bullets under Current
+chart/Kubernetes workload — run it directly with `k6 run`, see its README. `charts/notification-worker/`, `charts/reservation-worker/`
+and `charts/akhq/` **are all** deployed via their own ApplicationSet elements (corrected here
+2026-09-22 — this line previously and incorrectly claimed notification-worker had no element yet)
+and all pass `helm lint`/`template` locally — see their bullets under Current
 implementation status for what's still unverified beyond that (live cluster behavior,
 placeholder values). `src/reservation-worker`: `go mod tidy && go vet ./... && go build ./... &&
 go test ./...` all pass (verified locally 2026-09-14 with Go 1.27; `go.sum` was missing until
@@ -694,23 +712,24 @@ commands here once these gaps close instead of leaving this section stale.
   from AKHQ's own `application.example.yml` but restricted to the `*-read` roles only (no
   `*-admin` roles with CREATE/UPDATE/DELETE), matching root `README.md` ## Bonus (B2)'s
   explicit "AKHQ (schreibgeschützt konfiguriert)" claim. `default-group: no-roles` (not the
-  upstream example's `admin`) so anonymous visitors get no access at all; the basic-auth password
-  is already hardcoded (SHA-256 hash of the lab password `ticketflow`, username `admin`) rather
-  than a `CHANGE_ME` placeholder — a correction to this file, the value was already committed like
-  this, no `--helm-set` needed before the first sync. Also authenticates to Kafka itself
-  via SASL/SCRAM-SHA-512 now (see B2/`charts/kafka-cluster` bullet below) — `extraEnv` injects a
-  `KAFKA_SASL_JAAS_CONFIG` env var from a chart-owned `templates/kafka-sasl-secret.yaml` Secret
-  (own resource, not passed through to the upstream `akhq:` dependency block), referenced as
-  `${KAFKA_SASL_JAAS_CONFIG}` inside `secrets.akhq.connections.ticketflow-kafka.properties`
+  upstream example's `admin`) so anonymous visitors get no access at all. Also authenticates to
+  Kafka itself via SASL/SCRAM-SHA-512 (see B2/`charts/kafka-cluster` bullet below) — `extraEnv`
+  injects a `KAFKA_SASL_JAAS_CONFIG` env var from a chart-owned `templates/kafka-sasl-secret.yaml`
+  Secret (own resource, not passed through to the upstream `akhq:` dependency block), referenced
+  as `${KAFKA_SASL_JAAS_CONFIG}` inside `secrets.akhq.connections.ticketflow-kafka.properties`
   (AKHQ/Micronaut resolves `${VAR}` placeholders from the environment at runtime, so that
-  specific field never carries a literal password — the password itself lives once, in
-  `kafkaSasl.password` in this same values.yaml, see the B2 bullet below for why that's a
-  hardcoded lab value rather than `CHANGE_ME`). `helm dependency update`/`lint`/`template` all pass
-  (re-verified 2026-09-16 after the SASL wiring) and the rendered Secret/ConfigMap/Deployment/
-  Ingress all look correct — but this only proves the chart renders, not that AKHQ actually
-  enforces the RBAC config or connects successfully via SASL as intended; both are still
-  unverified against a running instance — check login + role behavior + the Kafka connection in
-  the AKHQ UI after the first real sync.
+  specific field never carries a literal password).
+  **Both the basic-auth password and the Kafka SASL password described in the rest of this
+  paragraph as hardcoded lab values are stale as of 2026-09-23** — see the OpenBao bullet's
+  AKHQ-unification paragraph further below: the basic-auth hash is now
+  `"${AKHQ_BASIC_AUTH_PASSWORD_HASH}"` sourced from OpenBao, `kafkaSasl.password` no longer exists
+  in `values.yaml` at all (Strimzi generates AKHQ's Kafka password now, same as the other three
+  KafkaUsers), and `kafka-sasl-secret.yaml` no longer reconstructs the JAAS string itself. `helm
+  dependency update`/`lint`/`template` all pass (re-verified 2026-09-23 after this change) and the
+  rendered Secret/ConfigMap/Deployment/Ingress all look correct — but this only proves the chart
+  renders, not that AKHQ actually enforces the RBAC config or connects successfully via SASL as
+  intended; both are still unverified against a running instance — check login + role behavior +
+  the Kafka connection in the AKHQ UI after the first real sync.
 - **Done, `helm lint`/`template` clean for all five affected charts, `go vet`/`build`/`test` clean
   for all three Go services, not yet live-verified (2026-09-16):** B2 (root `README.md` ## Bonus)
   — per-service `KafkaUser` CRs (SCRAM-SHA-512 + narrowest-possible `type: simple` ACLs) replacing
@@ -723,19 +742,23 @@ commands here once these gaps close instead of leaving this section stale.
   authenticated), and `spec.kafka.authorization: {type: simple}` is on (default-deny: a client
   with no matching ACL is rejected outright). New `templates/messaging/kafka-users.yaml`
   (generated from `values.yaml` `kafka.users`, four entries: `catalog-api`, `reservation-worker`,
-  `notification-worker`, `akhq`) + `kafka-akhq-user-secret.yaml`. Three of the four users
+  `notification-worker`, `akhq`). **Historical note, superseded 2026-09-23 (see the OpenBao
+  bullet's AKHQ-unification paragraph further below) — kept here for context, not current
+  behavior:** at the time this was written, three of the four users
   (`catalog-api`/`reservation-worker`/`notification-worker`, same namespace `ticketflow` as this
-  Kafka cluster) let the Strimzi User Operator auto-generate their SCRAM password and are
+  Kafka cluster) let the Strimzi User Operator auto-generate their SCRAM password and were
   referenced directly via `secretKeyRef` from their own charts (no chart-owned secret needed,
-  unlike the Postgres case) — `akhq` runs in namespace `kafka` instead, so Kubernetes'
-  same-namespace-only `secretKeyRef` rule means it can't read an auto-generated Secret from
-  `ticketflow`; instead its `KafkaUser` sets `spec.authentication.password.valueFrom.secretKeyRef`
-  to a Secret this chart creates itself (`kafka-akhq-user-secret.yaml`), and
-  `charts/akhq/values.yaml`/`templates/kafka-sasl-secret.yaml` supply the matching value on the
-  other side (must match on both sides — both hardcoded to the lab password `ticketflow`, same
+  unlike the Postgres case) — `akhq` ran in namespace `kafka` instead, so Kubernetes'
+  same-namespace-only `secretKeyRef` rule meant it couldn't read an auto-generated Secret from
+  `ticketflow`; instead its `KafkaUser` set `spec.authentication.password.valueFrom.secretKeyRef`
+  to a Secret this chart created itself (`kafka-akhq-user-secret.yaml`, deleted 2026-09-23), and
+  `charts/akhq/values.yaml`/`templates/kafka-sasl-secret.yaml` supplied the matching value on the
+  other side (both hardcoded to the lab password `ticketflow` at the time, same
   shape as the Postgres `databaseSecret` values elsewhere in this repo, also hardcoded rather than
   `CHANGE_ME` as of 2026-09-16 on explicit user request: Uni lab project, not a live system,
-  weak-but-simple beats CHANGE_ME-then-forget) — see the `charts/akhq` bullet above for how AKHQ
+  weak-but-simple beats CHANGE_ME-then-forget). AKHQ now lets Strimzi auto-generate its password
+  too, same as the other three, mirrored to OpenBao via `PushSecret` instead — see the
+  `charts/akhq` bullet above for how AKHQ
   itself consumes it.
   `catalog-api`/`reservation-worker`/`notification-worker` charts each gained a
   `config.kafkaSasl`/`catalogApi.kafkaSasl` block (`enabled`/`username`/`secretName`) wired into
@@ -884,11 +907,167 @@ commands here once these gaps close instead of leaving this section stale.
   is exactly the consumer-lag signal KEDA reacts to in the real cluster (`charts/keda`, P6).
 - **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`),
   `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
-  deny-by-default `NetworkPolicy` set + SOPS-encrypted `infra/ansible/secrets.yml`/
-  `argocd_deploy_key` (see root `README.md` ## Bonus B1 — still "was getan werden soll", not
-  done; three charts already have their own scoped `NetworkPolicy` active, see `charts/README.md`
-  ## Resource-Limits...). The cross-namespace `DATABASE_URL` blocker mentioned in older versions
-  of this line is resolved (see the Postgres-wiring paragraph above) — `reservation-worker`'s
-  chart is deploy-ready.
+  deny-by-default `NetworkPolicy` set (see root `README.md` ## Bonus B1 — the NetworkPolicy half
+  is still "was getan werden soll"; the secret-vault half is done, see the OpenBao/External
+  Secrets Operator bullet below; three charts already have their own scoped `NetworkPolicy`
+  active, see `charts/README.md` ## Resource-Limits...). The cross-namespace `DATABASE_URL`
+  blocker mentioned in older versions of this line is resolved (see the Postgres-wiring paragraph
+  above) — `reservation-worker`'s chart is deploy-ready.
+- **Done, `helm lint`/`template`/`helm dependency update` all verified locally (2026-09-22), not
+  yet live-verified:** OpenBao (HA secret vault, PostgreSQL storage backend) + External Secrets
+  Operator, replacing the SOPS plan under root `README.md` ## Bonus B1 (see there for the full
+  Wahl/Alternative/Begründung). Four new charts: `charts/openbao` (wrapper around the official
+  `openbao/openbao` chart 0.29.5/`v2.6.2`, `server.ha.enabled: true` + `replicas: 3` +
+  `raft.enabled: false`, `storage "postgresql" { ha_enabled = "true" }` in `server.ha.config`,
+  `BAO_PG_CONNECTION_URL` injected via `extraSecretEnvironmentVars` from OpenBao's own CNPG
+  cluster's auto-generated `<clusterName>-app` secret — **not** a chart-owned secret, see below —
+  `topologySpreadConstraints` on `topology.ticketflow/region` for P4, an `auto-unseal` sidecar
+  container polling `bao status` and unsealing from a mounted `openbao-unseal-keys` Secret), the
+  `openbao` ApplicationSet element, `charts/openbao-postgres` (a second, separate CNPG `Cluster`
+  CR chart, copy of `charts/postgres-cluster`'s structure incl. its normally-dormant
+  backup/import blocks, but **deliberately omits `bootstrap.initdb.secret`** so CNPG generates
+  and owns the credential itself — OpenBao's own storage-backend password can't come from OpenBao,
+  same chicken-and-egg reasoning as why `charts/postgres-cluster`'s own credential stays
+  chart-hardcoded rather than vault-sourced), the `openbao-postgres` ApplicationSet element,
+  `charts/external-secrets-operator` (wrapper, chart 2.11.0/`v2.11.0`, `installCRDs: true`,
+  `serverSideApply: true` — see the CRD-size note under Infra layering above), the
+  `external-secrets-operator` ApplicationSet element, and `charts/openbao-secretstore` (a single
+  `ClusterSecretStore` CR against `http://openbao-active.<namespaces.openbao>.svc:8200`,
+  Kubernetes-auth), the `openbao-secretstore` ApplicationSet element. New `gitops/env/cluster.yaml`
+  keys: `namespaces.openbao`, `namespaces.externalSecrets`, `openbao.databaseName`. No new Ansible
+  role — bootstrap (init/unseal/KV-v2-engine/Kubernetes-auth-method/policy/seeding) runs entirely
+  as a `post-install,post-upgrade` Helm-hook `Job` in `charts/openbao/templates/bootstrap-job.yaml`
+  (same hook pattern as the existing Apicurio schema-registration job in
+  `charts/kafka-cluster/templates/schema-registry/register-job.yaml`), reaching every OpenBao pod
+  directly over the upstream chart's headless Service (`openbao-internal`, confirmed against the
+  real rendered manifest — pod DNS `openbao-<N>.openbao-internal.<ns>.svc:8200`). **The pod list
+  is generated from `.Values.openbao.server.ha.replicas` at Helm-render time** (`{{ range $i :=
+  until $replicas }}`), not hardcoded to 3 — a replica-count change is itself a Helm
+  upgrade/ArgoCD sync, which re-fires the `post-upgrade` hook with the newly-rendered pod list;
+  no runtime Kubernetes-API discovery needed (a manual `kubectl scale` bypassing GitOps would get
+  reverted by `selfHeal` anyway, since this Application carries no `ignoreDifferences` on
+  `spec.replicas` the way `reservation-worker`/KEDA does). Verified by rendering with
+  `--set openbao.server.ha.replicas=5` and confirming the pod list follows.
+  Talks to the Kubernetes API directly via the mounted ServiceAccount token (own
+  `bootstrap-rbac.yaml`: a `ServiceAccount`/`Role`/`RoleBinding` scoped to
+  `get`/`create`/`update`/`patch` on `Secret`s in the `openbao` namespace only, no `pods/exec`).
+  The job is idempotent by construction — it always re-reads any existing `openbao-unseal-keys`
+  Secret first, so a fresh bootstrap and a later ArgoCD re-sync run the identical code path — and
+  it randomly generates the purely-internal service-to-service credentials that have no operator
+  to generate them (`secret/akhq/basic-auth`) itself, only if the KV path doesn't already exist
+  (as of 2026-09-23, `secret/postgres/app-user`/`secret/kafka/*` are no longer generated here —
+  see the PushSecret extension further below); `notification-worker`'s SMTP/Kafka-mTLS paths are seeded
+  with empty placeholders since that feature stays opt-in (see
+  `charts/notification-worker/README.md` ## OpenBao for the manual `bao kv put` to activate it
+  later). Deliberate lab simplification: `bao operator init -key-shares=1 -key-threshold=1`
+  (Shamir 1-of-1, not 3-of-5) — no offline backup of the root token/unseal key exists outside the
+  cluster by design (a GitOps hook Job can't write to an operator's local machine the way an
+  Ansible role could); the recommended mitigation is a one-time manual `kubectl -n openbao get
+  secret openbao-unseal-keys -o yaml` backup after the first sync, documented in the README, not
+  automated.
+
+  Chart-owned Secrets migrated to `ExternalSecret`s pulling from this vault (target Secret
+  name/keys stay byte-identical to before, zero Deployment changes):
+  `charts/postgres-cluster/templates/postgres-user-secret.yaml`,
+  `charts/akhq/templates/kafka-sasl-secret.yaml` (as of 2026-09-23 a straight 1:1 key copy of
+  `sasl.jaas.config` — no template reconstruction, see below),
+  `charts/akhq/templates/basic-auth-secret.yaml` — AKHQ's basic-auth password hash used to be a
+  literal in `values.yaml`, now `"${AKHQ_BASIC_AUTH_PASSWORD_HASH}"`, the same Micronaut
+  env-substitution trick already used for `${KAFKA_SASL_JAAS_CONFIG}`; **unverified at
+  implementation time** whether `${VAR}` substitution also applies inside
+  `secrets.akhq.security.basic-auth[].password`, only confirmed so far for `sasl.jaas.config` —
+  and `charts/notification-worker/templates/externalsecret.yaml` (gated by new
+  `externalSecret.enabled`, `secret.create` flipped to `false` — that chart's own
+  `templates/secret.yaml`/`values.schema.json` already anticipated exactly this "externally
+  provided secret" scenario before this work started). `charts/akhq/templates/basic-auth-secret.yaml`'s
+  `target.template` field (`sha256sum`) needs ESO's own Go-template syntax protected from Helm's
+  templating via `{{ "{{" }}`/`{{ "}}" }}` — verified correct by rendering and confirming the
+  literal `{{ .password | sha256sum }}` survives into the rendered `ExternalSecret` unresolved.
+  `kafka-akhq-user-secret.yaml` (the original chart-owned pre-supplied-password Secret) was
+  **deleted outright on 2026-09-23**, not migrated — see the AKHQ-unification paragraph below.
+
+  Real bug caught and fixed during implementation: the upstream `openbao` chart's
+  `server.image.repository` must NOT include the registry (`registry`/`repository` are separate
+  fields, unlike `notification-worker`'s own `image.repository` convention) — an initial
+  `repository: quay.io/openbao/openbao` rendered as `quay.io/quay.io/openbao/openbao`, caught by
+  actually grepping the rendered StatefulSet image line rather than trusting `helm lint`'s exit
+  code (same "lint proves it renders, not that a value reached the right field" lesson already
+  documented for AKHQ's `topologySpreadConstraints` under `charts/README.md`).
+
+  **Second real bug, caught live (2026-09-23):** the chart's own `Chart.yaml` declares
+  `appVersion: v2.6.2` (`v`-prefixed), and `charts/openbao/values.yaml`'s `server.image.tag` was
+  set to match that literally (`"v2.6.2"`) — but the actual images published on
+  `quay.io/openbao/openbao` are tagged **without** the `v` prefix (`2.6.2`, `2.6.1`, `2.6.0`,
+  `latest`, …, confirmed via `quay.io/api/v1/repository/openbao/openbao/tag/`). `ImagePullBackOff`
+  with `not found` on a real sync until fixed — the same tag mismatch was hardcoded in three
+  places in that file (`server.image.tag`, the `auto-unseal` sidecar's `image:`, and
+  `bootstrapJob.image`), all three now `"2.6.2"`. Lesson: an upstream chart's `AppVersion` field is
+  a Helm/chart-metadata convention, not a guarantee that the literal string is also the real
+  registry tag — check the actual registry (or just try a real pull) before hardcoding a version
+  string copied from `Chart.yaml`, the same class of gap as the Strimzi
+  `kafka.strimzi.io/v1beta2`-vs-`v1` API-version surprise documented elsewhere in this file.
+
+  **Not yet live-verified:** the exact upstream Service names (`openbao-active`/`openbao-internal`)
+  were confirmed against a real `helm template` render, but real HA failover between already-
+  unsealed standbys, the auto-unseal sidecar actually firing against a genuinely restarted pod,
+  and `ExternalSecret`s actually reaching `SecretSynced` all need a live cluster.
+
+  **Extended 2026-09-23 with `PushSecret` (ESO's other direction — K8s → vault, `external-
+  secrets.io/v1alpha1`, a separate, still-`v1alpha1` CRD from `ExternalSecret`'s stable `v1`) so
+  OpenBao mirrors operator-generated credentials too, not just the ones this repo originates
+  itself** — makes OpenBao a genuine central audit surface (`bao kv get ...` shows every
+  credential in the cluster, not only the chart-seeded ones), per the B1 Begründung's "zentrale
+  Audit-Fläche" claim. Two additions, both `updatePolicy: IfNotExists` (the operator sets the
+  value once and doesn't rotate it, so `Replace` would just be a no-op write on every sync):
+  - `charts/kafka-cluster/templates/messaging/kafka-user-pushsecrets.yaml` — one `PushSecret` per
+    `kafka.users` entry **without** a `passwordSecretName`. Reads the Strimzi
+    User-Operator-generated Secret (named after the `KafkaUser`, same namespace) and mirrors
+    `password`/`sasl.jaas.config` to `secret/kafka/<username>`. For
+    `catalog-api`/`reservation-worker`/`notification-worker` the consuming charts'
+    `secretKeyRef`s are unchanged — they still read the Strimzi secret directly, never the
+    mirrored copy.
+  - **AKHQ unified with the other three users, same day:** until this change, `akhq` was the one
+    `kafka.users` entry with an explicit `passwordSecretName` (its `KafkaUser` lives in the app
+    namespace like all four, but the AKHQ *pod* runs in namespace `kafka` and can't reach a
+    same-namespace-only `secretKeyRef` there, so it needed a pre-supplied rather than
+    Strimzi-generated password). Removing `passwordSecretName` from its `kafka.users` entry lets
+    Strimzi generate `akhq`'s password exactly like the other three; the same
+    `kafka-user-pushsecrets.yaml` loop (already gated on "no `passwordSecretName`") picks it up
+    automatically and mirrors it to `secret/kafka/akhq` — no special-casing left. For AKHQ, unlike
+    the other three, the OpenBao round-trip **is** the real namespace bridge, not just an audit
+    mirror: `charts/akhq/templates/kafka-sasl-secret.yaml` (`ExternalSecret`) pulls
+    `sasl.jaas.config` back out of `secret/kafka/akhq` verbatim — Strimzi already generates a
+    ready-to-use JAAS string (confirmed: same key shape the other three services already consume
+    directly), so this ExternalSecret no longer reconstructs the string itself and no longer needs
+    the Helm/ESO template-escaping trick (`{{ "{{" }}`/`{{ "}}" }}`) that a hand-built JAAS
+    template required. This also deleted
+    `charts/kafka-cluster/templates/messaging/kafka-akhq-user-secret.yaml`, the standalone
+    `kafka.akhqUser` values block, and `charts/akhq/values.yaml`'s now-unused `kafkaSasl:` block
+    entirely — one less special case, one less place two values had to be kept in sync by hand.
+  - `charts/postgres-cluster` — `bootstrap.initdb` no longer pre-supplies a `secret:` (same fix
+    already applied to `charts/openbao-postgres`), so CNPG now generates the ticketflow-app DB
+    credential itself (`<clusterName>-app` — `postgres-cluster.appSecretName` in
+    `_helpers.tpl`). New `templates/postgres-user-pushsecret.yaml` mirrors it to
+    `secret/postgres/app-user`; the existing `templates/postgres-user-secret.yaml`
+    (`ExternalSecret`) pulls it back out under the original, conventional name
+    (`postgres-cluster.userSecretName`) so `catalog-api`/`reservation-worker` need zero changes.
+    This also means the OpenBao bootstrap job **no longer invents this password itself** — the
+    `seed_if_missing secret/postgres/app-user ...` line was removed from
+    `charts/openbao/templates/bootstrap-job.yaml`; CNPG is now the sole origin of that value.
+  - **Deliberately excluded:** `charts/openbao-postgres`'s own CNPG-generated credential
+    (OpenBao's storage-backend password) is never pushed into OpenBao — circular by construction,
+    OpenBao can't hold its own bootstrap credential before it's unsealed using that exact
+    credential to reach its storage in the first place.
+  - **Policy widened accordingly:** the bootstrap job's `external-secrets` Vault policy went from
+    read-only (`path "secret/data/*" { capabilities = ["read"] }`) to
+    `create`/`read`/`update` on both `secret/data/*` **and** `secret/metadata/*` — per
+    external-secrets.io's own Vault-provider docs, `PushSecret` against a KV v2 mount needs write
+    access to both, not just `data`.
+  - Re-verified after this change: `helm lint`/`helm template` clean across the whole repo;
+    rendered the new `PushSecret`s and confirmed `selector.secret.name` targets the real
+    Strimzi/CNPG secret names and `remoteRef.remoteKey` lands on the same KV paths the
+    corresponding `ExternalSecret`/bootstrap-job reads already use. **Not yet live-verified:**
+    whether the Vault-compatible provider actually accepts the push against a real OpenBao
+    instance (confirmed only against ESO's own documentation, not a running vault).
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.

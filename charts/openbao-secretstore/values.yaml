@@ -1,0 +1,3 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Dieser Chart hat praktisch
+# keine eigenen Werte - alles Relevante (Namespaces) kommt aus ticketflow.* zentral.
+ticketflow: {}

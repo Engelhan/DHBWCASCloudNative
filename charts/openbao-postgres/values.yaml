@@ -1,0 +1,82 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers gibt.
+# Der Datenbankname kommt von dort (ticketflow.openbao.databaseName), analog zu
+# charts/postgres-cluster (ticketflow.postgres.databaseName) - aber eine eigene, GETRENNTE CNPG-
+# Cluster-CR: dies ist OpenBaos eigenes Storage-Backend, nicht die TicketFlow-App-DB.
+ticketflow: {}
+
+instances: 2
+# Kein namespace-Wert: es gilt der Namespace der ArgoCD-Application (ticketflow.namespaces.openbao).
+
+image:
+  # Container image repository used by CloudNativePG.
+  repository: ghcr.io/cloudnative-pg/postgresql
+  pullPolicy: IfNotPresent
+  pullSecret: ""
+  # PostgreSQL image tag - identisch zu charts/postgres-cluster (gleiche Operator-Version).
+  tag: "18.4-202608030910-standard-trixie@sha256:f0cc49632b5cc1e51f65ba03658c89bd31d64ea2672b14843a808a8d281417e1"
+
+database:
+  # Logischer Datenbankname steht zentral in gitops/env/cluster.yaml (ticketflow.openbao.databaseName).
+  # Rollenname des App-Users - KEIN Passwort-Feld hier (anders als charts/postgres-cluster):
+  # CNPG generiert das Credential selbst, siehe postgres-cluster.yaml (bootstrap.initdb ohne
+  # secret-Feld) und templates/_helpers.tpl (openbao-postgres.appSecretName).
+  owner: openbao
+  primaryUpdateMethod: switchover
+  primaryUpdateStrategy: supervised
+  postgresql:
+    parameters:
+      # Kleiner dimensioniert als charts/postgres-cluster - diese DB haelt nur OpenBaos KV-Daten
+      # + HA-Lock-Zeilen, kein App-Datenvolumen.
+      shared_buffers: 256MB
+      effective_cache_size: 512MB
+      work_mem: 4MB
+      max_connections: "50"
+    extraParameters: { }
+    pg_hba: [ ]
+
+# Optional backup configuration. Enable it to render backup resources. Standardmaessig aus, wie im
+# Original (charts/postgres-cluster) - bewusst NICHT entfernt, auf ausdruecklichen Wunsch, damit es
+# bei Bedarf spaeter aktiviert werden kann.
+backup:
+  enabled: false
+  restoreFromBackup: false
+  restoreBackupFolderName: postgres-backup-restore-source
+  timestampToRestoreFrom: "2023-08-11 11:14:21.00000+02"
+  s3:
+    destinationPath: s3://example-backup-bucket/openbao-postgres
+    endpointURL: https://s3.example.com/
+    backupFolderName: openbao-postgres-backup
+    accessKey: CHANGE_ME
+    secretKey: CHANGE_ME
+  retentionPolicy: 7d
+  schedule: "0 0 3 * * *"
+
+# Optional import configuration. Enable it to bootstrap from an existing database.
+import:
+  enabled: false
+  server: postgres.example.svc.cluster.local
+  user: postgres
+  databaseToImport: postgres
+  password: CHANGE_ME
+
+affinity:
+  podAntiAffinityType: required
+
+storage:
+  storageClass: longhorn
+  # Kleiner als charts/postgres-cluster (10Gi) - nur KV-Metadaten + HA-Lock-Tabelle.
+  size: 5Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 512Mi
+    cpu: "1"
+
+monitoring: true
+
+podMonitor:
+  labels:
+    release: kube-prometheus-stack

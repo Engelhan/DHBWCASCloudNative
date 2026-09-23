@@ -87,6 +87,31 @@ spec:
                   chartPath: charts/keda
                   namespace: keda
                   serverSideApply: true
+                # --- Secret-Vault (B1) ---
+                # Kein syncWave auf keinem der vier: folgt exakt dem Praezedenzfall
+                # cnpg-operator->postgres-cluster/strimzi-operator->kafka-cluster oben (auch die
+                # haben keinen) - selfHeal iteriert ueber das "Postgres/CRD noch nicht da"-Rennen,
+                # eine echte Reihenfolge ist nicht noetig.
+                - name: external-secrets-operator
+                  chartPath: charts/external-secrets-operator
+                  namespace: external-secrets
+                  # secretstores/clustersecretstores-CRDs sind je ~252KB reines YAML (gemessen,
+                  # Chart-Version 2.11.0) - knapp unter dem 262144-Byte-Limit, aber
+                  # client-side-apply speichert die volle Ressource nochmal als JSON in der
+                  # last-applied-configuration-Annotation, was je nach Feldstruktur groesser als
+                  # das YAML ausfallen kann. ServerSideApply=true als sichere Marge statt das
+                  # knapp zu verifizieren - schadet nicht, selbst falls die JSON-Kodierung
+                  # tatsaechlich knapp darunter bliebe.
+                  serverSideApply: true
+                - name: openbao-postgres
+                  chartPath: charts/openbao-postgres
+                  namespace: openbao
+                - name: openbao
+                  chartPath: charts/openbao
+                  namespace: openbao
+                - name: openbao-secretstore
+                  chartPath: charts/openbao-secretstore
+                  namespace: external-secrets
                 # --- Observability (LGTM) ---
                 - name: kube-prometheus-stack
                   chartPath: charts/kube-prometheus-stack

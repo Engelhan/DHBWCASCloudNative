@@ -11,18 +11,14 @@ ticketflow: {}
 # reservation-worker), siehe CLAUDE.md ## Team. Wrapper um den Upstream-Chart, gleiches Muster
 # wie die anderen Addon-Charts, siehe charts/README.md ## Addon-Charts.
 #
-# B2 (Root-README ## Bonus): eigenes Secret (templates/kafka-sasl-secret.yaml) fuer die
+# B2 (Root-README ## Bonus): eigenes ExternalSecret (templates/kafka-sasl-secret.yaml) fuer die
 # SCRAM-Credentials der "akhq"-KafkaUser (charts/kafka-cluster values.yaml kafka.users) - bewusst
 # AUSSERHALB des "akhq:"-Dependency-Blocks unten (das waere an den Upstream-Chart durchgereicht,
-# dieses Secret ist aber unser eigenes, zusaetzliches Template). MUSS mit charts/kafka-cluster
-# values.yaml kafka.akhqUser.password uebereinstimmen (siehe dessen Kommentar fuer den
-# Cross-Namespace-Grund, wieso dieses Chart das Passwort nicht einfach per secretKeyRef vom
-# Strimzi User Operator lesen kann). Lab-Zugangsdaten (2026-09-16, auf expliziten Wunsch direkt
-# hier hinterlegt statt CHANGE_ME/--set, da fuer diesen Kurs kein produktionsartiges Geheimnis) -
-# dasselbe Passwort wie secrets.akhq.security.basic-auth unten (dort schon so gehandhabt).
-kafkaSasl:
-  username: akhq
-  password: "ticketflow"
+# dieses Template ist aber unser eigenes, zusaetzliches). Seit 2026-09-23 (B1, Root-README ##
+# Bonus) kein "kafkaSasl:"-Werteblock mehr hier - Strimzi generiert Username UND einen fertigen
+# JAAS-Config-String selbst (wie bei catalog-api/reservation-worker/notification-worker), der
+# per PushSecret/ExternalSecret unveraendert durch OpenBao durchgereicht wird, siehe
+# templates/kafka-sasl-secret.yaml.
 
 # Muss unter dem Dependency-Alias "akhq" verschachtelt sein (siehe Chart.yaml), damit Helm die
 # Werte an den gewrappten Upstream-Chart durchreicht.
@@ -88,6 +84,18 @@ akhq:
         secretKeyRef:
           name: akhq-kafka-sasl
           key: sasl.jaas.config
+    # B1 (Root-README ## Bonus): Basic-Auth-Passwort-Hash kommt jetzt per ExternalSecret aus
+    # OpenBao (templates/basic-auth-secret.yaml) statt als Klartext-Hash-Literal in
+    # secrets.akhq.security.basic-auth unten zu stehen - gleicher Mechanismus wie
+    # KAFKA_SASL_JAAS_CONFIG oben. MUSS zur Implementierungszeit verifiziert werden: ob
+    # "${VAR}"-Substitution auch im Feld secrets.akhq.security.basic-auth[].password greift
+    # (bisher nur fuer sasl.jaas.config bestaetigt) - beide liegen im selben
+    # Micronaut-Config-Merge, sollte also funktionieren.
+    - name: AKHQ_BASIC_AUTH_PASSWORD_HASH
+      valueFrom:
+        secretKeyRef:
+          name: akhq-basic-auth
+          key: password-hash
 
   # Chart-Default ist bereits enabled: true, und templates/networkpolicy.yaml wurde gegengeprueft
   # (podSelector korrekt auf die eigenen Pods verengt, kein "Loki-Bug" mit leerem Selector - siehe
@@ -140,16 +148,17 @@ akhq:
             - role: group-read
 
   # Sensible Werte (Kafka-Verbindung, Basic-Auth-Passwort-Hash) - landen in einem Secret statt im
-  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Format: SHA-256-Hex von
-  # `echo -n "<echtes-passwort>" | sha256sum` (kein passwordHash-Feld gesetzt -> SHA256 ist AKHQs
-  # Default, siehe akhq.io Basic-Auth-Doku).
+  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Kein passwordHash-Feld gesetzt
+  # -> SHA256 ist AKHQs Default, siehe akhq.io Basic-Auth-Doku.
   #
-  # Lab-Zugangsdaten (2026-09-15, auf expliziten Wunsch direkt hier hinterlegt statt per --set,
-  # da fuer diesen Kurs kein produktionsartiges Geheimnis): Passwort "ticketflow" - schwach und
-  # als solches im SHA-256-Hash unten fuer jeden mit Repo-Zugriff leicht rueckrechenbar (kein
-  # Salt, sehr kurzes Woerterbuch-Wort), aber fuer ein privates Uebungsrepo akzeptiert. Username
-  # "admin" ist nur ein Label - die Gruppe "reader" bestimmt die tatsaechlichen (schreibgeschuetzten)
-  # Rechte, siehe root README.md ## Entscheidungen (B2) "AKHQ schreibgeschuetzt konfiguriert".
+  # B1 (Root-README ## Bonus): das Passwort selbst existiert seit 2026-09-22 nur noch in OpenBao
+  # (vom Bootstrap-Job in charts/openbao zufaellig generiert, KV-Pfad "akhq/basic-auth") - der
+  # Hash unten ist kein Literal mehr, sondern "${AKHQ_BASIC_AUTH_PASSWORD_HASH}"
+  # (Micronaut-Env-Substitution zur Laufzeit, gleicher Mechanismus wie
+  # "${KAFKA_SASL_JAAS_CONFIG}" unten), injiziert per secretKeyRef aus
+  # templates/basic-auth-secret.yaml (siehe extraEnv oben). Username "admin" ist nur ein Label -
+  # die Gruppe "reader" bestimmt die tatsaechlichen (schreibgeschuetzten) Rechte, siehe root
+  # README.md ## Entscheidungen (B2) "AKHQ schreibgeschuetzt konfiguriert".
   secrets:
     akhq:
       connections:
@@ -171,7 +180,7 @@ akhq:
       security:
         basic-auth:
           - username: admin
-            password: b3c20af422987f4f012e71955f29ccbd5335b08c05df52c5740207b63a161180
+            password: "${AKHQ_BASIC_AUTH_PASSWORD_HASH}"
             groups:
               - reader
 

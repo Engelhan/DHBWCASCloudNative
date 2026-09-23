@@ -1,0 +1,53 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+ticketflow: {}
+
+# Muss unter dem Dependency-Alias "external-secrets" verschachtelt sein (siehe Chart.yaml), damit
+# Helm die Werte an den gewrappten Upstream-Chart durchreicht.
+external-secrets:
+  installCRDs: true # kein anderer Chart bringt die ExternalSecret/(Cluster)SecretStore-CRDs mit
+
+  image:
+    tag: "v2.11.0" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  webhook:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  certController:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  serviceAccount:
+    create: true
+    # Name, den charts/openbao-secretstore's ClusterSecretStore UND der Bootstrap-Job in
+    # charts/openbao (Kubernetes-Auth-Role "external-secrets") referenzieren.
+    name: external-secrets
+
+  # P7 - selbes Muster wie kube-prometheus-stack ueberall sonst.
+  serviceMonitor:
+    enabled: true
+
+  # Erst rendern und podSelector pruefen (Loki-Bug-Muster, siehe charts/README.md ##
+  # Resource-Limits...), bevor dies aktiviert wird - hier bewusst noch aus, nicht in dieser
+  # Session live verifiziert.
+  networkPolicy:
+    enabled: false
