@@ -16,8 +16,10 @@ spec:
   authentication:
     type: scram-sha-512
     {{- if .passwordSecretName }}
-    # Vorgegebenes statt vom User Operator generiertes Passwort - siehe Kommentar bei
-    # .Values.kafka.users (akhq-Eintrag) fuer den Cross-Namespace-Grund.
+    # Vorgegebenes statt vom User Operator generiertes Passwort - fuer den Fall, dass ein
+    # kuenftiger Client sein Passwort nicht selbst per Strimzi generieren lassen kann/soll.
+    # Aktuell nutzt keiner der vier User (catalog-api/reservation-worker/notification-worker/
+    # akhq) diesen Zweig mehr - alle vier lassen Strimzi generieren, siehe .Values.kafka.users.
     password:
       valueFrom:
         secretKeyRef:
