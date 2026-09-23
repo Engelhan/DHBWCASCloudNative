@@ -1,0 +1,11 @@
+apiVersion: v2
+name: external-secrets-operator
+description: >-
+  Wrapper-Chart um den Upstream-External-Secrets-Chart (Operator only, keine ExternalSecret/
+  ClusterSecretStore-Objekte) mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: external-secrets
+    version: "2.11.0"
+    repository: "https://charts.external-secrets.io"

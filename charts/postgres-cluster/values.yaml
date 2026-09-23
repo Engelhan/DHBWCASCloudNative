@@ -23,15 +23,10 @@ database:
   # (ticketflow.postgres.databaseName) - hier bewusst kein zweiter Wert.
   # Database owner created during bootstrap.
   owner: postgres
-  # Lab credentials (2026-09-16, hardcoded on explicit user request - Uni lab project, not a
-  # live system, simple/consistent handling over CHANGE_ME-then-forget; same password used for
-  # AKHQ basic-auth and the Kafka SASL "akhq" user, see charts/akhq/values.yaml).
-  #
-  # Seit der Zusammenlegung von Datenbank- und App-Namespace (2026-09-17) ist dies die EINZIGE
-  # Stelle, an der das Passwort steht: catalog-api und reservation-worker referenzieren das hier
-  # erzeugte Secret "<databaseName>-postgres-user" direkt per secretKeyRef, statt es wie vorher in
-  # ein eigenes, chart-eigenes Secret zu duplizieren.
-  password: ticketflow
+  # KEIN password-Feld mehr hier (bis 2026-09-22 stand hier ein hardcodiertes Lab-Passwort) -
+  # templates/postgres-user-secret.yaml ist jetzt ein ExternalSecret, das den Wert aus OpenBao
+  # synct (Root-README ## Bonus B1). catalog-api/reservation-worker aendert sich dadurch nichts:
+  # sie lesen weiterhin dasselbe Secret "<databaseName>-postgres-user" per secretKeyRef.
   primaryUpdateMethod: switchover
   primaryUpdateStrategy: supervised
   postgresql:

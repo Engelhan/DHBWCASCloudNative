@@ -33,8 +33,7 @@
         "broker",
         "config",
         "topics",
-        "users",
-        "akhqUser"
+        "users"
       ],
       "properties": {
         "version": {
@@ -184,23 +183,6 @@
                   }
                 }
               }
-            }
-          }
-        },
-        "akhqUser": {
-          "type": "object",
-          "required": [
-            "passwordSecretName",
-            "password"
-          ],
-          "properties": {
-            "passwordSecretName": {
-              "type": "string",
-              "minLength": 1
-            },
-            "password": {
-              "type": "string",
-              "minLength": 1
             }
           }
         }

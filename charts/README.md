@@ -58,6 +58,8 @@ Die Kafka-Plattform läuft getrennt von der Anwendung:
 |---|---|
 | `ticketflow` | `ticketflow-app` (catalog-api + frontend), `reservation-worker`, `notification-worker`, **`postgres-cluster`** |
 | `kafka` | `strimzi-operator`, `kafka-cluster`, `apicurio`, `akhq` |
+| `openbao` | `openbao`, `openbao-postgres` (B1, eigene CNPG-Cluster-CR für OpenBaos Storage-Backend) |
+| `external-secrets` | `external-secrets-operator`, `openbao-secretstore` |
 | `monitoring`, `longhorn-system`, `cert-manager`, `external-dns`, `cnpg-system`, `keda` | die jeweiligen Addons |
 
 Beide App-Namen stehen in `gitops/env/cluster.yaml` (`ticketflow.namespaces.app`/`.kafka`); jeder
@@ -143,16 +145,20 @@ irreführend; und ein zusätzlicher `database`-Block statt
 `notification-worker`s SMTP/TLS-Secret-Feldern, weil der Service transaktional in CNPG-Postgres
 schreibt (siehe `src/reservation-worker/README.md` ## Zweck).
 
-**Postgres-Anbindung (vereinfacht, 2026-09-17):** Der CNPG-Cluster lag ursprünglich im eigenen
-Namespace `application`, weshalb `catalog-api` und `reservation-worker` sein `username`/
-`password`-`Secret` nicht per `secretKeyRef` lesen konnten (keine Namespace-Grenzen) und beide
-Charts die Zugangsdaten stattdessen in ein **eigenes** Secret duplizierten — dieselben Werte an
-drei Stellen, die von Hand übereinstimmen mussten. Seit `charts/postgres-cluster` im selben
-Namespace wie die Anwendung läuft, entfällt das: beide Charts referenzieren direkt das von dort
-angelegte `<ticketflow.postgres.databaseName>-postgres-user` (Keys `username`/`password`, dasselbe
-Secret, das auch die CNPG-`Cluster`-CR als Bootstrap-Secret nutzt). Die chart-eigenen
-`secret.yaml`-Templates und die `databaseSecret`-Werteblöcke sind entfallen; das Passwort steht
-nur noch in `charts/postgres-cluster/values.yaml`.
+**Postgres-Anbindung (vereinfacht 2026-09-17, Credential-Quelle geändert 2026-09-23):** Der
+CNPG-Cluster lag ursprünglich im eigenen Namespace `application`, weshalb `catalog-api` und
+`reservation-worker` sein `username`/`password`-`Secret` nicht per `secretKeyRef` lesen konnten
+(keine Namespace-Grenzen) und beide Charts die Zugangsdaten stattdessen in ein **eigenes** Secret
+duplizierten — dieselben Werte an drei Stellen, die von Hand übereinstimmen mussten. Seit
+`charts/postgres-cluster` im selben Namespace wie die Anwendung läuft, entfällt das: beide Charts
+referenzieren direkt das von dort angelegte `<ticketflow.postgres.databaseName>-postgres-user`
+(Keys `username`/`password`). Die chart-eigenen `secret.yaml`-Templates und die
+`databaseSecret`-Werteblöcke sind entfallen. **Das Passwort steht seit B1 (Root-README ## Bonus)
+nirgends mehr im Repo** — die CNPG-`Cluster`-CR gibt bewusst kein eigenes `bootstrap.initdb.secret`
+mehr vor, CNPG generiert das Credential selbst (`<clusterName>-app`), ein `PushSecret` spiegelt es
+nach OpenBao und ein `ExternalSecret` synct es von dort unter dem oben genannten konventionellen
+Namen zurück — siehe `charts/README.md`-Abschnitt zu `openbao-postgres`/`openbao-secretstore`
+weiter unten und `CLAUDE.md` ## Current implementation status für Details.
 
 Host, Datenbankname und Secret-Name leiten sich aus `ticketflow.postgres.databaseName` ab
 (`<name>-postgres-cluster-rw` bzw. `<name>-postgres-user`), `database.{host,name,credentialsSecretName}`
@@ -173,16 +179,25 @@ Zwei Varianten:
 - **Wrapper um einen Upstream-Chart** ([`longhorn/`](longhorn/), [`cert-manager/`](cert-manager/),
   [`external-dns/`](external-dns/), [`cnpg-operator/`](cnpg-operator/),
   [`strimzi-operator/`](strimzi-operator/), [`kube-prometheus-stack/`](kube-prometheus-stack/),
-  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/), [`keda/`](keda/)): `Chart.yaml` deklariert den Upstream-Chart als
+  [`loki/`](loki/), [`tempo/`](tempo/), [`akhq/`](akhq/), [`keda/`](keda/), [`openbao/`](openbao/),
+  [`external-secrets-operator/`](external-secrets-operator/)): `Chart.yaml` deklariert den
+  Upstream-Chart als
   `dependencies`-Eintrag (Name/Version/Repository), `values.yaml` reicht unsere Werte unter dem
   Dependency-Alias (z.B. `longhorn:`) durch. ArgoCD baut die Dependency beim Sync automatisch
   (`helm dependency build`) – kein `Chart.lock`/`charts/*.tgz` im Repo (gitignored, siehe
   `.gitignore`), damit sich Dependency-Version-Bumps auf den `Chart.yaml`-Eintrag beschränken.
-  `cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack` brauchen zusätzlich
-  `ServerSideApply=true` in ihrer Application (siehe `../gitops/README.md` ## Struktur) – alle
-  drei bündeln einzelne CRDs über dem 262144-Byte-Annotationslimit der Kubernetes-API.
-  `kube-prometheus-stack`, `loki` und `tempo` bilden zusammen den Observability-Stack (siehe
-  `../gitops/README.md` ## Observability-Stack) – Persistenz durchgehend über Longhorn.
+  `cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack`/`external-secrets-operator` brauchen
+  zusätzlich `ServerSideApply=true` in ihrer Application (siehe `../gitops/README.md` ##
+  Struktur) – alle vier bündeln einzelne CRDs über (oder, bei `external-secrets-operator`, knapp
+  unter, aber als JSON-kodierte Annotation potenziell über) dem 262144-Byte-Annotationslimit der
+  Kubernetes-API. `kube-prometheus-stack`, `loki` und `tempo` bilden zusammen den
+  Observability-Stack (siehe `../gitops/README.md` ## Observability-Stack) – Persistenz
+  durchgehend über Longhorn. `openbao` (B1, Root-README ## Bonus) ist der einzige Wrapper-Chart
+  mit einem eigenen, zusätzlichen Template (`templates/bootstrap-job.yaml` +
+  `bootstrap-rbac.yaml`, außerhalb des `openbao:`-Dependency-Alias) – ein
+  `post-install,post-upgrade`-Hook-Job, der OpenBao initialisiert/entsiegelt und mit den
+  Kubernetes-Auth-Voraussetzungen für `external-secrets-operator` befüllt, siehe die Kommentare
+  in beiden Dateien und `../CLAUDE.md` ## Current implementation status.
 - **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – analog zur
   CNPG-`Cluster`-CR in `postgres-cluster/`, nur eben nicht Teil eines Anwendungs-Charts, weil sie zum
   Addon-Layer statt zur TicketFlow-Anwendung gehören:
@@ -198,6 +213,16 @@ Zwei Varianten:
     streitig zu machen — gibt Traefiks `LoadBalancer`-Service einen stabilen, per external-dns
     veröffentlichten Hostnamen als rebuild-festes CNAME-Ziel für `argocd-ingress` & Co. Siehe
     [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
+  - [`openbao-postgres/`](openbao-postgres/): eine zweite, von `postgres-cluster/` komplett
+    getrennte CNPG-`Cluster`-CR – OpenBaos eigenes PostgreSQL-Storage-Backend (B1), eigener
+    Namespace `openbao`. Anders als `postgres-cluster/` legt sie **kein** eigenes
+    Credentials-Secret an (`bootstrap.initdb` ohne `secret`-Feld) – CNPG generiert das
+    App-User-Credential selbst, weil OpenBao sein eigenes Storage-Backend-Passwort nicht aus sich
+    selbst lesen kann, bevor es entsiegelt ist.
+  - [`openbao-secretstore/`](openbao-secretstore/): eine einzelne `ClusterSecretStore`-CR gegen
+    OpenBao (`spec.provider.vault`), die jeder migrierte `ExternalSecret` in diesem Repo
+    referenziert (siehe `charts/postgres-cluster`, `charts/kafka-cluster`, `charts/akhq`,
+    `charts/notification-worker`).
 
 Lokal nachvollziehen/testen (kein Cluster nötig):
 

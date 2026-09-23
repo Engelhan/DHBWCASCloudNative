@@ -18,7 +18,8 @@ notification-worker/
     ├── _helpers.tpl
     ├── deployment.yaml
     ├── configmap.yaml
-    ├── secret.yaml                    # SMTP-/Kafka-TLS-Material, default leer (siehe ## Secret-Namen)
+    ├── secret.yaml                    # nur falls secret.create=true - Standard seit B1: aus
+    ├── externalsecret.yaml            # OpenBao gesynct (siehe ## Secret-Namen und ## OpenBao)
     ├── podmonitor.yaml                # /metrics, P7
     ├── networkpolicy.yaml             # default aus
     └── poddisruptionbudget.yaml
@@ -39,8 +40,27 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
   (`config.dltTopic`), bleibt aber uncommittet — bewusste At-least-once-Abwägung, siehe
   Package-Doku von `internal/kafkaconsumer`.
 - **Benachrichtigungskanal:** `LogNotifier` (Default, demo-tauglich) oder `SMTPNotifier` über
-  `config.smtp.enabled`. Die zugehörigen Secret-Felder sind absichtlich leer und werden beim
-  Deploy gesetzt, nie committet.
+  `config.smtp.enabled`. Die zugehörigen Secret-Werte stehen nirgends in diesem Repo (siehe ##
+  OpenBao).
+
+## OpenBao
+
+Seit B1 (Root-README ## Bonus) liefert `templates/externalsecret.yaml` (`externalSecret.enabled`,
+Default `true`) das Secret aus OpenBao statt `templates/secret.yaml` (`secret.create`, jetzt
+Default `false`) es chart-eigen mit Platzhaltern zu rendern — Ziel-Name/-Keys sind identisch,
+`deployment.yaml` ändert sich nicht. Der Bootstrap-Job in `charts/openbao` seedet die KV-Pfade
+`secret/notification-worker/smtp` und `secret/notification-worker/kafka-tls` beim ersten Sync nur
+mit leeren Platzhaltern (SMTP/Kafka-mTLS bleiben standardmäßig deaktiviert). Wer die Funktion
+tatsächlich aktivieren will, trägt die echten Werte einmalig manuell nach, z. B.:
+
+```bash
+kubectl -n openbao exec openbao-0 -- bao kv put secret/notification-worker/smtp \
+  username=<smtp-user> password=<smtp-password>
+```
+
+Das External Secret synct den neuen Wert innerhalb von `spec.refreshInterval` (1h) automatisch
+nach — kein Helm-Redeploy nötig, nur `config.smtp.enabled`/`config.kafkaTls.enabled` auf `true`
+setzen.
 
 ## values-dev.yaml vs. values-prod.yaml
 

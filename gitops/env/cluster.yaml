@@ -57,6 +57,14 @@ ticketflow:
     # Zugangsdaten in jedem Chart ein zweites Mal zu hinterlegen.
     app: ticketflow
     kafka: kafka
+    # OpenBao (Secret-Vault, B1) + seine eigene CNPG-Postgres-Instanz - eigener Namespace, getrennt
+    # von app/kafka, analog zur Kafka-Plattform. Mehrere Charts (openbao, openbao-postgres,
+    # openbao-secretstore, jedes migrierte ExternalSecret) leiten die OpenBao-Service-DNS daraus
+    # ab, deshalb hier zentralisiert statt ausgeschrieben.
+    openbao: openbao
+    # External Secrets Operator - eigener Namespace, referenziert vom ClusterSecretStore
+    # (charts/openbao-secretstore) fuer den serviceAccountRef.namespace.
+    externalSecrets: external-secrets
 
   kafka:
     # Name der Strimzi-Kafka-CR. Der Bootstrap-Service heisst daraus abgeleitet
@@ -69,6 +77,14 @@ ticketflow:
     # ("<databaseName>-postgres-user", Keys username/password) ab; catalog-api und
     # reservation-worker greifen genau darauf zu.
     databaseName: postgres
+
+  openbao:
+    # Analog zu postgres.databaseName oben, aber fuer OpenBaos eigene Storage-Backend-DB
+    # (charts/openbao-postgres). Anders als beim App-Postgres gibt es hier KEIN
+    # ticketflow.openbao.password - CNPG generiert das Credential selbst (siehe
+    # charts/openbao-postgres, bootstrap.initdb.secret bewusst weggelassen: OpenBao kann sein
+    # eigenes Storage-Backend-Passwort nicht aus der Vault lesen, bevor die entsiegelt ist).
+    databaseName: openbao-vault
 
   # --- Container-Images ------------------------------------------------------------------
   # ghcr.io verlangt kleingeschriebene Namen - der GitHub-Owner ist hier bewusst lowercase,

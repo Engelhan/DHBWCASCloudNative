@@ -1,0 +1,29 @@
+
+{{- $backup := .Values.backup | default dict -}}
+{{- if and (eq $backup.enabled true) (eq $backup.restoreFromBackup true) }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: "{{ include "openbao-postgres.databaseName" $ }}-postgres-cluster-restore"
+spec:
+  instanceSidecarConfiguration:
+    # Fix Issue https://github.com/cloudnative-pg/cloudnative-pg/issues/8427
+    env:
+      - name: AWS_REQUEST_CHECKSUM_CALCULATION
+        value: when_required
+      - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+        value: when_required
+  retentionPolicy: {{ $backup.retentionPolicy | quote }}
+  configuration:
+    destinationPath: {{ $backup.s3.destinationPath | quote }}
+    endpointURL: {{ $backup.s3.endpointURL | quote }}
+    s3Credentials:
+      accessKeyId:
+        name: "s3-{{ include "openbao-postgres.databaseName" $ }}-backup-creds"
+        key: ACCESS_KEY
+      secretAccessKey:
+        name: "s3-{{ include "openbao-postgres.databaseName" $ }}-backup-creds"
+        key: SECRET_KEY
+    wal:
+      maxParallel: 8
+{{- end }}

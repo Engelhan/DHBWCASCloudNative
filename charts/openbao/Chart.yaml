@@ -1,0 +1,11 @@
+apiVersion: v2
+name: openbao
+description: >-
+  Wrapper-Chart um den Upstream-OpenBao-Chart (HA-Secret-Vault, PostgreSQL-Storage-Backend, B1)
+  mit unseren Werten (siehe values.yaml)
+type: application
+version: 0.1.0
+dependencies:
+  - name: openbao
+    version: "0.29.5"
+    repository: "https://openbao.github.io/openbao-helm"

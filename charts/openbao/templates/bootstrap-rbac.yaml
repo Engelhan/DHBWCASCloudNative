@@ -1,0 +1,42 @@
+# RBAC fuer den Bootstrap-Hook-Job (bootstrap-job.yaml). Beschraenkt auf das, was das Job-Skript
+# tatsaechlich braucht: das Secret "openbao-unseal-keys" im eigenen Namespace lesen/anlegen/
+# aktualisieren. Kein Zugriff auf andere Namespaces, keine erhoehten Cluster-Rechte, kein
+# "pods/exec" (der Job erreicht OpenBao ueber normales Pod-Netzwerk, siehe bootstrap-job.yaml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openbao-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: openbao-bootstrap
+    namespace: {{ .Values.openbaoNamespace }}
