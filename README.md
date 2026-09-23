@@ -479,6 +479,24 @@ Rotation ohne Git-Commit, eine zentrale Audit-Fläche und — passend zum Domain
 (Flash-Sale-Traffic verlangt, dass kein einzelner Service-Ausfall die Verfügbarkeit der Secrets
 für alle anderen Services gefährdet) — echte Hochverfügbarkeit über simulierte Regionen hinweg,
 dieselbe Region-Fake-Topologie wie bei Kafka/CNPG.
+*Zugriff (Login):* das Root-Token ist das einzige Anmeldemittel für Menschen — es gibt bewusst
+keine Benutzername/Passwort-Auth-Methode (userpass/LDAP), nur den Shamir-Root-Token und
+Kubernetes-Auth (nur für ServiceAccounts, siehe oben). Auslesen und Anmelden:
+```bash
+export KUBECONFIG=infra/ansible/kubeconfig
+ROOT_TOKEN=$(kubectl -n openbao get secret openbao-unseal-keys -o jsonpath='{.data.root_token}' | base64 -d)
+echo "$ROOT_TOKEN"   # per CLI im Pod einloggen:
+kubectl -n openbao exec -it openbao-0 -- bao login "$ROOT_TOKEN"
+kubectl -n openbao exec -it openbao-0 -- bao kv get secret/postgres/app-user   # Beispiel-Secret
+```
+Alternativ über die Web-UI unter `https://openbao.<dnsZone>` (siehe `## Betrieb`, `dnsZone` aus
+`gitops/env/cluster.yaml`) mit demselben Token einloggen (Auth-Methode "Token") und unter
+"Secrets Engines" → `secret` durch die KV-v2-Pfade browsen (`akhq/basic-auth`, `kafka/<user>`,
+`postgres/app-user`, `notification-worker/{smtp,kafka-tls}`). Kein separates Passwort für die UI
+nötig/vorhanden — wer den Root-Token nicht aus dem Cluster lesen kann, kommt so oder so nicht
+hinein, ein öffentlicher Ingress vor der UI öffnet also keinen zusätzlichen Zugriffsweg (siehe
+`charts/openbao/templates/ingress.yaml`).
+
 *Nachweis im Betrieb:* `kubectl -n openbao get pods` zeigt 3 laufende, entsiegelte
 OpenBao-Replicas; ein simuliertes Pod-Kill der aktuell aktiven Instanz (`kubectl delete pod
 openbao-X -n openbao`) zeigt Failover auf einen bereits entsiegelten Standby ohne manuelles
