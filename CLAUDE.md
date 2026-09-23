@@ -985,6 +985,19 @@ commands here once these gaps close instead of leaving this section stale.
   code (same "lint proves it renders, not that a value reached the right field" lesson already
   documented for AKHQ's `topologySpreadConstraints` under `charts/README.md`).
 
+  **Second real bug, caught live (2026-09-23):** the chart's own `Chart.yaml` declares
+  `appVersion: v2.6.2` (`v`-prefixed), and `charts/openbao/values.yaml`'s `server.image.tag` was
+  set to match that literally (`"v2.6.2"`) — but the actual images published on
+  `quay.io/openbao/openbao` are tagged **without** the `v` prefix (`2.6.2`, `2.6.1`, `2.6.0`,
+  `latest`, …, confirmed via `quay.io/api/v1/repository/openbao/openbao/tag/`). `ImagePullBackOff`
+  with `not found` on a real sync until fixed — the same tag mismatch was hardcoded in three
+  places in that file (`server.image.tag`, the `auto-unseal` sidecar's `image:`, and
+  `bootstrapJob.image`), all three now `"2.6.2"`. Lesson: an upstream chart's `AppVersion` field is
+  a Helm/chart-metadata convention, not a guarantee that the literal string is also the real
+  registry tag — check the actual registry (or just try a real pull) before hardcoding a version
+  string copied from `Chart.yaml`, the same class of gap as the Strimzi
+  `kafka.strimzi.io/v1beta2`-vs-`v1` API-version surprise documented elsewhere in this file.
+
   **Not yet live-verified:** the exact upstream Service names (`openbao-active`/`openbao-internal`)
   were confirmed against a real `helm template` render, but real HA failover between already-
   unsealed standbys, the auto-unseal sidecar actually firing against a genuinely restarted pod,

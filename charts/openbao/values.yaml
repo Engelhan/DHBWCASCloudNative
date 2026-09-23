@@ -33,7 +33,11 @@ openbao:
       # gerenderten StatefulSet-Output verifiziert, ein erster Versuch mit vollem Pfad hier
       # rendete faelschlich "quay.io/quay.io/openbao/openbao").
       repository: openbao/openbao
-      tag: "v2.6.2" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+      # OHNE "v"-Praefix: Chart.AppVersion ist "v2.6.2", aber die real auf quay.io veroeffentlichten
+      # Image-Tags heissen "2.6.2" (kein "v") - live gegen die quay.io-Registry-API geprueft
+      # (quay.io/api/v1/repository/openbao/openbao/tag/), nachdem "v2.6.2" mit "not found"
+      # fehlschlug. Explizit statt implizitem Default (kein :latest, siehe P3).
+      tag: "2.6.2"
 
     resources:
       requests:
@@ -118,7 +122,7 @@ openbao:
     # die "bao"-CLI bereits), kein zusaetzliches Image noetig.
     extraContainers:
       - name: auto-unseal
-        image: "quay.io/openbao/openbao:v2.6.2"
+        image: "quay.io/openbao/openbao:2.6.2"
         command: ["/bin/sh", "-c"]
         args:
           - |
@@ -172,7 +176,7 @@ openbao:
 # im Plan. Eigener Werte-Block ausserhalb des "openbao:"-Dependency-Alias, weil dies UNSER
 # eigenes Template ist, nicht Teil des gewrappten Upstream-Charts.
 bootstrapJob:
-  image: "quay.io/openbao/openbao:v2.6.2"
+  image: "quay.io/openbao/openbao:2.6.2"
   resources:
     requests:
       cpu: 50m
