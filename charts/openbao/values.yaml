@@ -1,0 +1,182 @@
+# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
+# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+ticketflow: {}
+
+# Namespace, in dem dieser Chart selbst laeuft (= ticketflow.namespaces.openbao) - wird vom
+# Bootstrap-Job/RBAC gebraucht. Kein Helm-Ausdruck moeglich (siehe unten bei
+# extraSecretEnvironmentVars/openbaoBootstrap): values.yaml wird nicht getemplated, deshalb hier
+# ein bewusst hartkodierter Literal-Wert - muss zu ticketflow.namespaces.openbao (gitops/env/
+# cluster.yaml) passen, falls der sich je aendert.
+openbaoNamespace: openbao
+
+# Namespace des External-Secrets-Operator-ServiceAccounts, das der Bootstrap-Job als
+# Kubernetes-Auth-Rolle einrichtet. Gleicher Grund wie oben: kein Helm-Ausdruck moeglich, muss zu
+# ticketflow.namespaces.externalSecrets passen.
+externalSecretsNamespace: external-secrets
+
+# Muss unter dem Dependency-Alias "openbao" verschachtelt sein (siehe Chart.yaml), damit Helm die
+# Werte an den gewrappten Upstream-Chart durchreicht.
+openbao:
+  injector:
+    # Kein Vault-Agent-Sidecar-Injector - External Secrets Operator ist der einzige
+    # Secret-Delivery-Mechanismus in diesem Repo (Entscheidung, siehe Root-README ## Bonus B1).
+    enabled: false
+
+  csi:
+    enabled: false # gleiche Begruendung wie injector.enabled oben.
+
+  server:
+    image:
+      # registry ist bereits Chart-Default "quay.io" - repository OHNE Registry-Praefix, sonst
+      # doppelt (der Upstream-Chart setzt beide Felder getrennt zusammen, anders als z.B. bei
+      # notification-worker, wo "image.repository" den vollen Pfad traegt - gegen den real
+      # gerenderten StatefulSet-Output verifiziert, ein erster Versuch mit vollem Pfad hier
+      # rendete faelschlich "quay.io/quay.io/openbao/openbao").
+      repository: openbao/openbao
+      tag: "v2.6.2" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    # Kein lokales file/raft-Storage - das PostgreSQL-Storage-Backend (config-Block unten) haelt
+    # den gesamten Zustand, kein PVC pro Pod noetig.
+    dataStorage:
+      enabled: false
+
+    ha:
+      enabled: true
+      replicas: 3
+      raft:
+        # PostgreSQL-Backend statt Raft Integrated Storage - siehe Root-README ## Bonus B1
+        # Begruendung. Beide sind laut openbao.org offiziell HA-faehig; PostgreSQL passt zu P4
+        # (dieselbe simulierte Region-Topologie wie Kafka/CNPG) ohne einen dritten
+        # Storage-Mechanismus im Cluster einzufuehren.
+        enabled: false
+      # HCL-Config fuer den Postgres-Storage-Backend. Bewusst KEIN "connection_url" hier - die
+      # Umgebungsvariable BAO_PG_CONNECTION_URL (offiziell dokumentiert, siehe
+      # extraSecretEnvironmentVars unten) ueberschreibt/ergaenzt sie zur Laufzeit, damit das
+      # Postgres-Passwort nirgends im Klartext in dieser Datei steht.
+      config: |
+        ui = true
+
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+        storage "postgresql" {
+          table      = "openbao_kv_store"
+          ha_enabled = "true"
+          ha_table   = "openbao_ha_locks"
+        }
+
+        # Laesst den Chart automatisch die aktive Instanz labeln (openbao-active-Service
+        # selektiert darauf) - macht Failover zwischen bereits entsiegelten Standbys fuer den
+        # External-Secrets-Operator transparent, ohne eigene Retry-Logik dort.
+        service_registration "kubernetes" {}
+
+    # Postgres-Connection-String von OpenBaos eigener CNPG-Cluster-CR (charts/openbao-postgres).
+    # Secret-Name ist der von CNPG SELBST generierte App-User-Secret-Name
+    # "<clusterName>-app" = "<ticketflow.openbao.databaseName>-postgres-cluster-app" - siehe
+    # charts/openbao-postgres/templates/_helpers.tpl (openbao-postgres.appSecretName) und dessen
+    # postgres-cluster.yaml (bootstrap.initdb OHNE eigenes secret-Feld, CNPG generiert das
+    # Credential also selbst statt es chart-hardcodiert vorzugeben). Hartkodierter String, weil
+    # values.yaml nicht getemplated wird - muss von Hand angepasst werden, falls
+    # ticketflow.openbao.databaseName (aktuell "openbao-vault", siehe gitops/env/cluster.yaml) je
+    # geaendert wird. Key-Name "uri" gegen den real von CNPG erzeugten Secret-Inhalt
+    # verifizieren (`kubectl -n openbao get secret openbao-vault-postgres-cluster-app -o yaml`) -
+    # zur Implementierungszeit nicht live pruefbar.
+    extraSecretEnvironmentVars:
+      - envName: BAO_PG_CONNECTION_URL
+        secretName: openbao-vault-postgres-cluster-app
+        secretKey: uri
+
+    # P4: Region-Spread. OpenBao haelt jedes Service-Credential - ein Regionsausfall darf nicht
+    # alle drei Replicas gleichzeitig treffen. Natives Feld im Upstream-Chart (anders als AKHQ,
+    # kein Affinity-Workaround noetig - gegen templates/_helpers.tpl im Upstream-Chart-Tarball
+    # verifiziert).
+    topologySpreadConstraints: |
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: openbao
+            app.kubernetes.io/instance: openbao
+            component: server
+
+    # Auto-Unseal-Sidecar (Root-README ## Bonus B1 / Nutzer-Entscheidung): pollt lokal "bao
+    # status" und entsiegelt bei Bedarf automatisch mit dem aus dem unten gemounteten Secret
+    # gelesenen Key - macht einen von Kubernetes neu gestarteten/ersetzten Pod ohne manuellen
+    # Eingriff wieder zum entsiegelten Standby. Gleiches Image wie der Server-Container (enthaelt
+    # die "bao"-CLI bereits), kein zusaetzliches Image noetig.
+    extraContainers:
+      - name: auto-unseal
+        image: "quay.io/openbao/openbao:v2.6.2"
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -eu
+            export BAO_ADDR="http://127.0.0.1:8200"
+            while true; do
+              STATUS=$(bao status -format=json 2>/dev/null || true)
+              SEALED=$(echo "$STATUS" | grep -o '"sealed":[a-z]*' | cut -d: -f2)
+              if [ "$SEALED" = "true" ] && [ -f /openbao/unseal-keys/key1 ]; then
+                bao operator unseal "$(cat /openbao/unseal-keys/key1)" || true
+              fi
+              sleep 10
+            done
+        volumeMounts:
+          - name: unseal-keys
+            mountPath: /openbao/unseal-keys
+            readOnly: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+
+    volumes:
+      - name: unseal-keys
+        secret:
+          # Von templates/bootstrap-job.yaml angelegt/aktualisiert (Secret existiert erst nach dem
+          # ersten erfolgreichen Bootstrap-Lauf) - optional, damit der allererste Pod-Start (vor
+          # dem allerersten Hook-Job) nicht am fehlenden Secret scheitert.
+          secretName: openbao-unseal-keys
+          optional: true
+
+    serviceAccount:
+      # Noetig fuer service_registration "kubernetes" oben (Chart legt die dafuer noetige
+      # Role/RoleBinding automatisch an, siehe Upstream-Doku).
+      create: true
+
+    # Erst rendern und podSelector pruefen (Loki-Bug-Muster, siehe charts/README.md ##
+    # Resource-Limits...), bevor dies aktiviert wird - hier bewusst noch aus.
+    networkPolicy:
+      enabled: false
+
+# Bootstrap-Job (templates/bootstrap-job.yaml) - Init/Unseal/KV-Seeding, siehe eigener Abschnitt
+# im Plan. Eigener Werte-Block ausserhalb des "openbao:"-Dependency-Alias, weil dies UNSER
+# eigenes Template ist, nicht Teil des gewrappten Upstream-Charts.
+bootstrapJob:
+  image: "quay.io/openbao/openbao:v2.6.2"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
