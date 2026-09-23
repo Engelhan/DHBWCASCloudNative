@@ -176,8 +176,21 @@ spec:
                   echo "FEHLER: bao operator init fehlgeschlagen - Ausgabe: $INIT_OUTPUT" >&2
                   INIT_OUTPUT=""
                 fi
-                UNSEAL_KEY="$(echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
-                ROOT_TOKEN="$(echo "$INIT_OUTPUT" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
+                # Live gefundener Bug (2026-09-23, zweite Runde): "grep -o" arbeitet zeilenweise -
+                # "bao operator init -format=json" gibt eingeruecktes Mehrzeilen-JSON aus, in dem
+                # "unseal_keys_b64" ein Array ist, das ueber DREI Zeilen verteilt ist
+                # (Schluessel-Zeile, Wert-Zeile, schliessende Klammer-Zeile). Das urspruengliche
+                # Muster verlangte den kompletten Treffer (Schluessel BIS schliessende Klammer) auf
+                # EINER Zeile und schlug deshalb IMMER fehl - "root_token" extrahierte trotzdem
+                # korrekt, weil dieses Feld als einzelner Skalar auf einer einzigen Zeile steht.
+                # Live beobachtet: "UNSEAL_KEY 0 Zeichen, ROOT_TOKEN 26 Zeichen" nach einem
+                # erfolgreichen Init - der Root-Token wurde also fälschlich OHNE zugehoerigen
+                # Unseal-Key gespeichert. Fix: Antwort zuerst mit "tr '\n' ' '" auf eine Zeile
+                # zusammenfassen (gleicher Trick wie beim Loggen von STATUS_RAW oben), dann erst
+                # die bestehenden Muster anwenden.
+                INIT_OUTPUT_FLAT="$(printf '%s' "$INIT_OUTPUT" | tr '\n' ' ')"
+                UNSEAL_KEY="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"unseal_keys_b64"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
+                ROOT_TOKEN="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
                 echo "aus Init-Antwort extrahiert: UNSEAL_KEY ${#UNSEAL_KEY} Zeichen, ROOT_TOKEN ${#ROOT_TOKEN} Zeichen"
 
                 UNSEAL_KEY_B64="$(printf '%s' "$UNSEAL_KEY" | base64 | tr -d '\n')"
