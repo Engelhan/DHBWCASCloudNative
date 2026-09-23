@@ -5,6 +5,18 @@ Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Beri
 
 ## ToDo
 
+### 23.06.2026
+
+P3 -> Niklas prüfen
+P4 -> Jeder für sein Helm Chart prüfen
+P5 -> Jeder für sein Helm Chart prüfen
+W2 -> Niklas prüft ob das passt (sollte bereits fertig sein)
+B3 -> neue technologie Kafka, bereits umgesetzt -> muss noch endgültig dokumentiert werden
+B4 -> Entscheidung welches Wahlthema wir nehmen W1 oder W7
+Wollen wir noch B2 machen für die Bonuspunkte -> ja zumindest dokumentieren, die Punkte kann man mitnhehmen
+
+
+
 Pfisterer:
 - Application
    - Frontend -> Philipp
