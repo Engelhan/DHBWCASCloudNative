@@ -913,8 +913,8 @@ commands here once these gaps close instead of leaving this section stale.
   active, see `charts/README.md` ## Resource-Limits...). The cross-namespace `DATABASE_URL`
   blocker mentioned in older versions of this line is resolved (see the Postgres-wiring paragraph
   above) — `reservation-worker`'s chart is deploy-ready.
-- **Done, `helm lint`/`template`/`helm dependency update` all verified locally (2026-09-22), not
-  yet live-verified:** OpenBao (HA secret vault, PostgreSQL storage backend) + External Secrets
+- **Done, live-verified on the real cluster (2026-09-23):** OpenBao (HA secret vault, PostgreSQL
+  storage backend) + External Secrets
   Operator, replacing the SOPS plan under root `README.md` ## Bonus B1 (see there for the full
   Wahl/Alternative/Begründung). Four new charts: `charts/openbao` (wrapper around the official
   `openbao/openbao` chart 0.29.5/`v2.6.2`, `server.ha.enabled: true` + `replicas: 3` +
@@ -1007,10 +1007,15 @@ commands here once these gaps close instead of leaving this section stale.
   string copied from `Chart.yaml`, the same class of gap as the Strimzi
   `kafka.strimzi.io/v1beta2`-vs-`v1` API-version surprise documented elsewhere in this file.
 
-  **Not yet live-verified:** the exact upstream Service names (`openbao-active`/`openbao-internal`)
-  were confirmed against a real `helm template` render, but real HA failover between already-
-  unsealed standbys, the auto-unseal sidecar actually firing against a genuinely restarted pod,
-  and `ExternalSecret`s actually reaching `SecretSynced` all need a live cluster.
+  **Live-verified (2026-09-23):** the exact upstream Service names (`openbao-active`/
+  `openbao-internal`), all three pods `2/2 Running` with `bao status` showing
+  `Initialized: true, Sealed: false, HA Mode: active`, and every migrated/mirrored
+  `ExternalSecret` (`akhq-basic-auth`, `akhq-kafka-sasl`, `postgres-postgres-user`,
+  `notification-worker-credentials`) reaching `SecretSynced`/`Ready: True` against a `Valid`
+  `ClusterSecretStore`. **Still not live-verified:** real HA failover between already-unsealed
+  standbys (no leader kill tested yet), and the auto-unseal sidecar specifically firing against a
+  deliberately, cleanly restarted pod (as opposed to the crash-loop restarts from the bootstrap
+  debugging session itself).
 
   **Extended 2026-09-23 with `PushSecret` (ESO's other direction — K8s → vault, `external-
   secrets.io/v1alpha1`, a separate, still-`v1alpha1` CRD from `ExternalSecret`'s stable `v1`) so
