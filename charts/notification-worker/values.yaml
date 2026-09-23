@@ -93,18 +93,23 @@ config:
     tlsMode: "starttls" # none|starttls|tls
 
 secret:
-  create: true # false = ein extern (z.B. External Secret) bereitgestelltes Secret gleichen Namens wird erwartet
+  # B1 (Root-README ## Bonus): false seit 2026-09-22 - templates/externalsecret.yaml (siehe
+  # externalSecret.enabled unten) stellt das Secret jetzt bereit, aus OpenBao gesynct statt hier
+  # als Platzhalter-Werte im Chart zu stehen. Genau das war mit "extern bereitgestelltes Secret"
+  # hier von Anfang an gemeint.
+  create: false
   # Leer = "<release>-credentials". Der Suffix haelt das Secret von dem des Strimzi User Operators
   # getrennt, der fuer die KafkaUser-CR "notification-worker" ein gleichnamiges Secret im selben
   # Namespace anlegt (siehe templates/_helpers.tpl notification-worker.secretName).
   name: ""
-  # Platzhalter-Struktur; echte Werte via --set/--set-file/External Secret zur Deploy-Zeit, nie im
-  # Repo committen (gleiches Muster wie charts/kafka-cluster/README.md config/secret.yaml).
-  smtpUsername: ""
-  smtpPassword: ""
-  kafkaTlsCaCert: ""
-  kafkaTlsClientCert: ""
-  kafkaTlsClientKey: ""
+
+# B1 (Root-README ## Bonus): ExternalSecret statt chart-eigenem Secret-Template (secret.create
+# oben). SMTP/Kafka-mTLS bleiben standardmaessig deaktiviert (siehe config.smtp.enabled/
+# config.kafkaTls.enabled oben im File) - der Bootstrap-Job in charts/openbao seedet dafuer nur
+# leere Platzhalter-Strings in die KV-Pfade, echte Werte traegt bei Bedarf jemand spaeter per
+# einmaligem "bao kv put" nach (siehe README.md).
+externalSecret:
+  enabled: true
 
 # PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (siehe
 # templates/podmonitor.yaml), daher auch keine eigene Service-Ressource in diesem Chart.
