@@ -1,0 +1,47 @@
+# Oeffentliche Web-UI (Root-README ## Bonus B1 "zentrale Audit-Flaeche") - "ui = true" steht
+# bereits im HCL-Config-Block (values.yaml). Gleiches Muster wie charts/akhq/templates/ingress.yaml:
+# eigenes Template statt eines Upstream-Ingress-Werts, weil der Hostname an
+# .Values.ticketflow.dnsZone (zentrale Datei) haengt und Helm Values-Dateien nicht templatet -
+# aus einem verschachtelten "openbao:"-Dependency-Alias-Wert heraus kaeme man dort nicht hin, aus
+# diesem eigenen Chart-Template schon (gleicher top-level "ticketflow: {}"-Block wie bei AKHQ).
+#
+# Backend ist bewusst der "openbao-active"-Service (Port "http", 8200), nicht "openbao" oder
+# "openbao-standby": er zeigt dank "service_registration \"kubernetes\"" (values.yaml) immer auf
+# die aktuell aktive Instanz, unabhaengig vom Kubernetes-Readiness-Status
+# ("publishNotReadyAddresses: true", siehe die readinessProbe-Begruendung dort) - ein Standby darf
+# UI-Traffic nicht direkt annehmen (Vault/OpenBao leitet dort nur um bzw. lehnt ab).
+#
+# Sicherheitsueberlegung: es existiert absichtlich KEINE menschenfreundliche Auth-Methode
+# (userpass/LDAP) - nur Shamir-Root-Token (nur per kubectl aus dem Secret "openbao-unseal-keys"
+# lesbar) und Kubernetes-Auth (nur fuer ServiceAccounts, nicht fuer Menschen nutzbar). Ein
+# oeffentlicher Ingress hier eroeffnet also keinen neuen Zugriffsweg ueber den Login-Bildschirm
+# hinaus - wer sich einloggen kann, hat ohnehin schon Cluster-Zugriff. Bewusst kein zusaetzliches
+# Traefik-BasicAuth-Middleware davor, aus demselben Grund (waere ein zweites Passwort ohne echten
+# Sicherheitsgewinn gegenueber der Token-Huerde).
+{{- $host := printf "openbao.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openbao
+  labels:
+    app.kubernetes.io/name: openbao
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuerName | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ .Values.ingress.tlsSecretName | quote }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openbao-active
+                port:
+                  name: http

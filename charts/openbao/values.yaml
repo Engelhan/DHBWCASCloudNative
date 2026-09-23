@@ -193,6 +193,14 @@ openbao:
     networkPolicy:
       enabled: false
 
+# Einstellungen fuer den chart-eigenen Ingress (templates/ingress.yaml). Der Hostname selbst steht
+# hier NICHT - er ist immer "openbao.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml, gleiches
+# Muster wie bei charts/akhq.
+ingress:
+  className: traefik
+  clusterIssuerName: certificate-cluster-issuer
+  tlsSecretName: openbao-tls
+
 # Bootstrap-Job (templates/bootstrap-job.yaml) - Init/Unseal/KV-Seeding, siehe eigener Abschnitt
 # im Plan. Eigener Werte-Block ausserhalb des "openbao:"-Dependency-Alias, weil dies UNSER
 # eigenes Template ist, nicht Teil des gewrappten Upstream-Charts.

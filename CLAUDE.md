@@ -1069,5 +1069,24 @@ commands here once these gaps close instead of leaving this section stale.
     corresponding `ExternalSecret`/bootstrap-job reads already use. **Not yet live-verified:**
     whether the Vault-compatible provider actually accepts the push against a real OpenBao
     instance (confirmed only against ESO's own documentation, not a running vault).
+
+  **UI exposed publicly (2026-09-23), `helm lint`/`template` clean, not yet live-verified:**
+  `charts/openbao/templates/ingress.yaml` — same pattern as `charts/akhq/templates/ingress.yaml`
+  (own template, not the upstream chart's `ui.serviceType`/ingress fields, because the hostname
+  hangs off the central `ticketflow.dnsZone` and Helm doesn't template `values.yaml`), plain
+  `Ingress` at `openbao.<dnsZone>`, `cert-manager.io/cluster-issuer` annotation, Traefik
+  terminates TLS. Backend is deliberately the `openbao-active` Service (port `http`, 8200), not
+  `openbao`/`openbao-standby` — it always points at the current leader via
+  `service_registration "kubernetes"`, independent of Kubernetes readiness
+  (`publishNotReadyAddresses: true`, same reasoning as the readinessProbe override above); a
+  standby must not receive UI traffic directly. `ui = true` was already set in the HCL
+  `server.ha.config` block, no change needed there. **Deliberately no Traefik basic-auth in
+  front, unlike a first instinct given how sensitive this UI is:** OpenBao has no
+  human-usable auth method configured (no userpass/LDAP) — only the Shamir root token (readable
+  solely via `kubectl get secret openbao-unseal-keys`, i.e. already requires cluster access) and
+  Kubernetes-auth (ServiceAccounts only). A public Ingress therefore adds no real attack surface
+  beyond the login screen itself; a second password there would be security theater, not a real
+  gate. New `ingress:` values block (`className`/`clusterIssuerName`/`tlsSecretName`), same shape
+  as `charts/akhq/values.yaml`.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
