@@ -217,7 +217,7 @@ kubectl get kafka,cluster.postgresql.cnpg.io -A
 
 # 4. Künstlichen Lastpfad auslösen
 cd src/load-generator
-k6 run flash-sale.js --env EVENT_ID=demo-event --env VUS=500
+k6 run flash-sale.js --env API_URL=https://ticketflow.<dns-zone> --env EVENT_ID=demo-konzert --env VUS=500 --env DURATION=3m
 
 # 5. Beobachten
 kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring

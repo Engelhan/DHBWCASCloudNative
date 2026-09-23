@@ -48,10 +48,10 @@ a small, fixed seat count. This is the load path the whole architecture exists t
 - `frontend`, `load-generator` — demo UI and the k6 flash-sale load script.
 - Stateful services: **CNPG** (PostgreSQL operator) and **Strimzi** (Kafka).
 
-`catalog-api`, `frontend`, `notification-worker` and `reservation-worker` now have working code
-(see Current implementation status below); only `load-generator` still has just a `README.md`
-describing the planned interface/config. When implementing a service, keep it consistent with
-its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`, `/readyz`).
+`catalog-api`, `frontend`, `notification-worker`, `reservation-worker` and `load-generator` all
+have working code now (see Current implementation status below). When implementing a service,
+keep it consistent with its README (env vars via ConfigMap/Secret, `/metrics`, `/healthz`,
+`/readyz`).
 
 ## Infra layering (read this before touching infra/)
 
@@ -345,7 +345,8 @@ kubectl -n external-secrets get clustersecretstore openbao
 kubectl -n ticketflow get externalsecret
 ```
 
-`load-generator` still has no code. `charts/notification-worker/`, `charts/reservation-worker/`
+`load-generator` is a plain k6 script (`src/load-generator/flash-sale.js`), not a Helm
+chart/Kubernetes workload — run it directly with `k6 run`, see its README. `charts/notification-worker/`, `charts/reservation-worker/`
 and `charts/akhq/` **are all** deployed via their own ApplicationSet elements (corrected here
 2026-09-22 — this line previously and incorrectly claimed notification-worker had no element yet)
 and all pass `helm lint`/`template` locally — see their bullets under Current
@@ -895,8 +896,16 @@ commands here once these gaps close instead of leaving this section stale.
   deployed in the same Application as Kafka — this chart was split out of `charts/kafka-cluster`
   (which originally held both) for exactly that reason; `lint`/`template`/kubeconform all pass
   for both charts post-split.
+- **Done:** `src/load-generator/flash-sale.js` (k6) — ramping-VUs flash-sale scenario, `setup()`
+  loads the free-seat list once (load should hit `POST /events/{id}/reservations`, not repeated
+  seat lookups), a fixed `HOT_SEAT_RATIO` (default 20%) of iterations deliberately targets the
+  same seat to produce real `409`/`ReservationRejected` conflicts instead of relying on random
+  collisions. `202`/`409` both count as success (`options.thresholds`) — a rejected seat is a
+  correct flash-sale outcome, not a system error. Verified locally against docker-compose (30
+  VUs/15s: 878 requests, 694×`202`, 183×`409`, 0 unexpected errors); `reservation-worker` visibly
+  lagged behind afterwards processing the Kafka backlog (single local instance, no KEDA) — this
+  is exactly the consumer-lag signal KEDA reacts to in the real cluster (`charts/keda`, P6).
 - **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`),
-  all `src/load-generator` code,
   `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
   deny-by-default `NetworkPolicy` set (see root `README.md` ## Bonus B1 — the NetworkPolicy half
   is still "was getan werden soll"; the secret-vault half is done, see the OpenBao/External
