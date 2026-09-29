@@ -28,10 +28,28 @@ longhorn:
     nodeDrainPolicy: block-for-eviction-if-contains-last-replica
     # Thin-Provisioning - noetig fuer speicherhungrige Workloads auf den kleinen Lab-VMs.
     storageOverProvisioningPercentage: 300
+    # Requests/Limits fuer die CSI-Pods, die Longhorn zur Laufzeit selbst anlegt (nicht Teil des
+    # gerenderten Charts, deshalb nur ueber diese Einstellung erreichbar). Erwartet einen
+    # JSON-String: Komponentenname -> ResourceRequirements. Live gemessen: CSI-Sidecars ~10-13Mi,
+    # longhorn-csi-plugin ~12-19Mi, alle 1-2m CPU. longhorn-csi-plugin bekommt mehr CPU-Luft,
+    # weil es beim Attach Dateisysteme formatiert/mountet. Eine Aenderung startet die CSI-Pods
+    # neu (kurz kein Attach/Detach moeglich).
+    systemManagedCSIComponentsResourceLimits: >-
+      {
+      "csi-attacher": {"requests": {"cpu": "10m", "memory": "24Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
+      "csi-provisioner": {"requests": {"cpu": "10m", "memory": "24Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
+      "csi-resizer": {"requests": {"cpu": "10m", "memory": "24Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
+      "csi-snapshotter": {"requests": {"cpu": "10m", "memory": "24Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
+      "longhorn-csi-plugin": {"requests": {"cpu": "10m", "memory": "32Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
+      "node-driver-registrar": {"requests": {"cpu": "5m", "memory": "16Mi"}, "limits": {"cpu": "50m", "memory": "32Mi"}},
+      "longhorn-liveness-probe": {"requests": {"cpu": "5m", "memory": "16Mi"}, "limits": {"cpu": "50m", "memory": "32Mi"}}
+      }
 
-  # Longhorn-Manager ist der einzige Chart-Baustein mit einem eigenen resources-Feld
-  # (longhornUI/longhornDriver/CSI-Sidecars haben keins - vom Chart nicht exponiert, von
-  # Longhorns eigenen Controllern zur Laufzeit erzeugt statt als Helm-Template).
+  # Longhorn-Manager ist der einzige Chart-Baustein mit einem eigenen resources-Feld.
+  # longhornUI/longhornDriver haben keins; die CSI-Pods laufen ueber
+  # defaultSettings.systemManagedCSIComponentsResourceLimits (oben). Engine-Image-DaemonSet
+  # und Instance-Manager sind nicht konfigurierbar (Instance-Manager: nur CPU-Request ueber
+  # guaranteedInstanceManagerCPU) - siehe README.md ## Grenzen.
   longhornManager:
     resources:
       requests:
