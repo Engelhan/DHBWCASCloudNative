@@ -23,11 +23,19 @@ strimzi-kafka-operator:
   extraEnvs:
     - name: STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED
       value: "true"
+    # Strimzi erzeugt sonst je Listener eine Ingress-Policy "von allen Namespaces" - damit waeren
+    # 9092 (SCRAM) und vor allem 9093 (anonym, Superuser, nur fuer Apicurio gedacht) fuer jeden
+    # Pod im Cluster offen. Laut Strimzi-Doku ist das der vorgesehene Schalter fuer eigene
+    # Policies; die ersetzenden Regeln stehen in charts/network-policies/templates/kafka.yaml.
+    # Bereits generierte Policies raeumt der Operator dabei NICHT selbst ab (einmalig von Hand,
+    # siehe charts/README.md ## network-policies).
+    - name: STRIMZI_NETWORK_POLICY_GENERATION
+      value: "false"
 
   # resources hat der Chart schon sinnvoll vorbelegt (limits 1000m/384Mi, requests 200m/384Mi) -
   # kein Override noetig. podSecurityContext/securityContext sind dagegen Chart-Default leer
   # ({}) - anders als alle anderen Operator-Charts hier nicht von Haus aus gehaertet, deshalb
-  # explizit gesetzt. Kein natives networkPolicy-Feld im Chart vorhanden.
+  # explizit gesetzt. NetworkPolicies: siehe charts/network-policies.
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:
