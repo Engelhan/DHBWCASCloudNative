@@ -50,6 +50,10 @@ spec:
               #                    verfruehte Syncs im naechsten Reconcile nach.
               #   ignoreReplicas   spec.replicas des gleichnamigen Deployments nicht vergleichen
               #                    (KEDA verwaltet es, siehe P6).
+              #   retry            Fehlgeschlagene Syncs automatisch wiederholen. Ohne das
+              #                    versucht ArgoCD einen gescheiterten Sync fuer denselben Commit
+              #                    nie erneut - noetig, wo ein Sync an Objekten ANDERER
+              #                    Applications haengt (z.B. deren Namespaces).
               elements:
                 # --- Cluster-Addons / Storage ---
                 - name: longhorn
@@ -87,6 +91,15 @@ spec:
                   chartPath: charts/keda
                   namespace: keda
                   serverSideApply: true
+                # --- Netzwerk-Isolation (B1) ---
+                # Legt NetworkPolicies in allen Namespaces an, auch in solchen, die erst andere
+                # Applications (mit CreateNamespace) erzeugen. Beim ersten Bootstrap scheitert der
+                # Sync fuer noch fehlende Namespaces - retry wiederholt ihn, bis alle da sind.
+                # Die Ziel-Namespace-Angabe ist nur formal, jedes Objekt traegt seinen eigenen.
+                - name: network-policies
+                  chartPath: charts/network-policies
+                  namespace: kube-system
+                  retry: true
                 # --- Secret-Vault (B1) ---
                 # Kein syncWave auf keinem der vier: folgt exakt dem Praezedenzfall
                 # cnpg-operator->postgres-cluster/strimzi-operator->kafka-cluster oben (auch die
@@ -212,6 +225,14 @@ spec:
           {{- if .serverSideApply }}
           - ServerSideApply=true
           {{- end }}
+        {{- if .retry }}
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
+        {{- end }}
       {{- if .ignoreReplicas }}
       ignoreDifferences:
         - group: apps
