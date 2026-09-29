@@ -35,6 +35,14 @@ catalogApi:
 
   replicaCount: 2
 
+  # 50m Request: catalog-api ist pro Anfrage I/O-gebunden (Postgres-Read, Kafka-Produce), nicht
+  # CPU-gebunden - ein Go-Binary im Leerlauf zwischen Requests braucht kaum CPU. 300m Limit gibt
+  # Kopfraum fuer den einzigen wirklich CPU-teuren Schritt (JSON-Schema-Validierung vor jedem
+  # Kafka-Publish, siehe internal/schemareg) waehrend eines Flash-Sale-Bursts, ohne im Normalbetrieb
+  # ungenutzte CPU zu reservieren. 64Mi/128Mi Memory: kleines Go-Binary (distroless) + DB-/
+  # Kafka-Connection-Pools + kompiliertes Schema im Speicher - grosszuegig genug, ohne Puffer fuer
+  # tatsaechlich grosse Datenmengen zu verschwenden (catalog-api haelt selbst keine Sitzplatzliste
+  # im Speicher, jede Anfrage liest frisch aus Postgres).
   resources:
     requests:
       cpu: 50m
@@ -158,6 +166,12 @@ frontend:
 
   replicaCount: 2
 
+  # 10m/16Mi Request: nginx liefert nur wenige KB an statischen HTML/CSS/JS-Dateien aus, keine
+  # eigene Verarbeitung - der geringste Wert aller App-Pods in diesem Repo. 100m/64Mi Limit deckt
+  # trotzdem viele gleichzeitige Verbindungen ab (beim Vorverkaufsstart laden potenziell hunderte
+  # Browser gleichzeitig dieselbe Seite, bevor sie ueberhaupt buchen), ohne fuer eine reine
+  # Static-File-Auslieferung CPU-/Memory-Kontingent zu verschwenden, das anderswo (z. B.
+  # reservation-worker unter KEDA) mehr gebraucht wird.
   resources:
     requests:
       cpu: 10m

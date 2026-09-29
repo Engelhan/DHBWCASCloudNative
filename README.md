@@ -329,7 +329,17 @@ Controller pro Region. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
 `reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
 ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
 natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
-nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert.
+nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert
+oder `catalog-api`/`frontend` mit `replicaCount: 2` (dev) bzw. `3` (prod) laufen. Auch deren
+Requests/Limits sind hergeleitet: `catalog-api` 50m/64Mi Request (I/O-gebunden zwischen DB-Read
+und Kafka-Produce, kaum CPU im Leerlauf) mit 300m/128Mi Limit als Kopfraum für die
+JSON-Schema-Validierung vor jedem Kafka-Publish; `frontend` nur 10m/16Mi Request (liefert nur
+statische Dateien aus) mit 100m/64Mi Limit für viele gleichzeitige Verbindungen beim
+Vorverkaufsstart — Begründung jeweils als Kommentar in
+[`charts/ticketflow-app/values.yaml`](charts/ticketflow-app/values.yaml). *Nachweis im Betrieb:*
+`kubectl -n ticketflow get pods -l app.kubernetes.io/component=catalog-api -o wide` (bzw.
+`=frontend`) neben `kubectl get nodes -L topology.ticketflow/region` zeigt die Verteilung über die
+drei Regionen, sobald mehr als eine Replica läuft.
 *Alternative:* freie Platzierung durch den
 Standard-Scheduler, oder ein einzelner dedizierter "Storage-Node" für beide Dienste.
 *Begründung:* Freie Platzierung könnte alle Replicas eines Dienstes zufällig auf denselben Node
@@ -356,44 +366,18 @@ Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich 
 nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten; ein Pod-Verlust darf
 keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
 
-**P6 – Skalierbarkeit.** *Wahl:* KEDA (`charts/keda`, Operator; `ScaledObject`/
-`TriggerAuthentication` in `charts/reservation-worker/templates/keda-scaledobject.yaml`) skaliert
-`reservation-worker` auf Basis des Kafka-Consumer-Group-Lags von `reservation-requested`.
-*Alternative:* HPA auf CPU-Auslastung. *Begründung:* Die eigentliche fachliche Engpassgröße ist
-"wie viele Reservierungen warten auf Verarbeitung", nicht CPU-Last — CPU kann bei I/O-gebundener
-Arbeit (Warten auf DB-Commit, Kafka-Fetch) trügerisch niedrig bleiben, obwohl die Warteschlange
-wächst und Kunden auf ihre Bestätigung warten. Der Trade-off: eine Lag-basierte Metrik braucht
-einen zusätzlichen Scaler/Adapter (KEDA) statt der im Cluster bereits eingebauten HPA-CPU-Metrik —
-der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest schlicht am falschen Signal
-skalieren würde.
+> `TODO` (Aufgabenstellung V2, Stand 23.07.): P6 (Skalierbarkeit) und P7 (Observability) sind
+> keine Pflichtthemen mehr — nur noch P1–P5 (siehe `2026_07_23_Aufgabenstellung - v2.pdf`).
+> KEDA-Autoscaling ist deshalb nach `## Bonus` B2 verschoben (Team-Beschluss laut `## ToDo`
+> 23.06.: "ja, zumindest dokumentieren"). Observability (Dashboard/Alert-Regel) ist nicht
+> Bonus-reif, siehe `## Grenzen`.
 
-| Wert | dev (aktuell synct) | prod | Begründung |
-|---|---|---|---|
-| `keda.maxReplicaCount` | 3 | 8 | = Partitionszahl von `reservation-requested` je Kafka-Profil (`charts/kafka-cluster` `values-dev.yaml`/`values-prod.yaml`) — mehr Consumer als Partitionen innerhalb einer Consumer-Group wären untätig |
-| `keda.lagThreshold` | 10 | 10 | bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): ein Flash-Sale-Burst erzeugt weit mehr unverarbeitete Nachrichten und skaliert zuverlässig bis `maxReplicaCount`, ohne bei kleineren Lasttests unerreichbar zu sein |
-| `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
-
-`reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert;
-Das Element `reservation-worker` im ApplicationSet ignoriert `spec.replicas` explizit
-(`ignoreDifferences`),
-sonst würde ArgoCDs `selfHeal` jede KEDA-Skalierung sofort wieder zurücksetzen — Standardmuster
-für ArgoCD zusammen mit einem HPA/KEDA-verwalteten Deployment.
-
-**P7 – Observability.** *Wahl:* Jeder Service exponiert `/metrics` (Prometheus-Client). Wo ein
-Service von anderen Pods über eine `Service`-Ressource erreichbar sein muss, wird per
-`ServiceMonitor` gescraped (`catalog-api`, `reservation-worker`, geplant); wo es — wie bei
-`notification-worker` — keinen anderen Konsumenten der HTTP-Endpunkte gibt (reiner
-Kafka-Consumer, keine eingehenden Requests), entfällt die `Service`-Ressource zugunsten eines
-direkt auf die Pod-Labels zielenden `PodMonitor` (bereits umgesetzt, siehe
-[`charts/notification-worker/templates/podmonitor.yaml`](charts/notification-worker/templates/podmonitor.yaml)).
-CNPG und Strimzi bringen eigene Metriken mit, ein Grafana-Dashboard liegt als Code
-(`observability/dashboards/`) vor, eine Alert-Regel feuert auf "Reservation-Backlog über
-Schwellwert für 5 Minuten". *Alternative:* Ad-hoc-Logging ohne Metriken, oder überall
-`ServiceMonitor` samt unbenutzter `Service`-Ressource statt `PodMonitor`. *Begründung:* Ohne
-Metriken lässt sich P6 nicht demonstrieren — KEDA braucht eine abfragbare Zeitreihe, kein
-Log-Grepping. Eine unbenutzte `Service`-Ressource nur für den Scraper wäre reine Zeremonie; die
-Alert-Regel macht zusätzlich sichtbar, ab wann die Lastspitze geschäftlich relevant wird
-(Kunden warten spürbar), nicht nur technisch (Lag-Zahl steigt).
+> `TODO` (Team-Entscheidung offen, siehe `## ToDo` 23.06. "B4 -> Entscheidung welches Wahlthema
+> wir nehmen W1 oder W7"): V2 zählt für Teil B (10 Punkte) nur **ein** Wahlthema. Aktuell stehen
+> hier noch W1 und W2 nebeneinander, zusätzlich ist W7 (Cluster-Härtung/OpenBao) weit
+> fortgeschritten in `## Bonus` B3 dokumentiert. Sobald entschieden: das gewählte Thema bleibt
+> hier als einziger Absatz, die anderen wandern (mit vollem Nachweis) nach `## Bonus` B3
+> ("Weiteres Wahlthema") oder fallen weg.
 
 **W1 – Packaging (Helm).** *Wahl:* ein Chart je Komponente, alle nach demselben verbindlichen
 Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für Applikations-Charts) mit
@@ -440,17 +424,51 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
   über drei Regionen) das ab; einzelne Volumes sind dadurch nicht zusätzlich gesichert.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant);
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
+- Observability ist unvollständig: jeder Service exponiert `/metrics`, `ServiceMonitor`/
+  `PodMonitor` scrapen sie bereits — aber `observability/dashboards/` und `observability/alerts/`
+  sind noch leer (kein Grafana-Dashboard als Code, keine feuernde Alert-Regel). Seit
+  Aufgabenstellung V2 kein Pflichtthema mehr (P7 entfällt), aber auch als Bonus B1 noch nicht
+  beanspruchbar, solange Dashboard/Alert fehlen.
 
 *(TODO: nach Lasttests unter echten Bedingungen konkretisieren, was tatsächlich beobachtet wurde.)*
 
 ## Bonus
 
-> `TODO`: Beide Leistungen sind unten als Plan beschrieben, aber noch **nicht umgesetzt** — dieser
-> Abschnitt wird erst final in der Abgabe stehen bleiben, wenn Nachweis im Betrieb existiert
-> (Aufgabenstellung: "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe"). Bis dahin dient
-> er als Umsetzungsplan; Verweise auf Dateien werden ergänzt, sobald sie existieren.
+> `TODO`: Nummerierung folgt der Bonus-Tabelle in Aufgabenstellung V2 (B1 Observability, B2
+> Autoscaling, B3 Weiteres Wahlthema, B4 Neue Technologie, ...). B3 (W7 Cluster-Härtung) steht
+> hier nur vorläufig, solange die Team-Entscheidung "W1 oder W7 als Haupt-Wahlthema" offen ist
+> (siehe `## ToDo` und `## Entscheidungen`) — falls W7 gewählt wird, wandert dieser Absatz nach
+> `## Entscheidungen` und ein anderes Thema rückt an seine Stelle. Für B3/B4 gilt zusätzlich:
+> "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe" — Verweise auf Dateien werden
+> ergänzt/geprüft, sobald der Nachweis live existiert.
 
-**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll (NetworkPolicy-Hälfte):*
+**B2 – Autoscaling: KEDA auf Kafka-Consumer-Lag.** *Was umgesetzt wurde:* KEDA (`charts/keda`,
+Operator; `ScaledObject`/`TriggerAuthentication` in
+`charts/reservation-worker/templates/keda-scaledobject.yaml`) skaliert `reservation-worker` auf
+Basis des Kafka-Consumer-Group-Lags von `reservation-requested`, nicht auf CPU-Auslastung — die
+eigentliche fachliche Engpassgröße ist "wie viele Reservierungen warten auf Verarbeitung", nicht
+CPU-Last, die bei I/O-gebundener Arbeit (Warten auf DB-Commit, Kafka-Fetch) trügerisch niedrig
+bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung warten.
+
+| Wert | dev (aktuell synct) | prod | Begründung |
+|---|---|---|---|
+| `keda.maxReplicaCount` | 3 | 8 | = Partitionszahl von `reservation-requested` je Kafka-Profil (`charts/kafka-cluster` `values-dev.yaml`/`values-prod.yaml`) — mehr Consumer als Partitionen innerhalb einer Consumer-Group wären untätig |
+| `keda.lagThreshold` | 10 | 10 | bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): ein Flash-Sale-Burst erzeugt weit mehr unverarbeitete Nachrichten und skaliert zuverlässig bis `maxReplicaCount`, ohne bei kleineren Lasttests unerreichbar zu sein |
+| `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
+
+`reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert; das
+Element `reservation-worker` im ApplicationSet ignoriert `spec.replicas` explizit
+(`ignoreDifferences`), sonst würde ArgoCDs `selfHeal` jede KEDA-Skalierung sofort wieder
+zurücksetzen — Standardmuster für ArgoCD zusammen mit einem HPA/KEDA-verwalteten Deployment.
+*Alternative:* HPA auf CPU-Auslastung. *Begründung:* Der Trade-off einer Lag-basierten Metrik ist
+ein zusätzlicher Scaler/Adapter (KEDA) statt der im Cluster bereits eingebauten HPA-CPU-Metrik —
+der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest schlicht am falschen Signal
+skalieren würde. *Nachweis im Betrieb:* lokal mit `src/load-generator/flash-sale.js` verifiziert,
+dass sich ein Kafka-Backlog bildet (siehe dessen README); live auf dem Cluster noch nicht geprüft
+(kein Zugriff, siehe `## Grenzen`) — Nachweis wäre `kubectl get scaledobject,hpa -n ticketflow`
+während eines Lasttests, Replica-Zahl wächst sichtbar mit.
+
+**B3 – Weiteres Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll (NetworkPolicy-Hälfte):*
 Deny-by-default Network Policies je Namespace (`kafka`, `cnpg-system`, künftiger
 `ticketflow`-App-Namespace) plus explizite Allow-Regeln für die tatsächlich benötigten Pfade —
 `catalog-api`/`reservation-worker` → CNPG-Primary auf Port 5432,
@@ -538,7 +556,7 @@ bleibt geplant
 passendes Label kann nachweislich **nicht** gegen CNPG:5432 oder den Kafka-Broker verbinden
 (negative Probe).
 
-**B2 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
+**B4 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
 hinaus.** *Was umgesetzt wurde:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
 für alle Services bekommt jeder Client über Strimzis **User Operator** eine eigene
 `KafkaUser`-Custom-Resource mit SCRAM-SHA-512-Authentifizierung und ein eigenes, engst mögliches
@@ -556,7 +574,7 @@ User Operator erzeugte Secret dort landet, wo `catalog-api`/`reservation-worker`
 Passwort mittlerweile gleich generieren, keine Sonderbehandlung mehr. **AKHQ**
 (schreibgeschützt konfiguriert) läuft aber im Kafka-Namespace und kann das App-Namespace-Secret
 deshalb nicht per `secretKeyRef` erreichen (Kubernetes erlaubt das nicht über Namespace-Grenzen);
-seit B1 (siehe `## Bonus`) löst ein `PushSecret`/`ExternalSecret`-Paar über OpenBao genau das —
+seit B3 (siehe oben) löst ein `PushSecret`/`ExternalSecret`-Paar über OpenBao genau das —
 AKHQs Kafka-Passwort wird wie bei den anderen drei von Strimzi generiert, nach OpenBao gespiegelt
 und von dort in AKHQs eigenen Namespace zurückgesynct, statt wie zuvor chart-seitig vorgegeben zu
 werden. *Alternative:* ein einziges, geteiltes Client-Secret für alle
@@ -576,4 +594,4 @@ Konfigurationsdatei. *Nachweis im Betrieb (noch nicht live geprüft, kein Cluste
 Test-Producer (z. B. ein `kubectl run`-Pod mit `notification-worker`s Credentials, der versucht
 auf `reservation-requested` zu schreiben) wird von Kafka mit einer Autorisierungs-Exception
 abgelehnt — eine Screencast-taugliche Negativprobe; AKHQ zeigt die Consumer-Groups mit wachsendem/
-fallendem Lag live während der P6-Lastdemo.
+fallendem Lag live während der Lastdemo (siehe B2 – Autoscaling oben).

@@ -26,9 +26,15 @@ one paragraph per mandatory/chosen topic (P1–P7, plus the two chosen elective 
 *Wahl* / *Alternative* / *Begründung* — always tie the reasoning to the domain (flash-sale ticket
 demand), not to lecture content, per the grading rubric.
 
-Chosen elective topics (fixed, do not add a third without asking — a third only earns bonus
-points and only if Part A is fully done): **W1 Packaging** (Helm chart, `values-dev.yaml` /
-`values-prod.yaml` / values schema) and **W2 GitOps** (ArgoCD, one `ApplicationSet`, auto-sync + self-heal).
+**Aufgabenstellung V2 (23.07., `2026_07_23_Aufgabenstellung - v2.pdf`) changed the grading
+structure — check that file, not just this section, before trusting anything below about P6/P7/
+elective count.** Key deltas from V1: only **P1–P5** are mandatory now (P6 Skalierbarkeit/P7
+Observability dropped as Pflichtthemen, moved to optional bonus B1 Observability/B2 Autoscaling);
+Teil B now needs only **one** elective topic (10 points total), not two. Team has already
+implemented work matching three electives (W1 Packaging, W2 GitOps, W7 Cluster-Härtung via
+OpenBao) — which one counts as the graded Teil-B topic is an **open team decision** (see root
+`README.md` `## ToDo` 23.06. and the `TODO` markers in `## Entscheidungen`/`## Bonus`), not
+resolved here. Don't assume W1+W2 are still "the" chosen pair — that was the V1 framing.
 
 ## Domain model (why the infra exists)
 
