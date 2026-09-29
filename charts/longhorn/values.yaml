@@ -20,6 +20,10 @@ longhorn:
     defaultClassReplicaCount: 1
   defaultSettings:
     defaultReplicaCount: 1
+    # Aus: der Upgrade-Checker fragt regelmaessig upgrade-responder.longhorn.io ab - das waere die
+    # einzige Internet-Verbindung aus longhorn-system (charts/network-policies laesst sie nicht
+    # zu). Die Longhorn-Version pinnt ohnehin Chart.yaml, Updates laufen ueber Git.
+    upgradeChecker: false
     # Replicas auf mehrere Nodes verteilen, damit nicht ein Node mehrere "letzte Replicas" haelt
     # (jede wuerde ein Drain waehrend eines Rolling-Upgrades blockieren).
     replicaAutoBalance: least-effort
