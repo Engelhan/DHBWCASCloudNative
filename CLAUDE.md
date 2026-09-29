@@ -113,7 +113,13 @@ Four layers, each owning a distinct concern — don't blur them:
    specifics below). `external-secrets-operator`'s `secretstores`/`clustersecretstores` CRDs
    measured ~252KB raw YAML each (chart 2.11.0) — close enough to the limit, and client-side
    apply's JSON-encoded `last-applied-configuration` annotation can exceed the raw YAML size, that
-   it gets `ServerSideApply=true` too rather than verifying the exact margin. Loki/Tempo ship no
+   it gets `ServerSideApply=true` too rather than verifying the exact margin. **Every
+  NetworkPolicy in the cluster lives in `charts/network-policies`** (ApplicationSet element
+  `network-policies`, `retry: true` because it writes into namespaces other Applications create)
+  — every chart-native `networkPolicy` toggle is off and must stay off, and Strimzi's own policy
+  generation is disabled (`STRIMZI_NETWORK_POLICY_GENERATION=false`). A new connection of any
+  service needs a rule there or it is silently dropped (timeout, no error). See Current
+  implementation status and `charts/README.md` ## network-policies. Loki/Tempo ship no
    CRDs, don't need it; neither does `openbao` (verified: zero CRDs in the upstream chart) or
    `openbao-postgres`/`openbao-secretstore` (both fully-custom, single-CR charts, same class as
    `postgres-cluster`). Observability persistence goes
@@ -459,10 +465,9 @@ commands here once these gaps close instead of leaving this section stale.
   cnpg-operator/strimzi-operator/kube-prometheus-stack need `syncOptions: [ServerSideApply=true]`
   (see Infra layering above) — already set on all three; Loki/Tempo don't ship CRDs, don't need
   it. All eight workload charts (the five above plus Longhorn/cert-manager/external-dns) now set
-  explicit `resources.requests`/`resources.limits` and enable the chart's own `networkPolicy`
-  where one exists AND is safely scoped (cert-manager, kube-prometheus-stack, Tempo —
-  external-dns/CNPG/Strimzi/Longhorn have no native NetworkPolicy field, deliberately not
-  hand-built). **Loki's `networkPolicy.enabled` is deliberately `false`**, unlike the others —
+  explicit `resources.requests`/`resources.limits`. (They used to enable the chart's own
+  `networkPolicy` where one existed — superseded 2026-09-29, all toggles are off now, see the
+  `charts/network-policies` bullet further below.) **Loki's `networkPolicy.enabled` is deliberately `false`**, unlike the others —
   its chart unconditionally adds a `<release>-namespace-only` policy with an **empty
   `podSelector: {}`**, which applies to every pod in the shared `monitoring` namespace, not just
   Loki's own. Caught live: it cut Grafana's sidecar containers off from the Kubernetes API
@@ -929,11 +934,8 @@ commands here once these gaps close instead of leaving this section stale.
   lagged behind afterwards processing the Kafka backlog (single local instance, no KEDA) — this
   is exactly the consumer-lag signal KEDA reacts to in the real cluster (`charts/keda`, P6).
 - **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`),
-  `observability/dashboards/` + `observability/alerts/` content, and B1's project-wide
-  deny-by-default `NetworkPolicy` set (see root `README.md` ## Bonus B1 — the NetworkPolicy half
-  is still "was getan werden soll"; the secret-vault half is done, see the OpenBao/External
-  Secrets Operator bullet below; three charts already have their own scoped `NetworkPolicy`
-  active, see `charts/README.md` ## Resource-Limits...). The cross-namespace `DATABASE_URL`
+  `observability/dashboards/` + `observability/alerts/` content. (B1's deny-by-default
+  `NetworkPolicy` set is written now, see the `charts/network-policies` bullet below.) The cross-namespace `DATABASE_URL`
   blocker mentioned in older versions of this line is resolved (see the Postgres-wiring paragraph
   above) — `reservation-worker`'s chart is deploy-ready.
 - **Done, live-verified on the real cluster (2026-09-23):** OpenBao (HA secret vault, PostgreSQL
@@ -1116,5 +1118,29 @@ commands here once these gaps close instead of leaving this section stale.
   beyond the login screen itself; a second password there would be security theater, not a real
   gate. New `ingress:` values block (`className`/`clusterIssuerName`/`tlsSecretName`), same shape
   as `charts/akhq/values.yaml`.
+- **Done (2026-09-29), simulated against live traffic, not yet rolled out:** B1's NetworkPolicy
+  half — `charts/network-policies` (element `network-policies`), ~80 policies across all 15
+  namespaces incl. `kube-system`/`argocd`/`default`: `default-deny-all` (Ingress+Egress) +
+  `allow-dns-egress` per namespace, then one `allow-<component>` policy per workload. Replaces
+  every chart-native policy (kube-prometheus-stack, cert-manager, Tempo, AKHQ switched off;
+  `postgres-cluster`/`openbao-postgres`/`ticketflow-app`/`reservation-worker`/`notification-worker`
+  templates + values + schema entries deleted) and Strimzi's generated ones
+  (`STRIMZI_NETWORK_POLICY_GENERATION=false` in `charts/strimzi-operator`). ArgoCD's own ingress
+  policies from the Ansible-installed manifest stay. Found live while doing this: the
+  kube-prometheus-stack Prometheus policy had `policyTypes: [Ingress, Egress]` and zero rules →
+  Prometheus had 0 active targets. k3s facts it depends on (checked on the nodes, don't
+  "simplify" them away): API-server egress = `ipBlock` on the node CIDRs **port 6443** (kube-proxy
+  DNATs before policy evaluation); the API server reaches pods on *other* nodes from the flannel
+  tunnel address `fd00:42::`/`10.42.0.0` (new `ticketflow.network.{nodeCIDRs,controlPlaneTunnelIPs}`
+  in `gitops/env/cluster.yaml`); kube-router always allows traffic from the pod's own node
+  (probes, iSCSI, hairpin). Verified: `helm lint`/`template` clean for all charts, server-side
+  dry-run apply clean, and two simulations of NetworkPolicy semantics against the rendered chart —
+  89 flow types captured with `ss` in every pod netns/host on all four nodes (0 denied) and 118
+  flows derived from every ServiceMonitor/PodMonitor/webhook/APIService/Ingress backend + DNS
+  (0 denied); a deny-only control run blocks 70/89, so the simulation does detect blocks.
+  **Rollout needs one manual step** on an existing cluster: delete Strimzi's three previously
+  generated policies in `kafka` (commands in `charts/README.md` ## network-policies) — the
+  operator doesn't clean them up and they'd keep 9092/9093 open. Longhorn's upgrade checker is
+  switched off (`charts/longhorn`), because `longhorn-system` gets no internet egress.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.

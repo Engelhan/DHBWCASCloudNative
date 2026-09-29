@@ -22,14 +22,17 @@ charts/<name>/
     ├── secret.yaml                    # nur wo der Chart selbst Credentials anlegt
     ├── service.yaml                   # nur wo es HTTP-Konsumenten gibt
     ├── servicemonitor.yaml            # mit Service; sonst podmonitor.yaml
-    ├── networkpolicy.yaml             # default aus
     └── poddisruptionbudget.yaml
 ```
 
 Feste Key-Reihenfolge in `values.yaml` (je Komponente, falls der Chart mehrere rendert):
 `image`, `replicaCount`, `resources`, `podSecurityContext`, `securityContext`, `config`,
 `database`/`secret`, `service`, `ingress`, `serviceMonitor`/`podMonitor`,
-`networkPolicy`, `podDisruptionBudget`, `topologySpreadConstraint`.
+`podDisruptionBudget`, `topologySpreadConstraint`.
+
+Keine `networkpolicy.yaml` im App-Chart: alle NetworkPolicies stehen zentral in
+`charts/network-policies` (siehe ## network-policies) — eine neue Verbindung eines Services wird
+dort freigegeben.
 
 Regeln:
 
@@ -125,7 +128,7 @@ im Repo und bekam deshalb, abweichend vom ursprünglichen Plan (alle drei Servic
 Umbrella-Chart), einen eigenen Chart nach Pattern (b) unten (volleigene Templates, keine
 Upstream-`dependencies`) — analog zu [`cert-manager-config/`](cert-manager-config/)/
 [`argocd-ingress/`](argocd-ingress/), aber mit `_helpers.tpl`, da er mit fünf Ressourcen
-(Deployment, ConfigMap, Secret, PodDisruptionBudget, PodMonitor, optional NetworkPolicy)
+(Deployment, ConfigMap, Secret, PodDisruptionBudget, PodMonitor)
 deutlich mehr rendert als die anderen Custom-Charts. Bewusst kein `Service` — es gibt keinen
 anderen Konsumenten der HTTP-Endpunkte (reiner Kafka-Consumer, Kubelet-Probes gehen direkt an den
 Pod), daher scraped ein `PodMonitor` (statt `ServiceMonitor`) `/metrics` direkt über den
@@ -137,7 +140,7 @@ leer, sodass ein Deploy ohne `--set` gar nicht möglich war.
 
 [`reservation-worker/`](reservation-worker/) ist der zweite vollständig implementierte Service,
 analog zu `notification-worker` als eigener Chart (Deployment, ConfigMap, Secret,
-PodDisruptionBudget, PodMonitor, optionale NetworkPolicy, `_helpers.tpl`, eigenes
+PodDisruptionBudget, PodMonitor, `_helpers.tpl`, eigenes
 `values.schema.json`) — deployt als Element `reservation-worker`. Abweichungen von
 `notification-worker`s Vorlage: `replicaCount: 1` statt `3` — der Service wird von KEDA auf
 Kafka-Consumer-Lag skaliert (P6, Element `keda`), ein hoher statischer Default wäre daneben
@@ -287,23 +290,25 @@ und brauchen einen Umweg: der `config-reloader`, den der Prometheus-Operator sel
 Prometheus/Alertmanager einfügt (`prometheusOperator.prometheusConfigReloader.resources` → wird als
 `--config-reloader-*`-Flag an den Operator übergeben), und die CSI-Pods, die Longhorn zur Laufzeit
 anlegt (`defaultSettings.systemManagedCSIComponentsResourceLimits`, ein JSON-String). Was danach
-übrig bleibt, hat kein Feld im Upstream-Chart, siehe Root-`README.md` ## Grenzen. Die Charts aktivieren außerdem die
-Chart-eigene `networkPolicy`, wo der Upstream-Chart eine anbietet und sie sich als sicher
-erwiesen hat (cert-manager, kube-prometheus-stack, Tempo — external-dns/CNPG/Strimzi/Longhorn
-haben kein natives NetworkPolicy-Feld, dafür wurde bewusst keine eigene NetworkPolicy von Hand
-nachgebaut, siehe unten). **Loki ist die eine Ausnahme: `networkPolicy.enabled: false`,
-bewusst NICHT aktiviert** — der Chart legt bei `enabled: true` zusätzlich ungefragt eine
+übrig bleibt, hat kein Feld im Upstream-Chart, siehe Root-`README.md` ## Grenzen.
+
+Die Chart-eigenen `networkPolicy`-Schalter sind in **allen** Charts aus — sämtliche
+NetworkPolicies kommen aus `charts/network-policies` (siehe ## network-policies unten). Die
+Upstream-Policies waren vorher teils zu offen (AKHQ/Tempo: jede Quelle; cert-manager: Egress zu
+beliebigen Zielen, Webhook/cainjector gar nicht erfasst), teils kaputt (kube-prometheus-stack:
+Prometheus komplett abgeschottet, s.u.). Die folgenden zwei Vorfälle sind der Grund, warum ein
+Upstream-Schalter nie ungeprüft an geht. **Loki:** der Chart legt bei `enabled: true` zusätzlich ungefragt eine
 `<release>-namespace-only`-Policy mit **leerem `podSelector: {}`** an
 (`templates/networkpolicy.yaml`), die dann für **alle** Pods im Namespace `monitoring` gilt,
 nicht nur für Loki selbst, und nur noch Traffic innerhalb der Namespace-Grenze erlaubt. Live
 beobachtet: das hat den Grafana-Sidecars (selber Namespace, aus `charts/kube-prometheus-stack`)
 den Egress zum Kubernetes-API-Server gekappt ("connection refused" auf die
 Service-ClusterIP) → CrashLoopBackOff. Kein Chart-eigenes Sub-Flag, um nur diese eine Policy
-abzuschalten, deshalb für Loki komplett aus. Tempos NetworkPolicy hat dasselbe Problem nicht
-(dort korrekt über `podSelector.matchLabels` auf die eigenen Pods beschränkt) — **bei jedem
-neuen Chart erst den gerenderten NetworkPolicy-`podSelector` prüfen, bevor `enabled: true`
-gesetzt wird**, ein leerer/fehlender Selector auf einer geteilten Namespace ist der
-Symptomkiller.
+abzuschalten, deshalb für Loki komplett aus. **kube-prometheus-stack:** die Prometheus-Policy
+des Charts hatte live `policyTypes: [Ingress, Egress]` ohne eine einzige Regel — Prometheus
+erreichte weder den API-Server (Service Discovery) noch ein Scrape-Ziel, `/api/v1/targets`
+lieferte 0 aktive Targets, ohne dass irgendwo ein Fehler auffiel. Lehre aus beiden: **`helm lint`
+sagt über NetworkPolicies nichts** — gerendertes Ergebnis lesen und gegen echten Traffic prüfen.
 
 Ein zweiter, unabhängiger Fehler kam aus derselben Hardening-Runde: `grafana.persistence.enabled`
 plus der Chart-Default `deploymentStrategy.type: RollingUpdate` deadlockt live bei **jeder**
@@ -341,8 +346,74 @@ nachsehen, welches Values-Feld wirklich wohin gemappt wird, dann mit `helm templ
 `python3 -c "...c.get('securityContext')..."` (Pod **und** Container getrennt ausgeben)
 gegenprüfen, statt der Struktur eines anderen Charts blind zu folgen.
 
-NetworkPolicies wurden bewusst **nicht** auf konkrete Pod-/Namespace-Selektoren verengt
-(Chart-Default-Regeln reichen, `enabled: true` genügt) — die genauen Cross-Namespace-Verkehrsflüsse
-(z.B. welche Namespaces Prometheus scrapen darf) stehen erst fest, sobald
-`charts/kafka-cluster` existiert; eine zu früh verengte Policy würde sonst später stillschweigend
-Metrics-/Log-/Trace-Sammlung blockieren, ohne dass ein Fehler sichtbar wird.
+## network-policies
+
+Fully-custom Chart, deployt als Element `network-policies` (Ziel-Namespace nur formal, jedes
+Objekt trägt seinen eigenen). Enthält **alle** NetworkPolicies des Clusters — Ausnahme sind nur
+die Ingress-Policies, die ArgoCDs Install-Manifest (Ansible) selbst mitbringt; die bleiben, der
+Chart ergänzt dort default-deny und den Egress.
+
+**Aufbau.** Jeder Namespace (auch `kube-system`, `argocd`, `default`, `kube-public`,
+`kube-node-lease`) bekommt `default-deny-all` (Ingress + Egress, der einzige gewollt leere
+`podSelector`) und `allow-dns-egress` zu CoreDNS. Danach je Komponente eine `allow-<name>`-Policy,
+die genau ihre Verbindungen freigibt — eine Datei pro Namespace-Gruppe unter `templates/`
+(`app.yaml`, `kafka.yaml`, `openbao.yaml`, `external-secrets.yaml`, `operators.yaml`,
+`monitoring.yaml`, `platform.yaml`), die wiederkehrenden Bausteine (API-Server-Egress,
+Prometheus-/Traefik-/API-Server-Peers, CNPG-Cluster) in `_helpers.tpl`. Namespaces, Kafka-/
+Postgres-Clusternamen, Node-Subnetze und der RFC2136-Server kommen aus `gitops/env/cluster.yaml`.
+
+**Drei k3s-Eigenheiten, ohne die nichts funktioniert** (live auf den Nodes geprüft):
+
+- Der API-Server ist kein Pod. Pods erreichen ihn über die ClusterIP des Service `kubernetes`,
+  kube-proxy übersetzt das **vor** der Policy-Auswertung auf `<Control-Plane-IP>:6443` — Egress
+  also per `ipBlock` auf `ticketflow.network.nodeCIDRs`, Port 6443 (nicht 443).
+- Ruft der API-Server einen Pod auf einem **anderen** Node auf (Admission-Webhooks, APIServices,
+  `kubectl cnpg status`), ist die Quelladresse die Flannel-Tunneladresse des Control-Plane-Nodes
+  (`fd00:42::`/`10.42.0.0`), nicht die Node-IP — `ticketflow.network.controlPlaneTunnelIPs`.
+- kube-router (k3s' Policy-Controller) lässt Traffic vom **lokalen** Node immer durch („permit
+  traffic to pods when source is the pod's local node“). Deshalb brauchen Kubelet-Probes, iSCSI
+  zu Longhorns Instance-Manager und Hairpin-Traffic keine Regel.
+
+**Operator-Vorgaben aus der offiziellen Doku:**
+
+- *CloudNativePG* (`docs/src/networking.md`, `samples/networkpolicy-example.yaml`): der Operator
+  muss jede Instanz auf 8000 und 5432 erreichen, die Instanzen untereinander. Zusätzlich braucht
+  jede Instanz den API-Server (der Instance-Manager ist selbst ein Controller) —
+  `np.cnpgCluster` in `_helpers.tpl`, genutzt für App- und OpenBao-Datenbank.
+- *Strimzi* (Restricting access to listeners with network policies): der Operator erzeugt je
+  Listener eine Policy „von allen Namespaces“, damit wären 9092 (SCRAM) und vor allem 9093
+  (anonym, Superuser, nur für Apicurio) clusterweit offen. `STRIMZI_NETWORK_POLICY_GENERATION=false`
+  in `charts/strimzi-operator` ist der dokumentierte Schalter für eigene Policies; die internen
+  Regeln (9090 KRaft-Quorum, 9091 Replikation, 8443 Kafka-Agent) sind 1:1 die zuvor vom Operator
+  erzeugten, die Client-Listener auf die tatsächlichen Clients verengt. Strimzi-Pods brauchen
+  außerdem den API-Server: der `strimzisecrets`-Config-Provider liest Zertifikate zur Laufzeit
+  über die API.
+
+**Bewusste Grobheiten**, jeweils mit Begründung im Template: Prometheus darf Egress zu allen Pods
+(die Ingress-Seite jedes Ziels regelt den Metrik-Port, eine zweite Portliste würde nur veralten);
+`longhorn-system` erlaubt Verkehr innerhalb des Namespaces pauschal (Engine↔Replika über
+dynamisch vergebene Ports); Internet-Egress gibt es nur portbeschränkt und nur für cert-manager
+(ACME 443, DNS 53), CoreDNS (Upstream 53), ArgoCD-Repo-Server (22/443) und den
+Schema-Registrierungs-Job (`apk add`, 80/443). Longhorns Upgrade-Checker ist deshalb abgeschaltet
+(`charts/longhorn`), Grafana/Loki/Tempo-Nutzungsstatistiken laufen still ins Leere.
+
+**Wie die Verkehrsmatrix ermittelt und geprüft wurde.** Aus dem Live-Cluster: Pods/Labels/Ports,
+Services, alle Validating-/MutatingWebhookConfigurations und APIServices (= Aufrufe vom
+API-Server), alle ServiceMonitor/PodMonitor-Ziele, alle Ingress-Backends. Danach zwei
+Simulationen gegen den gerenderten Chart (NetworkPolicy-Semantik inkl. der kube-router-Regel für
+lokalen Traffic): (1) jede tatsächlich offene TCP-Verbindung, per `ss` in jedem Pod-Netns und auf
+jedem Host über eine Minute mitgeschnitten — 89 Flow-Typen, 0 blockiert; (2) 118 aus der
+Konfiguration abgeleitete Soll-Flows (jeder Scrape, jeder Webhook, jedes Ingress-Backend, DNS
+für jeden Pod) — 0 blockiert. Gegenprobe mit nur default-deny: 70 der 89 Flows blockiert, die
+Simulation erkennt Sperren also. UDP wurde nicht mitgeschnitten (einziger UDP-Verkehr: DNS und
+Alertmanager-Mesh, beide explizit geregelt).
+
+**Einmalige Schritte beim ersten Rollout auf einem bestehenden Cluster:** Strimzi räumt seine
+bisher generierten Policies nicht selbst ab — danach
+`kubectl -n kafka delete networkpolicy ticketflow-kafka-network-policy-kafka ticketflow-kafka-entity-operator ticketflow-kafka-kafka-exporter`
+(sonst bleiben 9092/9093 über diese alten Policies weiter offen). Die übrigen alten Policies
+(AKHQ, Tempo, kube-prometheus-stack, cert-manager, CNPG) entfernt ArgoCD per `prune` selbst.
+
+**Neue Verbindung, neuer Service:** Regel hier ergänzen, sonst wird der Verkehr verworfen — ohne
+Fehlermeldung, nur als Timeout. **Notausgang**, falls ArgoCD sich selbst ausgesperrt hat:
+`kubectl -n argocd delete networkpolicy -l app.kubernetes.io/name=network-policies`.

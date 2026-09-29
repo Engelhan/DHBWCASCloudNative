@@ -488,6 +488,30 @@ solches Netzwerk-Policy-Netz bereits scope-geprüft aktiv (`cert-manager`, `kube
 Strimzi, Longhorn und `external-dns` bringen aber kein eigenes `networkPolicy`-Feld mit (dort
 müssten die Policies selbst geschrieben werden) und `notification-worker`/`loki` haben ihr Toggle
 bewusst noch aus.
+**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Umgesetzt (NetworkPolicy-Hälfte):* Jeder
+Namespace — die eigenen wie `kube-system`, `argocd` und die workloadfreien Standard-Namespaces —
+startet mit **default-deny für Ingress und Egress**; danach ist jede einzelne Verbindung explizit
+erlaubt, Komponente für Komponente (`charts/network-policies`, ~80 Policies, eine
+Verkehrsmatrix an einer Stelle). Beispiele für die Enge: der anonyme Kafka-Listener 9093 nimmt
+nur noch Apicurio an, der SCRAM-Listener 9092 nur die vier `KafkaUser`-Clients plus KEDAs
+Lag-Scaler; die App-Postgres nur `catalog-api`/`reservation-worker`, den CNPG-Operator und die
+eigenen Replikas; Internet-Egress haben nur cert-manager (ACME/DNS-01), CoreDNS (Upstream-DNS),
+der ArgoCD-Repo-Server (GitHub/Helm-Repos) und ein Hook-Job, jeweils auf die nötigen Ports
+beschränkt. Die Upstream-Policies einzelner Charts sind abgeschaltet — sie waren teils zu offen
+(AKHQ, Tempo, Strimzi-Listener „von allen Namespaces“) und teils kaputt: die von
+kube-prometheus-stack schnitt Prometheus live komplett vom API-Server und allen Scrape-Zielen ab.
+*Alternative:* die Upstream-Schalter der einzelnen Charts einschalten und nur Lücken selbst
+schließen, oder ein CNI mit L7-Policies (Cilium) statt k3s' eingebautem kube-router.
+*Begründung:* Upstream-Policies sind pro Chart unterschiedlich weit; CNPG, Longhorn und
+external-dns bringen gar keine mit, KEDAs sperrt auf k3s den API-Server aus. Ohne default-deny ist
+das Ergebnis ein Flickenteppich, bei dem jeder nicht erfasste Pod offen bleibt. Für die Domäne zählt genau das: im Flash-Sale ist `catalog-api` der am stärksten
+exponierte Dienst — kompromittiert, darf er Postgres nur auf 5432 lesen, Kafka nur über seinen
+eigenen SCRAM-User erreichen und weder OpenBao noch den anonymen Kafka-Listener sehen. Cilium
+hätte einen CNI-Wechsel des bestehenden k3s-Clusters bedeutet; Standard-NetworkPolicies reichen für
+L3/L4 und bleiben mit jedem CNI portabel. Die Matrix wurde nicht geraten, sondern aus dem
+Live-Cluster abgeleitet (Webhooks, APIServices, Monitor-Ziele, Ingress-Backends, per `ss`
+mitgeschnittene offene Verbindungen) und vor dem Rollout gegen alle diese Flows simuliert, siehe
+`charts/README.md` ## network-policies.
 
 *Umgesetzt (Secret-Vault-Hälfte):* Applikations-Secrets, die vorher chart-eigen/hardcodiert im
 Repo lagen (Postgres-App-User, AKHQs Kafka-SASL-Passwort, AKHQs Basic-Auth-Passwort-Hash,
@@ -559,11 +583,13 @@ Eingreifen (Postgres-Backend-Leader-Wahl); ein Neustart/Ersatz-Pod zeigt den Aut
 beim automatischen `bao operator unseal`, ohne einen erneuten manuellen Schritt; `kubectl -n
 <app-namespace> get externalsecret` zeigt `SecretSynced`; `kubectl -n <app-namespace> get
 pushsecret` zeigt `Synced` für die Strimzi-/CNPG-Credentials, `bao kv get secret/kafka/catalog-api`
-bzw. `bao kv get secret/postgres/app-user` zeigt den gespiegelten Wert; die NetworkPolicy-Hälfte
-bleibt geplant
-— `kubectl describe networkpolicy -A` zeigt dann die Deny-by-default-Policies, ein Pod ohne
-passendes Label kann nachweislich **nicht** gegen CNPG:5432 oder den Kafka-Broker verbinden
-(negative Probe).
+bzw. `bao kv get secret/postgres/app-user` zeigt den gespiegelten Wert. NetworkPolicy-Hälfte:
+`kubectl get networkpolicy -A` zeigt je Namespace `default-deny-all` + `allow-*`; negative
+Probe — ein Pod ohne passendes Label erreicht CNPG:5432 und den Kafka-Broker nicht:
+```bash
+kubectl -n ticketflow run np-probe --rm -it --restart=Never --image=busybox:1.36 -- \
+  sh -c 'nc -zw3 postgres-postgres-cluster-rw 5432 || echo BLOCKIERT'
+```
 
 **B4 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
 hinaus.** *Was umgesetzt wurde:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
