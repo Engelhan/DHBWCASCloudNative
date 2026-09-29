@@ -15,7 +15,7 @@ ticketflow: {}
 #
 # Beide Komponenten folgen derselben Key-Reihenfolge wie charts/reservation-worker und
 # charts/notification-worker (image, replicaCount, resources, podSecurityContext, securityContext,
-# config, database/secret, service, ingress, serviceMonitor, networkPolicy, podDisruptionBudget,
+# config, database/secret, service, ingress, serviceMonitor, podDisruptionBudget,
 # topologySpreadConstraint) - siehe charts/README.md ## Muster fuer Applikations-Charts.
 #
 # Der Namespace steht bewusst nicht mehr hier: ihn bestimmt die ArgoCD-Application
@@ -138,12 +138,6 @@ catalogApi:
     labels:
       release: kube-prometheus-stack
 
-  # Default aus, wie im Repo sonst ueblich (siehe charts/README.md). Vor dem Aktivieren die
-  # gerenderte Policy pruefen - ein leerer podSelector wuerde alle Pods im geteilten Namespace
-  # treffen (dokumentierter Loki-Vorfall).
-  networkPolicy:
-    enabled: false
-
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
@@ -202,9 +196,6 @@ frontend:
     className: traefik
     clusterIssuerName: certificate-cluster-issuer
     tlsSecretName: ticketflow-frontend-tls
-
-  networkPolicy:
-    enabled: false
 
   podDisruptionBudget:
     enabled: true

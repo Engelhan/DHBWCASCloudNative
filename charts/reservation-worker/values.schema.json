@@ -11,7 +11,6 @@
     "podSecurityContext",
     "securityContext",
     "podMonitor",
-    "networkPolicy",
     "topologySpreadConstraint"
   ],
   "properties": {
@@ -325,9 +324,6 @@
           "type": "object"
         }
       }
-    },
-    "networkPolicy": {
-      "$ref": "#/$defs/toggle"
     }
   },
   "$defs": {

@@ -25,8 +25,3 @@ hier chart-eigenen - siehe dessen values.yaml (extraSecretEnvironmentVars/BAO_PG
 {{- define "openbao-postgres.appSecretName" -}}
 {{- printf "%s-app" (include "openbao-postgres.clusterName" .) -}}
 {{- end -}}
-
-{{/* Namespace dieses Charts (= der ArgoCD-Application), fuer die NetworkPolicy-Ingress-Regel. */}}
-{{- define "openbao-postgres.namespace" -}}
-{{- required "ticketflow.namespaces.openbao fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.openbao -}}
-{{- end -}}

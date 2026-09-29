@@ -21,7 +21,6 @@ notification-worker/
     ├── secret.yaml                    # nur falls secret.create=true - Standard seit B1: aus
     ├── externalsecret.yaml            # OpenBao gesynct (siehe ## Secret-Namen und ## OpenBao)
     ├── podmonitor.yaml                # /metrics, P7
-    ├── networkpolicy.yaml             # default aus
     └── poddisruptionbudget.yaml
 ```
 

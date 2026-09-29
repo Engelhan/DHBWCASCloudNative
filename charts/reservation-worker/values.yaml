@@ -144,9 +144,6 @@ podMonitor:
   labels:
     release: kube-prometheus-stack
 
-networkPolicy:
-  enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
-
 # maxUnavailable: 1 statt minAvailable: 1 - KEDAs minReplicaCount ist 1, und bei genau einem Pod
 # wuerde minAvailable: 1 jede freiwillige Eviction verbieten: `kubectl drain` (z.B. k3s-Upgrade
 # eines Workers) bliebe dauerhaft haengen. maxUnavailable: 1 laesst die Eviction zu - das ist

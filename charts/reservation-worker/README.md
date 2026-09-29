@@ -20,7 +20,6 @@ reservation-worker/
     ├── secret.yaml                    # chart-eigene Postgres-Credentials (s.u.)
     ├── keda-scaledobject.yaml         # P6: Skalierung auf Consumer-Group-Lag
     ├── podmonitor.yaml                # /metrics, P7
-    ├── networkpolicy.yaml             # default aus
     └── poddisruptionbudget.yaml
 ```
 

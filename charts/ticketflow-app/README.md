@@ -26,14 +26,12 @@ ticketflow-app/
     │   ├── configmap.yaml
     │   ├── secret.yaml                       # chart-eigene Postgres-Credentials (s.u.)
     │   ├── servicemonitor.yaml               # /metrics, P7
-    │   ├── networkpolicy.yaml                # default aus
     │   └── poddisruptionbudget.yaml
     └── frontend/
         ├── deployment.yaml                   # config.js-Override per ConfigMap-Volume-Mount
         ├── service.yaml
         ├── configmap.yaml                    # setzt API_BASE_URL="" (Same-Origin via Ingress)
         ├── ingress.yaml                      # /events,/reservations -> catalog-api, / -> frontend
-        ├── networkpolicy.yaml                # default aus
         └── poddisruptionbudget.yaml
 ```
 

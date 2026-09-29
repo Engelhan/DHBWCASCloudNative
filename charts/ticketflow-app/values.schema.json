@@ -97,7 +97,6 @@
         "database",
         "service",
         "serviceMonitor",
-        "networkPolicy",
         "podDisruptionBudget",
         "topologySpreadConstraint"
       ],
@@ -258,9 +257,6 @@
             }
           }
         },
-        "networkPolicy": {
-          "$ref": "#/$defs/toggle"
-        },
         "podDisruptionBudget": {
           "$ref": "#/$defs/podDisruptionBudget"
         },
@@ -279,7 +275,6 @@
         "securityContext",
         "service",
         "ingress",
-        "networkPolicy",
         "podDisruptionBudget",
         "topologySpreadConstraint"
       ],
@@ -351,9 +346,6 @@
               "minLength": 1
             }
           }
-        },
-        "networkPolicy": {
-          "$ref": "#/$defs/toggle"
         },
         "podDisruptionBudget": {
           "$ref": "#/$defs/podDisruptionBudget"

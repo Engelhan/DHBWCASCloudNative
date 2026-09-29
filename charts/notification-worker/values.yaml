@@ -123,9 +123,6 @@ podMonitor:
   labels:
     release: kube-prometheus-stack
 
-networkPolicy:
-  enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 2 # toleriert einen Node-Drain/Rollout-Schritt bei replicaCount: 3
