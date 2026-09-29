@@ -74,13 +74,29 @@ spec:
               TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
               APISERVER=https://kubernetes.default.svc
 
+              # Ausfuehrliches Logging (2026-09-23 nachgeruestet): dieser Job hat an einem einzigen
+              # Tag mehrfach unwiederbringlich Unseal-Keys verloren, ohne dass aus den Logs
+              # ersichtlich war, WARUM ein Schritt fehlschlug - jedes Mal musste der Fehler live per
+              # kubectl-Exec ins Postgres-Backend/den Pod rekonstruiert werden. Ab hier wird jeder
+              # Schritt, der heute mindestens einmal unbemerkt fehlgeschlagen ist, explizit
+              # protokolliert. Bewusst NIE der Wert von UNSEAL_KEY/ROOT_TOKEN selbst (nur Laenge/
+              # vorhanden-ja-nein) - "bao status" hat dagegen keine sicherheitsrelevanten Felder und
+              # wird komplett geloggt.
+              echo "Start: NAMESPACE=$NAMESPACE"
+
+              # Bewusst KEIN "2>/dev/null"/"2>&1" mehr hier: "$(...)"-Kommandosubstitution faengt
+              # ohnehin nur STDOUT ab (die Antwort), wgets Fehlermeldungen auf STDERR laufen also
+              # automatisch direkt in die Pod-Logs durch, OHNE die zurueckgegebene Variable zu
+              # verunreinigen - "-q" unterdrueckt nur die Fortschrittsanzeige, keine Fehlermeldungen
+              # (live verifiziert: "wget: server returned error: HTTP/1.1 403 ..." erscheint auch
+              # mit "-q").
               kubeapi_get() {
-                wget -qO- --header "Authorization: Bearer $TOKEN" "$APISERVER$1" 2>/dev/null
+                wget -qO- --header "Authorization: Bearer $TOKEN" "$APISERVER$1"
               }
               kubeapi_post() {
                 wget -qO- --header "Authorization: Bearer $TOKEN" \
                   --header "Content-Type: application/json" --post-data "$2" \
-                  "$APISERVER$1" 2>&1
+                  "$APISERVER$1"
               }
 
               HEADLESS="openbao-internal"
@@ -93,6 +109,7 @@ spec:
               # deklarierten Wert zurueckgedreht (kein ignoreDifferences auf spec.replicas hier,
               # anders als bei reservation-worker/KEDA).
               PODS="{{ range $i := until $replicas }}openbao-{{ $i }} {{ end }}"
+              echo "Pod-Liste: PODS=[$PODS] (aus .Values.openbao.server.ha.replicas={{ $replicas }})"
 
               # Live gefundener Bug (2026-09-23): "bao status" gibt Exit-Code 2 zurueck, wenn die
               # Instanz erreichbar, aber (wie bei jeder frischen Installation) noch versiegelt
@@ -116,28 +133,65 @@ spec:
                 while true; do
                   BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1 && rc=0 || rc=$?
                   [ "$rc" -ne 1 ] && break
-                  echo "warte auf $pod..."
+                  echo "warte auf $pod (bao status exit=$rc)..."
                   sleep 3
                 done
+                echo "$pod erreichbar (bao status exit=$rc)"
               }
               for p in $PODS; do wait_for_pod "$p"; done
 
               export BAO_ADDR="http://openbao-0.$HEADLESS.$NAMESPACE.svc:8200"
 
-              # Vorhandenes Secret lesen (falls von einem frueheren Lauf vorhanden) - macht den
-              # Rest des Skripts unabhaengig davon, ob dies der allererste Bootstrap oder ein
-              # erneuter Sync ist.
+              # Live gefundener Bug, die eigentliche Ursache hinter mehreren verlorenen
+              # Unseal-Keys an diesem Tag (2026-09-23): "bao"/die Kubernetes-API liefern
+              # eingerueckt formatiertes JSON MIT Leerzeichen nach dem Doppelpunkt
+              # ("initialized": true), nicht das urspruenglich angenommene kompakte JSON ohne
+              # Leerzeichen ("initialized":true). Jedes grep/sed-Muster unten ging von "kein
+              # Leerzeichen" aus und lieferte dadurch IMMER einen leeren String - live bestaetigt:
+              # "INITIALIZED" war dadurch nie "true", das Skript versuchte deshalb JEDES Mal neu zu
+              # initialisieren (unschaedlich beim allerersten Mal, aber "already initialized"-
+              # Fehler bei jedem Retry danach), und selbst ein erfolgreicher Init-Aufruf lieferte
+              # nie einen extrahierbaren Schluessel (Shamir 1-von-1 ohne jede zweite
+              # Wiederherstellungsmoeglichkeit - jedes Mal ein unwiederbringlich verlorener Key).
+              # Fix: "[[:space:]]*" toleriert 0 oder mehr Leerzeichen nach dem Doppelpunkt ueberall
+              # - gegen echte "bao status -format=json"/Kubernetes-API-Antworten UND echte
+              # "bao operator init"-Ausgabe verifiziert, nicht nur angenommen.
               EXISTING="$(kubeapi_get "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" || true)"
-              UNSEAL_KEY="$(echo "$EXISTING" | grep -o '"key1":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
-              ROOT_TOKEN="$(echo "$EXISTING" | grep -o '"root_token":"[^"]*"' | sed 's/.*:"//; s/"$//' | { base64 -d 2>/dev/null || true; })"
+              echo "vorhandenes Secret gelesen: $(printf '%s' "$EXISTING" | wc -c) Bytes Antwort"
+              UNSEAL_KEY="$(echo "$EXISTING" | grep -o '"key1"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"' | { base64 -d 2>/dev/null || true; })"
+              ROOT_TOKEN="$(echo "$EXISTING" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"' | { base64 -d 2>/dev/null || true; })"
+              echo "daraus extrahiert: UNSEAL_KEY ${#UNSEAL_KEY} Zeichen, ROOT_TOKEN ${#ROOT_TOKEN} Zeichen (0 = nicht gefunden/leer)"
 
-              INITIALIZED="$(bao status -format=json 2>/dev/null | grep -o '"initialized":[a-z]*' | cut -d: -f2 || echo false)"
+              STATUS_RAW="$(bao status -format=json 2>&1 || true)"
+              INITIALIZED="$(echo "$STATUS_RAW" | grep -o '"initialized"[[:space:]]*:[[:space:]]*[a-z]*' | grep -o '[a-z]*$' || echo false)"
+              # "bao status" enthaelt kein Schluesselmaterial - komplettes Loggen ist unbedenklich.
+              echo "bao status vor Bootstrap: $(printf '%s' "$STATUS_RAW" | tr '\n' ' ')"
+              echo "daraus interpretiert: INITIALIZED=$INITIALIZED"
 
               if [ "$INITIALIZED" != "true" ]; then
                 echo "initialisiere OpenBao (Shamir 1-von-1, bewusste Laborvereinfachung)..."
-                INIT_OUTPUT="$(bao operator init -key-shares=1 -key-threshold=1 -format=json)"
-                UNSEAL_KEY="$(echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
-                ROOT_TOKEN="$(echo "$INIT_OUTPUT" | grep -o '"root_token":"[^"]*"' | sed 's/.*:"//; s/"$//')"
+                if INIT_OUTPUT="$(bao operator init -key-shares=1 -key-threshold=1 -format=json 2>&1)"; then
+                  echo "bao operator init erfolgreich, Antwort: $(printf '%s' "$INIT_OUTPUT" | wc -c) Bytes"
+                else
+                  echo "FEHLER: bao operator init fehlgeschlagen - Ausgabe: $INIT_OUTPUT" >&2
+                  INIT_OUTPUT=""
+                fi
+                # Live gefundener Bug (2026-09-23, zweite Runde): "grep -o" arbeitet zeilenweise -
+                # "bao operator init -format=json" gibt eingeruecktes Mehrzeilen-JSON aus, in dem
+                # "unseal_keys_b64" ein Array ist, das ueber DREI Zeilen verteilt ist
+                # (Schluessel-Zeile, Wert-Zeile, schliessende Klammer-Zeile). Das urspruengliche
+                # Muster verlangte den kompletten Treffer (Schluessel BIS schliessende Klammer) auf
+                # EINER Zeile und schlug deshalb IMMER fehl - "root_token" extrahierte trotzdem
+                # korrekt, weil dieses Feld als einzelner Skalar auf einer einzigen Zeile steht.
+                # Live beobachtet: "UNSEAL_KEY 0 Zeichen, ROOT_TOKEN 26 Zeichen" nach einem
+                # erfolgreichen Init - der Root-Token wurde also fälschlich OHNE zugehoerigen
+                # Unseal-Key gespeichert. Fix: Antwort zuerst mit "tr '\n' ' '" auf eine Zeile
+                # zusammenfassen (gleicher Trick wie beim Loggen von STATUS_RAW oben), dann erst
+                # die bestehenden Muster anwenden.
+                INIT_OUTPUT_FLAT="$(printf '%s' "$INIT_OUTPUT" | tr '\n' ' ')"
+                UNSEAL_KEY="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"unseal_keys_b64"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
+                ROOT_TOKEN="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
+                echo "aus Init-Antwort extrahiert: UNSEAL_KEY ${#UNSEAL_KEY} Zeichen, ROOT_TOKEN ${#ROOT_TOKEN} Zeichen"
 
                 UNSEAL_KEY_B64="$(printf '%s' "$UNSEAL_KEY" | base64 | tr -d '\n')"
                 ROOT_TOKEN_B64="$(printf '%s' "$ROOT_TOKEN" | base64 | tr -d '\n')"
@@ -156,15 +210,19 @@ spec:
                 # Unseal-Key (Shamir 1-von-1, kein zweiter Weg, ihn zu erhalten) - deshalb mehrere
                 # Versuche mit kurzer Pause, bevor aufgegeben wird.
                 write_ok=0
+                write_attempt=0
                 for _ in 1 2 3 4 5; do
-                  if kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" >/dev/null 2>&1; then
+                  write_attempt=$((write_attempt + 1))
+                  if WRITE_RESPONSE="$(kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" 2>&1)"; then
                     write_ok=1
+                    echo "Secret openbao-unseal-keys angelegt (Versuch $write_attempt)"
                     break
                   fi
+                  echo "Versuch $write_attempt, Secret openbao-unseal-keys anzulegen fehlgeschlagen: $WRITE_RESPONSE" >&2
                   sleep 3
                 done
                 [ "$write_ok" -eq 1 ] \
-                  || echo "WARNUNG: Secret openbao-unseal-keys konnte auch nach mehreren Versuchen nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
+                  || echo "WARNUNG: Secret openbao-unseal-keys konnte auch nach $write_attempt Versuchen nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
               fi
 
               if [ -z "$UNSEAL_KEY" ]; then
@@ -174,7 +232,11 @@ spec:
 
               echo "entsiegle alle drei Instanzen..."
               for p in $PODS; do
-                BAO_ADDR="http://$p.$HEADLESS.$NAMESPACE.svc:8200" bao operator unseal "$UNSEAL_KEY" >/dev/null 2>&1 || true
+                if UNSEAL_RESULT="$(BAO_ADDR="http://$p.$HEADLESS.$NAMESPACE.svc:8200" bao operator unseal "$UNSEAL_KEY" 2>&1)"; then
+                  echo "$p entsiegelt"
+                else
+                  echo "$p entsiegeln fehlgeschlagen: $UNSEAL_RESULT" >&2
+                fi
               done
 
               if [ -z "$ROOT_TOKEN" ]; then
@@ -184,7 +246,9 @@ spec:
 
               export BAO_TOKEN="$ROOT_TOKEN"
 
+              echo "aktiviere KV-v2-Engine..."
               bao secrets enable -path=secret kv-v2 2>&1 | grep -v "already in use" || true
+              echo "aktiviere Kubernetes-Auth-Methode..."
               bao auth enable kubernetes 2>&1 | grep -v "already enabled" || true
               bao write auth/kubernetes/config kubernetes_host="https://kubernetes.default.svc:443" >/dev/null
 

@@ -234,7 +234,8 @@
       "required": [
         "replicas",
         "storage",
-        "resources"
+        "resources",
+        "jvmOptions"
       ],
       "properties": {
         "replicas": {
@@ -260,12 +261,36 @@
         },
         "resources": {
           "type": "object",
+          "required": [
+            "requests",
+            "limits"
+          ],
           "properties": {
             "requests": {
-              "type": "object"
+              "type": "object",
+              "required": [
+                "cpu",
+                "memory"
+              ]
             },
             "limits": {
-              "type": "object"
+              "type": "object",
+              "required": [
+                "memory"
+              ]
+            }
+          }
+        },
+        "jvmOptions": {
+          "type": "object",
+          "required": [
+            "heap"
+          ],
+          "properties": {
+            "heap": {
+              "type": "string",
+              "pattern": "^[0-9]+[mg]$",
+              "description": "Wird als -Xms und -Xmx gesetzt (z.B. 512m). Muss deutlich unter resources.limits.memory liegen - Off-Heap/Page-Cache brauchen den Rest."
             }
           }
         }

@@ -21,11 +21,15 @@ spec:
         size: {{ .Values.kafka.broker.storage.size }}
         deleteClaim: false
 
+  # Zahlen + Herleitung in values.yaml (kafka.broker.resources/.jvmOptions).
   resources:
-    requests:
-      memory: {{ .Values.kafka.broker.resources.requests.memory }}
-    limits:
-      memory: {{ .Values.kafka.broker.resources.limits.memory }}
+    {{- toYaml .Values.kafka.broker.resources | nindent 4 }}
+
+  # Heap explizit statt von Strimzi aus dem Limit abgeleitet - nur so ist die Rechnung
+  # "Heap + Off-Heap + Page-Cache <= Limit" in values.yaml tatsaechlich die, die laeuft.
+  jvmOptions:
+    -Xms: {{ .Values.kafka.broker.jvmOptions.heap | quote }}
+    -Xmx: {{ .Values.kafka.broker.jvmOptions.heap | quote }}
 
   template:
     pod:
@@ -45,9 +49,14 @@ spec:
                         - {{ include "kafka-cluster.clusterName" . }}-kafka
                 topologyKey: kubernetes.io/hostname
       {{- if gt (int .Values.kafka.broker.replicas) 1 }}
-      # P4: harte Verteilung ueber die drei simulierten Regionen (topology.ticketflow/region,
-      # von infra/ansible/roles/node_labels gesetzt). Nur relevant ab 2+ Replicas
-      # (values-dev.yaml faehrt mit einem einzigen Broker, siehe dortiger Kommentar).
+      # P4: HARTE Verteilung ueber die drei simulierten Regionen (topology.ticketflow/region,
+      # von infra/ansible/roles/node_labels gesetzt). Domaenengrund: der Broker-Log IST der
+      # Puffer der Flash-Sale-Anfragen - liegen zwei der drei Replicas einer Partition in derselben
+      # Region, nimmt deren Ausfall bei min.insync.replicas=2 das Schreiben auf dieses Topic mit,
+      # catalog-api kann keine Reservierung mehr annehmen. DoNotSchedule statt ScheduleAnyway:
+      # lieber bleibt ein Broker Pending (sichtbar, alarmierbar), als dass er still in eine schon
+      # belegte Region rutscht. Guard nur, damit ein bewusst auf 1 Broker reduziertes Setup
+      # ueberhaupt rendert - dev UND prod fahren 3 Broker (siehe values-dev.yaml).
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.ticketflow/region

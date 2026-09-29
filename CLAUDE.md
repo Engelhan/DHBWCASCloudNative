@@ -510,9 +510,9 @@ commands here once these gaps close instead of leaving this section stale.
   `metadataVersion` set) with **separate `broker`/`controller` `KafkaNodePool`s** (not
   combined-role — restructured to match a real Strimzi setup the user provided as a reference
   from their workplace), each with a soft cross-host `podAntiAffinity` (from that reference) plus
-  a hard `topologySpreadConstraint` on `topology.ticketflow/region` for P4 (only once that pool's
-  `replicas > 1`, i.e. with `values-prod.yaml` — dev intentionally runs one broker + one
-  controller); a `kafka-metrics` `ConfigMap` (JMX Prometheus Exporter rules, KRaft-specific rules
+  a hard `topologySpreadConstraint` on `topology.ticketflow/region` for P4 (template-guarded on
+  `replicas > 1`; since 2026-09-29 **dev runs 3 brokers + 3 controllers too**, RF 3 /
+  `min.insync.replicas: 2` — see the P4/P5 bullet below); a `kafka-metrics` `ConfigMap` (JMX Prometheus Exporter rules, KRaft-specific rules
   enabled since KRaft is our only mode) wired in via `spec.kafka.metricsConfig`, plus
   `spec.kafkaExporter` for consumer-lag metrics (P7); two `KafkaTopic`s,
   `reservation-requested`/`reservation-result`, matching `RESERVATION_TOPIC`/`RESULT_TOPIC` from
@@ -703,6 +703,23 @@ commands here once these gaps close instead of leaving this section stale.
   exit code. All three effectively no-ops at `replicaCount: 1` (their current default everywhere),
   same as `charts/ticketflow-app`'s own dev profile — becomes real once any of them scales beyond 1
   (`reservation-worker` via KEDA, see above).
+- **Done 2026-09-29, `helm lint`/`template` clean (dev+prod), not yet live-verified:** P4/P5
+  review of Carlos' charts. Found that with `environment: dev` Kafka ran 1 broker/1 controller, so
+  the hard region-spread was switched off and every broker restart was an outage of the
+  reservation intake — P4/P5 unmet on exactly the cluster they must be shown on. Now
+  `charts/kafka-cluster/values.yaml` = 3 brokers + 3 controllers, RF 3, `min.insync.replicas: 2`
+  in dev too (`values-dev.yaml` only shrinks storage; prod additionally 8 partitions). Node pools
+  now template full `resources` (incl. CPU) plus explicit `jvmOptions` `-Xms`/`-Xmx` from
+  `kafka.<pool>.jvmOptions.heap` (schema-required) — derivation of every number is a comment in
+  `values.yaml`. `charts/reservation-worker`: PDB `maxUnavailable: 1` (was `minAvailable: 1`,
+  which blocked every node drain at KEDA `minReplicaCount: 1`; template supports both keys) and a
+  derivation comment for its requests/limits. **Switching a running cluster from 1 to 3 brokers is
+  not a plain sync** (existing topics/`__consumer_offsets` keep RF 1 without Cruise Control, KRaft
+  quorum can't just grow) — one-time rebuild procedure in `charts/kafka-cluster/README.md`
+  ## Umstellung von 1 auf 3 Broker (pauses `argocd-applicationset-controller`, since it would
+  revert a manual `automated: null` patch on its Application). Memory budget assumed 10GB per
+  worker (x3); Kafka requests total 4,5Gi. Root `README.md` P4/P5/## Grenzen updated (Longhorn
+  `defaultReplicaCount: 1` documented as a node-loss limit).
 - **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
   `https://akhq.io/`, pinned `0.28.0`) + the `akhq` ApplicationSet element — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is
@@ -919,8 +936,8 @@ commands here once these gaps close instead of leaving this section stale.
   active, see `charts/README.md` ## Resource-Limits...). The cross-namespace `DATABASE_URL`
   blocker mentioned in older versions of this line is resolved (see the Postgres-wiring paragraph
   above) — `reservation-worker`'s chart is deploy-ready.
-- **Done, `helm lint`/`template`/`helm dependency update` all verified locally (2026-09-22), not
-  yet live-verified:** OpenBao (HA secret vault, PostgreSQL storage backend) + External Secrets
+- **Done, live-verified on the real cluster (2026-09-23):** OpenBao (HA secret vault, PostgreSQL
+  storage backend) + External Secrets
   Operator, replacing the SOPS plan under root `README.md` ## Bonus B1 (see there for the full
   Wahl/Alternative/Begründung). Four new charts: `charts/openbao` (wrapper around the official
   `openbao/openbao` chart 0.29.5/`v2.6.2`, `server.ha.enabled: true` + `replicas: 3` +
@@ -1013,10 +1030,15 @@ commands here once these gaps close instead of leaving this section stale.
   string copied from `Chart.yaml`, the same class of gap as the Strimzi
   `kafka.strimzi.io/v1beta2`-vs-`v1` API-version surprise documented elsewhere in this file.
 
-  **Not yet live-verified:** the exact upstream Service names (`openbao-active`/`openbao-internal`)
-  were confirmed against a real `helm template` render, but real HA failover between already-
-  unsealed standbys, the auto-unseal sidecar actually firing against a genuinely restarted pod,
-  and `ExternalSecret`s actually reaching `SecretSynced` all need a live cluster.
+  **Live-verified (2026-09-23):** the exact upstream Service names (`openbao-active`/
+  `openbao-internal`), all three pods `2/2 Running` with `bao status` showing
+  `Initialized: true, Sealed: false, HA Mode: active`, and every migrated/mirrored
+  `ExternalSecret` (`akhq-basic-auth`, `akhq-kafka-sasl`, `postgres-postgres-user`,
+  `notification-worker-credentials`) reaching `SecretSynced`/`Ready: True` against a `Valid`
+  `ClusterSecretStore`. **Still not live-verified:** real HA failover between already-unsealed
+  standbys (no leader kill tested yet), and the auto-unseal sidecar specifically firing against a
+  deliberately, cleanly restarted pod (as opposed to the crash-loop restarts from the bootstrap
+  debugging session itself).
 
   **Extended 2026-09-23 with `PushSecret` (ESO's other direction — K8s → vault, `external-
   secrets.io/v1alpha1`, a separate, still-`v1alpha1` CRD from `ExternalSecret`'s stable `v1`) so
@@ -1075,5 +1097,24 @@ commands here once these gaps close instead of leaving this section stale.
     corresponding `ExternalSecret`/bootstrap-job reads already use. **Not yet live-verified:**
     whether the Vault-compatible provider actually accepts the push against a real OpenBao
     instance (confirmed only against ESO's own documentation, not a running vault).
+
+  **UI exposed publicly (2026-09-23), `helm lint`/`template` clean, not yet live-verified:**
+  `charts/openbao/templates/ingress.yaml` — same pattern as `charts/akhq/templates/ingress.yaml`
+  (own template, not the upstream chart's `ui.serviceType`/ingress fields, because the hostname
+  hangs off the central `ticketflow.dnsZone` and Helm doesn't template `values.yaml`), plain
+  `Ingress` at `openbao.<dnsZone>`, `cert-manager.io/cluster-issuer` annotation, Traefik
+  terminates TLS. Backend is deliberately the `openbao-active` Service (port `http`, 8200), not
+  `openbao`/`openbao-standby` — it always points at the current leader via
+  `service_registration "kubernetes"`, independent of Kubernetes readiness
+  (`publishNotReadyAddresses: true`, same reasoning as the readinessProbe override above); a
+  standby must not receive UI traffic directly. `ui = true` was already set in the HCL
+  `server.ha.config` block, no change needed there. **Deliberately no Traefik basic-auth in
+  front, unlike a first instinct given how sensitive this UI is:** OpenBao has no
+  human-usable auth method configured (no userpass/LDAP) — only the Shamir root token (readable
+  solely via `kubectl get secret openbao-unseal-keys`, i.e. already requires cluster access) and
+  Kubernetes-auth (ServiceAccounts only). A public Ingress therefore adds no real attack surface
+  beyond the login screen itself; a second password there would be security theater, not a real
+  gate. New `ingress:` values block (`className`/`clusterIssuerName`/`tlsSecretName`), same shape
+  as `charts/akhq/values.yaml`.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.

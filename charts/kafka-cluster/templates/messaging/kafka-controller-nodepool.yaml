@@ -20,11 +20,15 @@ spec:
         size: {{ .Values.kafka.controller.storage.size }}
         deleteClaim: false
 
+  # Zahlen + Herleitung in values.yaml (kafka.controller.resources/.jvmOptions).
   resources:
-    requests:
-      memory: {{ .Values.kafka.controller.resources.requests.memory }}
-    limits:
-      memory: {{ .Values.kafka.controller.resources.limits.memory }}
+    {{- toYaml .Values.kafka.controller.resources | nindent 4 }}
+
+  # Heap explizit statt von Strimzi aus dem Limit abgeleitet - nur so ist die Rechnung
+  # "Heap + Off-Heap + Page-Cache <= Limit" in values.yaml tatsaechlich die, die laeuft.
+  jvmOptions:
+    -Xms: {{ .Values.kafka.controller.jvmOptions.heap | quote }}
+    -Xmx: {{ .Values.kafka.controller.jvmOptions.heap | quote }}
 
   template:
     pod:
