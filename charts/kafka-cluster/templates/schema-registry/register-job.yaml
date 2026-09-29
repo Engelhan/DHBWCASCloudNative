@@ -35,6 +35,8 @@ spec:
       containers:
         - name: register
           image: alpine:3.20
+          resources:
+            {{- toYaml .Values.schemaRegistry.job.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

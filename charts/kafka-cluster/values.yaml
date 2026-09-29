@@ -110,13 +110,38 @@ kafka:
     defaultReplicationFactor: 3
     minInsyncReplicas: 2
 
+  # Topic-/User-Operator sind Java-Prozesse im selben Entity-Operator-Pod. Live gemessen (kubectl
+  # top, Leerlauf) ~220-235Mi je Container - das fruehere Limit von 256Mi liess kaum Luft, 384Mi
+  # deckt Reconcile-Spitzen ab. Memory request == limit aus demselben Grund wie bei den Brokern
+  # (kein Ueberbuchen, kein OOM-Kill mitten im Reconcile). CPU im Leerlauf 1-8m; der Request
+  # reserviert Grundlast, das Limit laesst den JVM-Start zu, ohne ihn minutenlang zu drosseln.
   entityOperator:
     topicOperator:
-      resource:
-        memoryLimit: 256Mi
+      resources:
+        requests:
+          cpu: 25m
+          memory: 384Mi
+        limits:
+          cpu: 250m
+          memory: 384Mi
     userOperator:
-      resource:
-        memoryLimit: 256Mi
+      resources:
+        requests:
+          cpu: 25m
+          memory: 384Mi
+        limits:
+          cpu: 250m
+          memory: 384Mi
+
+  # Kafka Exporter (Consumer-Lag-Metriken, P7): Go-Binary, live ~9Mi / 1m CPU.
+  kafkaExporter:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
   # RESERVATION_TOPIC (catalog-api -> reservation-worker) und RESULT_TOPIC
   # (reservation-worker -> notification-worker), siehe src/*/README.md ## Konfiguration.
@@ -210,3 +235,13 @@ schemaRegistry:
   # abgeleitet - charts/apicurio laeuft im selben Kafka-Namespace.
   url: ""
   groupId: ticketflow
+  # Registrierungs-Job (templates/schema-registry/register-job.yaml): alpine + curl/jq, laeuft
+  # einmal pro Sync fuer wenige Sekunden.
+  job:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi

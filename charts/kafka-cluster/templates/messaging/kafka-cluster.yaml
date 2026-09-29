@@ -134,15 +134,14 @@ spec:
   kafkaExporter:
     topicRegex: ".*"
     groupRegex: ".*"
+    resources:
+      {{- toYaml .Values.kafka.kafkaExporter.resources | nindent 6 }}
 
   # Pflicht, damit KafkaTopic-CRs (kafka-topics.yaml) ueberhaupt reconciled werden.
   entityOperator:
     topicOperator:
       resources:
-        requests:
-          memory: {{ .Values.kafka.entityOperator.topicOperator.resource.memoryLimit }}
-        limits:
-          memory: {{ .Values.kafka.entityOperator.topicOperator.resource.memoryLimit }}
+        {{- toYaml .Values.kafka.entityOperator.topicOperator.resources | nindent 8 }}
     userOperator:
       # Der User Operator sieht per Default nur KafkaUser-CRs im Namespace des Clusters. Die
       # liegen hier aber bewusst im App-Namespace, damit das generierte SCRAM-Secret dort landet,
@@ -156,7 +155,4 @@ spec:
       # extraEnvs). Dieses Feld allein reicht nicht.
       watchedNamespace: {{ include "kafka-cluster.appNamespace" . }}
       resources:
-        requests:
-          memory: {{ .Values.kafka.entityOperator.userOperator.resource.memoryLimit }}
-        limits:
-          memory: {{ .Values.kafka.entityOperator.userOperator.resource.memoryLimit }}
+        {{- toYaml .Values.kafka.entityOperator.userOperator.resources | nindent 8 }}

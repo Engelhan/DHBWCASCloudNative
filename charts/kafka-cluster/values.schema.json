@@ -12,7 +12,8 @@
     "schemaRegistry": {
       "type": "object",
       "required": [
-        "groupId"
+        "groupId",
+        "job"
       ],
       "properties": {
         "url": {
@@ -22,6 +23,9 @@
         "groupId": {
           "type": "string",
           "minLength": 1
+        },
+        "job": {
+          "$ref": "#/definitions/operatorResources"
         }
       }
     },
@@ -33,7 +37,9 @@
         "broker",
         "config",
         "topics",
-        "users"
+        "users",
+        "entityOperator",
+        "kafkaExporter"
       ],
       "properties": {
         "version": {
@@ -82,12 +88,16 @@
           "type": "object",
           "properties": {
             "topicOperator": {
-              "$ref": "#/definitions/operatorResource"
+              "$ref": "#/definitions/operatorResources"
             },
             "userOperator": {
-              "$ref": "#/definitions/operatorResource"
+              "$ref": "#/definitions/operatorResources"
             }
-          }
+          },
+          "required": [
+            "topicOperator",
+            "userOperator"
+          ]
         },
         "topics": {
           "type": "array",
@@ -185,6 +195,9 @@
               }
             }
           }
+        },
+        "kafkaExporter": {
+          "$ref": "#/definitions/operatorResources"
         }
       }
     },
@@ -260,26 +273,7 @@
           }
         },
         "resources": {
-          "type": "object",
-          "required": [
-            "requests",
-            "limits"
-          ],
-          "properties": {
-            "requests": {
-              "type": "object",
-              "required": [
-                "cpu",
-                "memory"
-              ]
-            },
-            "limits": {
-              "type": "object",
-              "required": [
-                "memory"
-              ]
-            }
-          }
+          "$ref": "#/definitions/resources"
         },
         "jvmOptions": {
           "type": "object",
@@ -296,17 +290,38 @@
         }
       }
     },
-    "operatorResource": {
+    "resources": {
       "type": "object",
+      "description": "CPU und Memory muessen sowohl als Request als auch als Limit gesetzt sein.",
+      "required": [
+        "requests",
+        "limits"
+      ],
       "properties": {
-        "resource": {
+        "requests": {
           "type": "object",
-          "properties": {
-            "memoryLimit": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        }
+      }
+    },
+    "operatorResources": {
+      "type": "object",
+      "required": [
+        "resources"
+      ],
+      "properties": {
+        "resources": {
+          "$ref": "#/definitions/resources"
         }
       }
     }
