@@ -188,8 +188,7 @@ openbao:
     readinessProbe:
       path: "/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200"
 
-    # Erst rendern und podSelector pruefen (Loki-Bug-Muster, siehe charts/README.md ##
-    # Resource-Limits...), bevor dies aktiviert wird - hier bewusst noch aus.
+    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
     networkPolicy:
       enabled: false
 

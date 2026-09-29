@@ -19,7 +19,8 @@ loki:
   # ("connection refused" auf die Service-ClusterIP) - CrashLoopBackOff. Kein
   # Chart-eigenes Sub-Flag, um nur diese eine Policy abzuschalten, deshalb hier komplett aus.
   # Tempos networkPolicy hat dasselbe Problem NICHT (dort korrekt auf die eigenen Pods
-  # ueber podSelector.matchLabels beschraenkt, siehe charts/tempo/values.yaml).
+  # ueber podSelector.matchLabels beschraenkt, siehe charts/tempo/values.yaml). Ersatz fuer beide:
+  # charts/network-policies (B1).
   networkPolicy:
     enabled: false
 

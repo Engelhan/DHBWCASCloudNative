@@ -46,8 +46,6 @@ external-secrets:
   serviceMonitor:
     enabled: true
 
-  # Erst rendern und podSelector pruefen (Loki-Bug-Muster, siehe charts/README.md ##
-  # Resource-Limits...), bevor dies aktiviert wird - hier bewusst noch aus, nicht in dieser
-  # Session live verifiziert.
+  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
   networkPolicy:
     enabled: false

@@ -65,7 +65,8 @@ keda:
   # Verbindungsaufbau moeglich. Kein Sub-Toggle im Upstream-Chart, um nur diese eine Regel zu
   # aendern, daher komplett aus - wie bei Loki gilt: vor einem Re-Enable-Versuch erst pruefen, ob
   # eine neuere Chart-Version das egress `to:` auf "ohne Selector" oder einen expliziten ipBlock
-  # fuer die API-Server-IP umstellt.
+  # fuer die API-Server-IP umstellt. Inzwischen ohnehin ersetzt: alle NetworkPolicies kommen
+  # zentral aus charts/network-policies (B1), inklusive korrektem API-Server-Egress per ipBlock.
   networkPolicy:
     enabled: false
     flavor: kubernetes

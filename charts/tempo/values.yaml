@@ -47,8 +47,7 @@ tempo:
   # Chart-Default gesetzt - kein Override noetig, siehe Kommentar bei tempo.tempo.securityContext
   # oben fuer die Container-Level-Ergaenzung.
 
-  # Chart-eigene NetworkPolicy - Default erlaubt Ingress von ueberall auf den Tempo-Port
-  # (allowExternal: true), nicht auf konkrete Pod-/Namespace-Selektoren verengt, siehe
-  # cert-manager/values.yaml fuer die Begruendung.
+  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigene
+  # erlaubte Ingress von ueberall (allowExternal: true).
   networkPolicy:
-    enabled: true
+    enabled: false

@@ -97,11 +97,10 @@ akhq:
           name: akhq-basic-auth
           key: password-hash
 
-  # Chart-Default ist bereits enabled: true, und templates/networkpolicy.yaml wurde gegengeprueft
-  # (podSelector korrekt auf die eigenen Pods verengt, kein "Loki-Bug" mit leerem Selector - siehe
-  # charts/README.md ## Resource-Limits...) - keine Aenderung noetig, nur zur Doku hier vermerkt.
+  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigene
+  # (Upstream-Default an) liess http/management von jeder Quelle zu.
   networkPolicy:
-    enabled: true
+    enabled: false
 
   # Nicht-sensible Konfiguration (landet in einem ConfigMap). RBAC-Rollen/-Gruppen an AKHQs
   # eigenem application.example.yml angelehnt (https://github.com/tchiotludo/akhq/blob/dev/

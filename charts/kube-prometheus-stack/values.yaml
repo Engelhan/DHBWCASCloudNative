@@ -26,12 +26,11 @@ kube-prometheus-stack:
         limits:
           cpu: 1000m
           memory: 1Gi
-    # Chart-eigene NetworkPolicy mit sinnvollen Default-Regeln - nicht auf konkrete
-    # Pod-/Namespace-Selektoren verengt, siehe cert-manager/values.yaml fuer die Begruendung
-    # (charts/kafka-cluster existiert noch nicht, genaue Cross-Namespace-Scrape-Ziele stehen noch
-    # nicht fest).
+    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigene
+    # Policy hatte live policyTypes [Ingress, Egress] ohne eine einzige Regel und schnitt
+    # Prometheus damit von API-Server und allen Scrape-Zielen ab (0 aktive Targets).
     networkPolicy:
-      enabled: true
+      enabled: false
 
   alertmanager:
     alertmanagerSpec:
@@ -50,8 +49,9 @@ kube-prometheus-stack:
         limits:
           cpu: 100m
           memory: 128Mi
+    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
     networkPolicy:
-      enabled: true
+      enabled: false
 
   grafana:
     persistence:
@@ -95,8 +95,9 @@ kube-prometheus-stack:
         limits:
           cpu: 100m
           memory: 32Mi
+    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
     networkPolicy:
-      enabled: true
+      enabled: false
     # Loki/Tempo als zusaetzliche Datasources neben dem vom Chart selbst angelegten
     # Prometheus/Alertmanager-Datasource (siehe grafana.sidecar.datasources, Chart-Default) -
     # zusammen ergibt das den vollen LGTM-Stack (Logs/Grafana/Tempo/Metrics) in EINEM Grafana.
@@ -154,8 +155,9 @@ kube-prometheus-stack:
           limits:
             cpu: 100m
             memory: 64Mi
+    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
     networkPolicy:
-      enabled: true
+      enabled: false
 
   # node-exporter braucht zwangslaeufig hostNetwork/hostPID/hostPath (liest /proc, /sys vom
   # Host fuer Node-Metriken) - kein weiteres Haerten darueber hinaus moeglich/sinnvoll.

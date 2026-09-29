@@ -2,8 +2,8 @@
 # Helm die Werte an das gewrappte Upstream-Chart durchreicht. securityContext/
 # containerSecurityContext sind fuer alle drei Komponenten bereits Chart-Default gehaertet
 # (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault) -
-# kein Override noetig, nur resources (Chart-Default ueberall {}) und networkPolicy (Chart-
-# Default deaktiviert) fehlen.
+# kein Override noetig, nur resources (Chart-Default ueberall {}) fehlt. NetworkPolicies: siehe
+# charts/network-policies.
 cert-manager:
   crds:
     enabled: true
@@ -43,10 +43,8 @@ cert-manager:
         cpu: 100m
         memory: 128Mi
 
-  # Chart-eigene NetworkPolicy-Ressourcen mit sinnvollen Default-Regeln (siehe Upstream-
-  # values.yaml: Ingress nur auf Metrics-/Healthz-Ports, Egress auf 80/443/53) - nicht weiter
-  # auf konkrete Pod-/Namespace-Selektoren verengt, da charts/kafka-cluster (der eigentliche
-  # Consumer von Zertifikaten) noch nicht existiert und die genauen Cross-Namespace-Flows noch
-  # nicht feststehen.
+  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigenen
+  # deckten nur den Controller ab (Webhook/cainjector blieben ungeregelt) und erlaubten Egress auf
+  # 80/443/53/6443 zu beliebigen Zielen.
   networkPolicy:
-    enabled: true
+    enabled: false
