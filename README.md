@@ -329,7 +329,17 @@ Controller pro Region. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
 `reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
 ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
 natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
-nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert.
+nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert
+oder `catalog-api`/`frontend` mit `replicaCount: 2` (dev) bzw. `3` (prod) laufen. Auch deren
+Requests/Limits sind hergeleitet: `catalog-api` 50m/64Mi Request (I/O-gebunden zwischen DB-Read
+und Kafka-Produce, kaum CPU im Leerlauf) mit 300m/128Mi Limit als Kopfraum für die
+JSON-Schema-Validierung vor jedem Kafka-Publish; `frontend` nur 10m/16Mi Request (liefert nur
+statische Dateien aus) mit 100m/64Mi Limit für viele gleichzeitige Verbindungen beim
+Vorverkaufsstart — Begründung jeweils als Kommentar in
+[`charts/ticketflow-app/values.yaml`](charts/ticketflow-app/values.yaml). *Nachweis im Betrieb:*
+`kubectl -n ticketflow get pods -l app.kubernetes.io/component=catalog-api -o wide` (bzw.
+`=frontend`) neben `kubectl get nodes -L topology.ticketflow/region` zeigt die Verteilung über die
+drei Regionen, sobald mehr als eine Replica läuft.
 *Alternative:* freie Platzierung durch den
 Standard-Scheduler, oder ein einzelner dedizierter "Storage-Node" für beide Dienste.
 *Begründung:* Freie Platzierung könnte alle Replicas eines Dienstes zufällig auf denselben Node
