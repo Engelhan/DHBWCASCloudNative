@@ -422,6 +422,15 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
   Ein **Pod**-Verlust ist damit unkritisch, ein **Node**-Verlust macht dessen PVCs aber unerreichbar,
   bis der Node zurück ist. Für Kafka fängt die Replikation auf Anwendungsebene (Replication-Factor 3
   über drei Regionen) das ab; einzelne Volumes sind dadurch nicht zusätzlich gesichert.
+- Nicht jeder Container im Cluster hat CPU- und Memory-Requests/-Limits. Alle eigenen Services,
+  Kafka, Postgres, OpenBao und die Observability-Pods haben sie; ohne sind nur Komponenten, deren
+  Upstream-Chart bzw. Installer kein Feld dafür anbietet: Longhorns `longhorn-ui`,
+  `longhorn-driver-deployer`, Engine-Image-DaemonSet und Instance-Manager (nur CPU-Request über
+  `guaranteedInstanceManagerCPU`), ArgoCD (von Ansible als unverändertes Upstream-Manifest
+  installiert) und k3s' eigene `kube-system`-Pods (`svclb-traefik`, `local-path-provisioner`,
+  Teil-Limits bei CoreDNS/metrics-server). Alle liegen außerhalb des Flash-Sale-Lastpfads und
+  verbrauchen im Betrieb wenige MiB; ein LimitRange als Auffangnetz wurde bewusst nicht gesetzt,
+  weil er für Longhorns privilegierte Pods geratene Werte erzwingen würde.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant);
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
 - Observability ist unvollständig: jeder Service exponiert `/metrics`, `ServiceMonitor`/

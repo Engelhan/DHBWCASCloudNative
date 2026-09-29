@@ -277,7 +277,17 @@ geratenen Health-Pfads; dieselbe Begründung gilt für die Wartelogik im
 ## Resource-Limits, Security-Context, NetworkPolicy
 
 Alle acht Wrapper-Charts oben setzen durchgehend `resources.requests`/`resources.limits`
-(Werte klein für die Lab-VMs, siehe die einzelnen `values.yaml`-Kommentare) und aktivieren die
+(Werte klein für die Lab-VMs, siehe die einzelnen `values.yaml`-Kommentare). „Durchgehend“ heißt
+auch Sidecars, Init-Container und Hook-Jobs, die ein Chart mit eigenem Values-Feld neben dem
+Hauptcontainer rendert (Grafana-/Loki-`sidecar`, `initChownData`, `admissionWebhooks.patch`,
+MinIO-`make*Job`) — die fielen bei einer Prüfung des **laufenden** Clusters auf
+(`kubectl get pods -A -o json`, jeden Container auf `requests`/`limits` für `cpu`/`memory`
+prüfen), nicht bei `helm lint`. Zwei Sorten Container tauchen im gerenderten Chart gar nicht auf
+und brauchen einen Umweg: der `config-reloader`, den der Prometheus-Operator selbst in
+Prometheus/Alertmanager einfügt (`prometheusOperator.prometheusConfigReloader.resources` → wird als
+`--config-reloader-*`-Flag an den Operator übergeben), und die CSI-Pods, die Longhorn zur Laufzeit
+anlegt (`defaultSettings.systemManagedCSIComponentsResourceLimits`, ein JSON-String). Was danach
+übrig bleibt, hat kein Feld im Upstream-Chart, siehe Root-`README.md` ## Grenzen. Die Charts aktivieren außerdem die
 Chart-eigene `networkPolicy`, wo der Upstream-Chart eine anbietet und sie sich als sicher
 erwiesen hat (cert-manager, kube-prometheus-stack, Tempo — external-dns/CNPG/Strimzi/Longhorn
 haben kein natives NetworkPolicy-Feld, dafür wurde bewusst keine eigene NetworkPolicy von Hand
