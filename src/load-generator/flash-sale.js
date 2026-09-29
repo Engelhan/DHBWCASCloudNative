@@ -17,6 +17,8 @@ import { check } from "k6";
 import { Counter } from "k6/metrics";
 
 const API_URL = __ENV.API_URL || "http://localhost:8080";
+// "all" verteilt die Last auf alle Events aus GET /events - dreimal so viele freie Sitzplaetze,
+// bevor catalog-api nur noch per Vorabcheck mit 409 antwortet und nichts mehr bei Kafka ankommt.
 const EVENT_ID = __ENV.EVENT_ID || "demo-konzert";
 const VUS = parseInt(__ENV.VUS || "50", 10);
 const DURATION = __ENV.DURATION || "1m";
@@ -49,10 +51,19 @@ const reservationsConflicted = new Counter("reservations_conflicted");
 const reservationsOtherError = new Counter("reservations_other_error");
 
 export function setup() {
-  const res = http.get(`${API_URL}/events/${EVENT_ID}/seats`);
-  check(res, { "seat list loaded": (r) => r.status === 200 });
+  let eventIds = [EVENT_ID];
+  if (EVENT_ID === "all") {
+    const res = http.get(`${API_URL}/events`);
+    check(res, { "event list loaded": (r) => r.status === 200 });
+    eventIds = res.json().map((e) => e.id);
+  }
 
-  const seats = res.json().filter((s) => s.status === "free");
+  const seats = [];
+  for (const eventId of eventIds) {
+    const res = http.get(`${API_URL}/events/${eventId}/seats`);
+    check(res, { "seat list loaded": (r) => r.status === 200 });
+    seats.push(...res.json().filter((s) => s.status === "free"));
+  }
   if (seats.length === 0) {
     throw new Error(
       `Keine freien Sitzplaetze fuer Event "${EVENT_ID}" - Demo-Daten zuruecksetzen oder anderes EVENT_ID waehlen.`
@@ -75,7 +86,7 @@ export default function (data) {
     email: `loadtest-${vuId}@example.com`,
   });
 
-  const res = http.post(`${API_URL}/events/${EVENT_ID}/reservations`, payload, {
+  const res = http.post(`${API_URL}/events/${seat.event_id}/reservations`, payload, {
     headers: { "Content-Type": "application/json" },
   });
 

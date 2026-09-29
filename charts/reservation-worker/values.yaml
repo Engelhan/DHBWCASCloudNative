@@ -101,7 +101,7 @@ config:
   # 5 Minuten auf das Cooldown zu warten.
   keda:
     minReplicaCount: 1
-    maxReplicaCount: 3
+    maxReplicaCount: 10
     lagThreshold: "10"
     pollingInterval: 15
     cooldownPeriod: 60

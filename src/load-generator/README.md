@@ -45,6 +45,26 @@ docker compose up -d
 k6 run flash-sale.js --env API_URL=http://localhost:8080 --env EVENT_ID=demo-konzert --env VUS=50 --env DURATION=30s
 ```
 
+Ohne lokale k6-Installation, im offiziellen `grafana/k6`-Container (nur Docker nötig; gleiche
+Parameter als Umgebungsvariablen, weitere Argumente gehen an `k6 run`):
+
+```bash
+./run.sh                                   # Volllast gegen den Cluster
+VUS=2000 DURATION=5m ./run.sh              # noch mehr Last
+API_URL=http://localhost:8080 EVENT_ID=demo-konzert VUS=50 DURATION=30s ./run.sh   # docker-compose
+```
+
+Ohne `API_URL` zielt das Skript auf `https://ticketflow.<dnsZone>` (Zone aus
+`gitops/env/cluster.yaml`, derselbe Host wie der Frontend-Ingress) und ist auf maximale Last
+eingestellt: `EVENT_ID=all` (Last verteilt auf alle Events aus `GET /events`, also dreimal so viele
+freie Sitzplätze, bevor `catalog-api` nur noch per Vorabcheck mit `409` antwortet und nichts mehr
+in Kafka landet), 1000 VUs, 3 Minuten. Unter Linux läuft der Container im Host-Netz (der Ingress
+ist nur über IPv6/die DHBW-Route des Hosts erreichbar), unter Docker Desktop (macOS/Windows) wird
+`localhost` durch `host.docker.internal` ersetzt.
+
+Ein Lauf verbraucht die Sitzplätze dauerhaft - ein zweiter Lauf findet nur noch die übrig
+gebliebenen freien Plätze.
+
 **Lokal beobachtet:** bei einem Testlauf mit 30 VUs/15s liefen 878 Requests durch (694×`202`,
 183×`409` durch den Hot-Seat-Mechanismus, 0 unerwartete Fehler) – `reservation-worker`
 verarbeitete den entstandenen Kafka-Backlog anschließend sichtbar zeitversetzt ab (lokal nur
