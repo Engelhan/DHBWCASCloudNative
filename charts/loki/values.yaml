@@ -72,6 +72,24 @@ loki:
       limits:
         cpu: 500m
         memory: 512Mi
+    # Post-Install-Job loki-minio-post-job (legt Buckets und User an). Chart-Default setzt nur
+    # einen Memory-Request.
+    makeBucketJob:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    makeUserJob:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
     containerSecurityContext:
       readOnlyRootFilesystem: false
       allowPrivilegeEscalation: false
@@ -102,6 +120,27 @@ loki:
       limits:
         cpu: 100m
         memory: 64Mi
+
+  # loki-sc-rules-Sidecar im Loki-Pod (laedt Alert-Regeln aus ConfigMaps). Live ~71Mi.
+  sidecar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 96Mi
+      limits:
+        cpu: 100m
+        memory: 160Mi
+
+  # DaemonSet, das Test-Logzeilen schreibt und ihre Ankunft in Loki misst (Chart-Default an,
+  # und Voraussetzung fuer den Helm-Test). Live ~15Mi / 1-2m CPU pro Node.
+  lokiCanary:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 24Mi
+      limits:
+        cpu: 50m
+        memory: 48Mi
 
   # Fuettert Loki-eigene Metriken in Prometheus (kube-prometheus-stack, ServiceMonitor-CRD
   # muss existieren - gleicher Namespace, gleicher Sync-Batch ueber app-of-apps).

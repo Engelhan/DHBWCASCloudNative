@@ -76,6 +76,25 @@ kube-prometheus-stack:
       limits:
         cpu: 250m
         memory: 256Mi
+    # Gilt fuer beide Sidecars (grafana-sc-dashboard, grafana-sc-datasources), die ConfigMaps
+    # per Kubernetes-API beobachten. Live gemessen ~75Mi je Container (Python-Prozess).
+    sidecar:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 96Mi
+        limits:
+          cpu: 100m
+          memory: 160Mi
+    # Init-Container, der einmal beim Start chown auf das PVC ausfuehrt.
+    initChownData:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 100m
+          memory: 32Mi
     networkPolicy:
       enabled: true
     # Loki/Tempo als zusaetzliche Datasources neben dem vom Chart selbst angelegten
@@ -114,6 +133,27 @@ kube-prometheus-stack:
       limits:
         cpu: 250m
         memory: 256Mi
+    # config-reloader-Sidecar (+ init-config-reloader) in den Prometheus- und Alertmanager-Pods.
+    # Die fuegt der Operator selbst ein - die Werte gehen ueber --config-reloader-*-Flags an ihn,
+    # nicht ins gerenderte Chart. Live gemessen ~8Mi / 0-1m CPU.
+    prometheusConfigReloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+    # Hook-Jobs admission-create/-patch (erzeugen und patchen das Webhook-Zertifikat).
+    admissionWebhooks:
+      patch:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
     networkPolicy:
       enabled: true
 
