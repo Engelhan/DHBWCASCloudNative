@@ -1,0 +1,200 @@
+{{- /*
+Cluster-Operatoren ohne eigenen Datenpfad: cert-manager, external-dns, CloudNativePG, KEDA.
+Gemeinsames Muster: Egress zum API-Server, Ingress vom API-Server auf den Webhook-/APIService-Port,
+Prometheus auf den Metrik-Port - plus je die eine fachliche Aussenverbindung.
+*/ -}}
+{{- $rfc2136 := required "ticketflow.rfc2136.server fehlt - gitops/env/cluster.yaml mitgeben" .Values.ticketflow.rfc2136.server -}}
+{{- $rfc2136Cidr := ternary (printf "%s/128" $rfc2136) (printf "%s/32" $rfc2136) (contains ":" $rfc2136) -}}
+
+{{- /* ===================== cert-manager ===================== */ -}}
+{{- $ns := .Values.namespaces.certManager }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-cert-manager-controller" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: cert-manager
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "np.ingress.prometheus" (list $ 9402) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # ACME-Server (ticketflow.acmeServer, per Hostname konfiguriert - daher kein festes ipBlock)
+    # und DNS-01: RFC2136-Update an den DHBW-DNS plus Propagation-Check direkt gegen die
+    # autoritativen Nameserver der Zone.
+    - to:
+        {{- include "np.peer.internet" . | nindent 8 }}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-cert-manager-webhook" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: cert-manager
+      app.kubernetes.io/component: webhook
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Validating-/MutatingWebhookConfiguration cert-manager-webhook.
+    {{- include "np.ingress.apiServer" (list $ 10250) | nindent 4 }}
+    {{- include "np.ingress.prometheus" (list $ 9402) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+---
+{{ include "np.header" (list $ "allow-cert-manager-cainjector-startupapicheck" $ns) }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - cainjector
+          - startupapicheck
+      - key: app.kubernetes.io/instance
+        operator: In
+        values:
+          - cert-manager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "np.ingress.prometheus" (list $ 9402) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+---
+{{- /* ===================== external-dns ===================== */ -}}
+{{- $ns = .Values.namespaces.externalDns }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-external-dns" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-dns
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "np.ingress.prometheus" (list $ 7979) | nindent 4 }}
+  egress:
+    # Liest Ingress/IngressRoute/Service-Objekte.
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # RFC2136-Updates (TSIG) an genau den konfigurierten DNS-Server.
+    - to:
+        - ipBlock:
+            cidr: {{ $rfc2136Cidr }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+{{- /* ===================== CloudNativePG ===================== */ -}}
+{{- $ns = .Values.namespaces.cnpg }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-cnpg-operator" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # cnpg-validating-/-mutating-webhook-configuration.
+    {{- include "np.ingress.apiServer" (list $ 9443) | nindent 4 }}
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Instance-Manager (8000) und Postgres (5432) jeder Instanz, in jedem Namespace - laut
+    # CNPG-Doku (docs/src/networking.md) zwingend. Gegenstueck: np.cnpgCluster.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchExpressions:
+              - key: cnpg.io/cluster
+                operator: Exists
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 5432
+          protocol: TCP
+---
+{{- /* ===================== KEDA ===================== */ -}}
+{{- $ns = .Values.namespaces.keda }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-keda-operator" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app: keda-operator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # gRPC-Metrikdienst, den der Metrics-Apiserver abfragt.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keda-operator-metrics-apiserver
+      ports:
+        - port: 9666
+          protocol: TCP
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Kafka-Scaler: liest den Consumer-Lag von reservation-worker (P6).
+    - to:
+        {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-keda-metrics-apiserver" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app: keda-operator-metrics-apiserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # APIService v1beta1.external.metrics.k8s.io - der HPA fragt ueber den API-Server.
+    {{- include "np.ingress.apiServer" (list $ 6443) | nindent 4 }}
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keda-operator
+      ports:
+        - port: 9666
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-keda-admission-webhooks" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app: keda-admission-webhooks
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # ValidatingWebhookConfiguration keda-admission.
+    {{- include "np.ingress.apiServer" (list $ 9443) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}

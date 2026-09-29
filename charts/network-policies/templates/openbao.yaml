@@ -1,0 +1,97 @@
+{{- /*
+OpenBao (ticketflow.namespaces.openbao): 3 HA-Server-Pods, Bootstrap-Hook-Job, eigene CNPG-DB
+(charts/openbao-postgres) als Storage-Backend.
+*/ -}}
+{{- $ns := include "np.ns.openbao" . -}}
+{{- $pg := include "np.openbaoPgCluster" . -}}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-openbao-server" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      component: server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # KV-Lesen (ExternalSecret) und -Schreiben (PushSecret) durch den ESO-Controller.
+    - from:
+        - {{ include "np.nsSelector" (include "np.ns.externalSecrets" .) | nindent 10 | trim }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: external-secrets
+      ports:
+        - port: 8200
+          protocol: TCP
+    # Oeffentliche UI (Ingress openbao.<dnsZone> -> Service openbao-active).
+    - from:
+        {{- include "np.peer.traefik" . | nindent 8 }}
+      ports:
+        - port: 8200
+          protocol: TCP
+    # Init/Unseal/Konfiguration durch den Bootstrap-Job, jeden Pod einzeln.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: openbao-bootstrap
+      ports:
+        - port: 8200
+          protocol: TCP
+    # HA: Standbys leiten Requests an den aktiven Knoten weiter (8201, Cluster-Port) bzw.
+    # verweisen per API-Adresse auf ihn (8200).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              component: server
+      ports:
+        - port: 8200
+          protocol: TCP
+        - port: 8201
+          protocol: TCP
+  egress:
+    # Kubernetes-Auth (TokenReview) und service_registration "kubernetes" (setzt das
+    # openbao-active-Label am eigenen Pod).
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Storage-Backend + HA-Lock.
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ $pg }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              component: server
+      ports:
+        - port: 8200
+          protocol: TCP
+        - port: 8201
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-openbao-bootstrap-job" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app: openbao-bootstrap
+  policyTypes:
+    - Egress
+  egress:
+    # Liest/schreibt das openbao-unseal-keys-Secret.
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              component: server
+      ports:
+        - port: 8200
+          protocol: TCP
+---
+{{- $clients := list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "openbao" "component" "server"))) }}
+{{ include "np.cnpgCluster" (dict "root" $ "ns" $ns "cluster" $pg "clients" (toYaml $clients)) }}

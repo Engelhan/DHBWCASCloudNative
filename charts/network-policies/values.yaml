@@ -1,0 +1,40 @@
+# Alle NetworkPolicies des Clusters an EINER Stelle (Ausnahme: die von ArgoCDs eigenem
+# Install-Manifest mitgebrachten Ingress-Policies im argocd-Namespace, siehe templates/argocd.yaml).
+# Jeder Namespace bekommt default-deny fuer Ingress UND Egress plus DNS-Egress, danach wird jede
+# einzelne Verbindung explizit erlaubt - siehe charts/README.md ## network-policies fuer die
+# Verkehrsmatrix und wie sie ermittelt wurde.
+#
+# Deployment-spezifische Werte (App-/Kafka-/OpenBao-/ESO-Namespace, Kafka-Cluster- und DB-Namen,
+# Node-Subnetze, RFC2136-Server) kommen aus gitops/env/cluster.yaml (.Values.ticketflow.*).
+ticketflow: {}
+
+# Namespaces, die nicht zentral in gitops/env/cluster.yaml stehen - sie sind in der
+# ApplicationSet-Elementliste (gitops/applicationset.yaml) fest verdrahtet und muessen mit ihr
+# uebereinstimmen.
+namespaces:
+  monitoring: monitoring
+  certManager: cert-manager
+  externalDns: external-dns
+  cnpg: cnpg-system
+  keda: keda
+  longhorn: longhorn-system
+  argocd: argocd
+  kubeSystem: kube-system
+  # Namespaces ohne eigene Workloads - bekommen nur default-deny, damit dort nichts
+  # versehentlich ungeregelt anlaeuft.
+  withoutWorkloads:
+    - default
+    - kube-public
+    - kube-node-lease
+
+# Port, auf dem der API-Server auf dem Control-Plane-Host lauscht. Pods sprechen ihn ueber die
+# ClusterIP des Service "kubernetes" (443) an, kube-proxy uebersetzt das VOR der Policy-
+# Auswertung auf Node-IP:6443 - daher 6443, nicht 443.
+apiServerPort: 6443
+
+# notification-worker kann optional per SMTP versenden (charts/notification-worker,
+# SMTP_ENABLED). Solange das aus ist, bleibt der Egress ins Internet zu.
+notificationWorker:
+  smtp:
+    enabled: false
+    port: 587

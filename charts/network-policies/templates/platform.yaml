@@ -1,0 +1,325 @@
+{{- /*
+Plattform-Namespaces, die nicht (nur) aus eigenen Charts kommen: Longhorn, ArgoCD (von Ansible
+installiert), kube-system (von k3s verwaltet: CoreDNS, Traefik, svclb, metrics-server,
+local-path-provisioner, helm-controller-Jobs) und die workloadfreien Standard-Namespaces.
+*/ -}}
+
+{{- /* ===================== Longhorn ===================== */ -}}
+{{- $ns := .Values.namespaces.longhorn }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-longhorn-internal" $ns) }}
+spec:
+  # Alle Longhorn-Pods, auch die dynamisch erzeugten (instance-manager je Node, engine-image,
+  # share-manager, backing-image-manager). Longhorn verbindet Engine und Replikas ueber
+  # dynamisch vergebene Ports (Instance-Manager-Portbereich), Manager/CSI/UI sprechen ueber
+  # 9500 - eine feinere Portliste als "Longhorn untereinander" wuerde bei jedem
+  # Longhorn-Update brechen. iSCSI vom Host zum Instance-Manager auf demselben Node deckt die
+  # eingebaute kube-router-Regel fuer lokalen Node-Traffic ab.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+    # longhorn-webhook-validator/-mutator (9502) und Recovery-Backend (9503).
+    {{- include "np.ingress.apiServer" (list $ 9502 9503) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector: {}
+---
+{{- /* ===================== ArgoCD ===================== */ -}}
+{{- /*
+ArgoCDs Install-Manifest (infra/ansible, argocd_bootstrap) bringt bereits Ingress-Policies fuer
+jede Komponente mit (Redis nur von server/repo-server/controller, repo-server nur von den
+ArgoCD-Komponenten, Metrik-Ports aus allen Namespaces, argocd-server offen fuer die UI hinter
+Traefik). Die bleiben unveraendert - hier kommen default-deny und der komplette Egress dazu.
+Achtung: ist hier etwas falsch, kann ArgoCD sich nicht mehr selbst reparieren. Notausgang:
+  kubectl -n argocd delete networkpolicy -l app.kubernetes.io/name=network-policies
+*/ -}}
+{{- $ns = .Values.namespaces.argocd }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-argocd-application-controller" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-application-controller
+  policyTypes:
+    - Egress
+  egress:
+    # Wendet die gerenderten Manifeste an (einziger Zielcluster: in-cluster).
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-argocd-repo-server" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-repo-server
+  policyTypes:
+    - Egress
+  egress:
+    # Manifest-Cache.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    # Dieses Repo per SSH (git@github.com) und `helm dependency build` gegen die Upstream-Chart-
+    # Repos der Wrapper-Charts (alle https, siehe charts/*/Chart.yaml).
+    - to:
+        {{- include "np.peer.internet" . | nindent 8 }}
+      ports:
+        - port: 22
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-argocd-server" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-dex-server
+      ports:
+        - port: 5556
+          protocol: TCP
+        - port: 5557
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-argocd-applicationset-notifications" $ns) }}
+spec:
+  # ApplicationSet-Controller (git-files-Generator laeuft ueber den repo-server) und
+  # Notifications-Controller (keine Notification-Services konfiguriert).
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - argocd-applicationset-controller
+          - argocd-notifications-controller
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - port: 8081
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-argocd-dex-server" $ns) }}
+spec:
+  # Kein SSO-Connector konfiguriert - Dex braucht nur die API (liest argocd-cm/-secret).
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-dex-server
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+---
+{{- /* ===================== kube-system ===================== */ -}}
+{{- $ns = .Values.namespaces.kubeSystem }}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-coredns" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Jeder Pod im Cluster loest ueber CoreDNS auf (Gegenstueck zu allow-dns-egress).
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- include "np.ingress.prometheus" (list $ 9153) | nindent 4 }}
+  egress:
+    # Beobachtet Services/EndpointSlices.
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Weiterleitung externer Namen an die Upstream-Resolver des Hosts (forward . /etc/resolv.conf,
+    # derzeit 8.8.8.8 / 2001:4860:4860::8888 / DHBW-Resolver).
+    - to:
+        {{- include "np.peer.internet" . | nindent 8 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-traefik" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # web/websecure aus dem Internet - ueber die svclb-Pods (klipper-lb) oder direkt.
+    - ports:
+        - port: 8000
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+    {{- include "np.ingress.prometheus" (list $ 9100) | nindent 4 }}
+  egress:
+    # Liest Ingress/IngressRoute/Secrets.
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Backends aller Ingress-/IngressRoute-Objekte.
+    - to:
+        - {{ include "np.nsSelector" (include "np.ns.app" .) | nindent 10 | trim }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: ticketflow-app
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - to:
+        - {{ include "np.nsSelector" (include "np.ns.kafka" .) | nindent 10 | trim }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: akhq
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - {{ include "np.nsSelector" (include "np.ns.openbao" .) | nindent 10 | trim }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              component: server
+      ports:
+        - port: 8200
+          protocol: TCP
+    # IngressRouteTCP mit TLS-Passthrough (charts/argocd-ingress).
+    - to:
+        - {{ include "np.nsSelector" .Values.namespaces.argocd | nindent 10 | trim }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-server
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-svclb-traefik" $ns) }}
+spec:
+  # klipper-lb: nimmt 80/443 per hostPort an und leitet per DNAT an den Traefik-Service weiter.
+  podSelector:
+    matchLabels:
+      svccontroller.k3s.cattle.io/svcname: traefik
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-metrics-server" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: metrics-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # APIService v1beta1.metrics.k8s.io (kubectl top, HPA).
+    {{- include "np.ingress.apiServer" (list $ 10250) | nindent 4 }}
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+    # Holt die Ressourcen-Metriken von jedem Kubelet.
+    - to:
+        {{- include "np.peer.nodes" . | nindent 8 }}
+      ports:
+        - port: 10250
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-local-path-provisioner" $ns) }}
+spec:
+  # local-path-provisioner beobachtet PVCs und legt Host-Pfade ueber Helper-Pods an - nur API.
+  podSelector:
+    matchLabels:
+      app: local-path-provisioner
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+---
+{{ include "np.header" (list $ "allow-k3s-helm-install-jobs" $ns) }}
+spec:
+  # helm-install-Jobs des k3s-helm-controllers (z.B. nach einer Aenderung an charts/traefik-config).
+  # Die Charts sind in k3s eingebettet (chartContent), es wird nichts heruntergeladen - nur API.
+  podSelector:
+    matchExpressions:
+      - key: helmcharts.helm.cattle.io/chart
+        operator: Exists
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "np.egress.apiServer" . | nindent 4 }}
+{{- range .Values.namespaces.withoutWorkloads }}
+---
+{{ include "np.baseline" (list $ .) }}
+{{- end }}

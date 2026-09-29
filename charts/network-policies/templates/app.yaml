@@ -1,0 +1,133 @@
+{{- /*
+Anwendungs-Namespace (ticketflow.namespaces.app): catalog-api, frontend, reservation-worker,
+notification-worker und die App-Postgres (charts/postgres-cluster).
+Browser -> Traefik -> frontend (statische Seite) bzw. -> catalog-api (/events, /reservations);
+catalog-api -> Kafka -> reservation-worker -> Postgres + Kafka -> notification-worker.
+*/ -}}
+{{- $ns := include "np.ns.app" . -}}
+{{- $pg := include "np.pgCluster" . -}}
+{{ include "np.baseline" (list $ $ns) }}
+---
+{{ include "np.header" (list $ "allow-catalog-api" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: ticketflow-app
+      app.kubernetes.io/component: catalog-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress-Pfade /events und /reservations (charts/ticketflow-app templates/frontend/ingress.yaml).
+    - from:
+        {{- include "np.peer.traefik" . | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    # Liest Veranstaltungen/Plaetze, fuehrt beim Start die Seed-Migration aus.
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ $pg }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Produziert ReservationRequested (SASL/SCRAM-Listener "plain").
+    - to:
+        {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
+      ports:
+        - port: 9092
+          protocol: TCP
+    # Schema-Aufloesung beim Start + /readyz.
+    - to:
+        {{- include "np.peer.apicurio" . | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-frontend" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: ticketflow-app
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- include "np.peer.traefik" . | nindent 8 }}
+      ports:
+        - port: 80
+          protocol: TCP
+  # Kein Egress: nginx liefert nur statische Dateien aus, die API ruft der Browser ueber Traefik.
+  egress: []
+---
+{{ include "np.header" (list $ "allow-reservation-worker" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: reservation-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    # Sitzplatz-Lock + reservations-Tabelle, Schema-Migrationen beim Start.
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ $pg }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Konsumiert reservation-requested, produziert reservation-result.
+    - to:
+        {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
+      ports:
+        - port: 9092
+          protocol: TCP
+    - to:
+        {{- include "np.peer.apicurio" . | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+{{ include "np.header" (list $ "allow-notification-worker" $ns) }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
+  egress:
+    # Konsumiert reservation-result, schreibt ggf. ins Dead-Letter-Topic.
+    - to:
+        {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
+      ports:
+        - port: 9092
+          protocol: TCP
+    - to:
+        {{- include "np.peer.apicurio" . | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    {{- if .Values.notificationWorker.smtp.enabled }}
+    # Optionaler SMTP-Versand (SMTP_ENABLED) - Mailserver liegt ausserhalb des Clusters.
+    - to:
+        {{- include "np.peer.internet" . | nindent 8 }}
+      ports:
+        - port: {{ .Values.notificationWorker.smtp.port }}
+          protocol: TCP
+    {{- end }}
+---
+{{- $clients := list }}
+{{- $clients = append $clients (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/instance" "ticketflow-app" "app.kubernetes.io/component" "catalog-api"))) }}
+{{- $clients = append $clients (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "reservation-worker"))) }}
+{{ include "np.cnpgCluster" (dict "root" $ "ns" $ns "cluster" $pg "clients" (toYaml $clients)) }}

@@ -86,6 +86,28 @@ ticketflow:
     # eigenes Storage-Backend-Passwort nicht aus der Vault lesen, bevor die entsiegelt ist).
     databaseName: openbao-vault
 
+  # --- Netzwerk (charts/network-policies) ------------------------------------------------
+  # Die einzigen Adressen, die NetworkPolicies nicht ueber Labels erreichen koennen, weil dahinter
+  # kein Pod steht: der API-Server (k3s-Prozess auf dem Control-Plane-Host) und die Kubelets.
+  network:
+    # Subnetze des Projektnetzes DHBWV6, in dem alle VMs haengen (Terraform, network_name). Ziel
+    # fuer Egress zum API-Server (Endpoint "kubernetes" = Node-IP:6443, keine Pod-IP) und fuer
+    # Prometheus/metrics-server zu Kubelet (10250) und node-exporter (9100, hostNetwork).
+    nodeCIDRs:
+      - "2001:7c0:1b20:c913::/64"
+      - "10.200.0.0/19"
+    # Quelladresse, mit der der Control-Plane-HOST (API-Server: Admission-Webhooks, APIServices,
+    # API-Proxy) Pods auf ANDEREN Nodes erreicht: Flannel routet dorthin ueber flannel(-v6).1 und
+    # nimmt dessen Adresse als Source - nicht die Node-IP (live per `ip route get` geprueft). Das
+    # ist die jeweils erste Adresse von k3s_cluster_cidr / k3s_cluster_cidr_v4
+    # (infra/ansible/inventory/group_vars/all.yml), weil der k3s-Server als erster Node das erste
+    # Pod-Subnetz bekommt - bei einer Aenderung dort hier mitziehen. Pods auf dem Control-Plane-
+    # Node selbst erreicht der Host ohne Policy: kube-router laesst Traffic vom lokalen Node immer
+    # durch (dieselbe Regel deckt die Kubelet-Probes auf allen Nodes ab).
+    controlPlaneTunnelIPs:
+      - "fd00:42::/128"
+      - "10.42.0.0/32"
+
   # --- Container-Images ------------------------------------------------------------------
   # ghcr.io verlangt kleingeschriebene Namen - der GitHub-Owner ist hier bewusst lowercase,
   # anders als in repoURL oben (.github/workflows/build-images.yml macht dasselbe per ${VAR,,}).
