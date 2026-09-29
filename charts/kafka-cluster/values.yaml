@@ -150,14 +150,14 @@ kafka:
   # config.keda.maxReplicaCount: 3 (values-prod.yaml: 8/8).
   topics:
     - name: reservation-requested
-      partitions: 3
+      partitions: 20
       replicationFactor: 3
       config:
         retention.ms: "604800000"
         cleanup.policy: delete
         min.insync.replicas: "2"
     - name: reservation-result
-      partitions: 3
+      partitions: 20
       replicationFactor: 3
       config:
         retention.ms: "604800000"
