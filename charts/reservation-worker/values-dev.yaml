@@ -5,7 +5,7 @@ replicaCount: 1
 config:
   keda:
     minReplicaCount: 1
-    maxReplicaCount: 3
+    maxReplicaCount: 10
 
 podDisruptionBudget:
   enabled: false
