@@ -504,9 +504,9 @@ commands here once these gaps close instead of leaving this section stale.
   `metadataVersion` set) with **separate `broker`/`controller` `KafkaNodePool`s** (not
   combined-role — restructured to match a real Strimzi setup the user provided as a reference
   from their workplace), each with a soft cross-host `podAntiAffinity` (from that reference) plus
-  a hard `topologySpreadConstraint` on `topology.ticketflow/region` for P4 (only once that pool's
-  `replicas > 1`, i.e. with `values-prod.yaml` — dev intentionally runs one broker + one
-  controller); a `kafka-metrics` `ConfigMap` (JMX Prometheus Exporter rules, KRaft-specific rules
+  a hard `topologySpreadConstraint` on `topology.ticketflow/region` for P4 (template-guarded on
+  `replicas > 1`; since 2026-09-29 **dev runs 3 brokers + 3 controllers too**, RF 3 /
+  `min.insync.replicas: 2` — see the P4/P5 bullet below); a `kafka-metrics` `ConfigMap` (JMX Prometheus Exporter rules, KRaft-specific rules
   enabled since KRaft is our only mode) wired in via `spec.kafka.metricsConfig`, plus
   `spec.kafkaExporter` for consumer-lag metrics (P7); two `KafkaTopic`s,
   `reservation-requested`/`reservation-result`, matching `RESERVATION_TOPIC`/`RESULT_TOPIC` from
@@ -697,6 +697,23 @@ commands here once these gaps close instead of leaving this section stale.
   exit code. All three effectively no-ops at `replicaCount: 1` (their current default everywhere),
   same as `charts/ticketflow-app`'s own dev profile — becomes real once any of them scales beyond 1
   (`reservation-worker` via KEDA, see above).
+- **Done 2026-09-29, `helm lint`/`template` clean (dev+prod), not yet live-verified:** P4/P5
+  review of Carlos' charts. Found that with `environment: dev` Kafka ran 1 broker/1 controller, so
+  the hard region-spread was switched off and every broker restart was an outage of the
+  reservation intake — P4/P5 unmet on exactly the cluster they must be shown on. Now
+  `charts/kafka-cluster/values.yaml` = 3 brokers + 3 controllers, RF 3, `min.insync.replicas: 2`
+  in dev too (`values-dev.yaml` only shrinks storage; prod additionally 8 partitions). Node pools
+  now template full `resources` (incl. CPU) plus explicit `jvmOptions` `-Xms`/`-Xmx` from
+  `kafka.<pool>.jvmOptions.heap` (schema-required) — derivation of every number is a comment in
+  `values.yaml`. `charts/reservation-worker`: PDB `maxUnavailable: 1` (was `minAvailable: 1`,
+  which blocked every node drain at KEDA `minReplicaCount: 1`; template supports both keys) and a
+  derivation comment for its requests/limits. **Switching a running cluster from 1 to 3 brokers is
+  not a plain sync** (existing topics/`__consumer_offsets` keep RF 1 without Cruise Control, KRaft
+  quorum can't just grow) — one-time rebuild procedure in `charts/kafka-cluster/README.md`
+  ## Umstellung von 1 auf 3 Broker (pauses `argocd-applicationset-controller`, since it would
+  revert a manual `automated: null` patch on its Application). Memory budget assumed 10GB per
+  worker (x3); Kafka requests total 4,5Gi. Root `README.md` P4/P5/## Grenzen updated (Longhorn
+  `defaultReplicaCount: 1` documented as a node-loss limit).
 - **Done, `helm lint`/`template` clean, not yet live-verified:** `charts/akhq/` (wrapper around the upstream `akhq` chart,
   `https://akhq.io/`, pinned `0.28.0`) + the `akhq` ApplicationSet element — Kafka web UI, Carlos' scope.
   Deployed into namespace `kafka` (grouped with the Strimzi operator, not `ticketflow` — AKHQ is

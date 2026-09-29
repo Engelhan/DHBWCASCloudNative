@@ -306,9 +306,26 @@ nicht pro Umgebung (dev/prod, siehe W1) austauschbar, ohne das Image neu zu baue
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
 vergeben und von Ansible in ein Kubernetes-Label übersetzt – die DHBWCloud stellt real nur eine
 Region/AZ bereit, die Verteilung wird für diese Entscheidung bewusst simuliert). CNPG-Postgres
-(Primary+2 Replicas) und die Kafka-Broker (Strimzi, 3 Broker) erhalten je eine
-`topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas nie auf
-demselben simulierten Standort landen. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
+(Primary+2 Replicas) und Kafka (Strimzi, je 3 Broker und 3 KRaft-Controller — auch im aktiven
+dev-Profil, siehe [`charts/kafka-cluster/values-dev.yaml`](charts/kafka-cluster/values-dev.yaml))
+erhalten je eine `topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas
+nie auf demselben simulierten Standort landen. Für Kafka ist das eine **harte** Regel
+(`whenUnsatisfiable: DoNotSchedule`,
+[`kafka-broker-nodepool.yaml`](charts/kafka-cluster/templates/messaging/kafka-broker-nodepool.yaml)):
+Das Topic `reservation-requested` ist der Puffer aller Flash-Sale-Anfragen, jede Partition liegt
+dreifach vor und verlangt zwei bestätigte Kopien (`min.insync.replicas: 2`). Lägen zwei Broker in
+derselben Region, würde deren Ausfall genau diese Mehrheit mitnehmen und `catalog-api` müsste
+Reservierungen abweisen — dann lieber ein sichtbar `Pending` bleibender Broker als ein stilles
+Zusammenrutschen. Requests/Limits sind je Chart hergeleitet statt geschätzt: Kafka-Broker
+1Gi Memory (Request = Limit, weil ein OOM-Kill bei einem zustandsbehafteten Broker Log-Recovery und
+Leader-Wechsel auslöst) bei explizit 512m JVM-Heap — Kafka hält Nachrichten im OS-Page-Cache, nicht
+im Heap —, `reservation-worker` nur 25m CPU/48Mi, weil er I/O-gebunden auf Postgres wartet und KEDA
+bis zu drei Kopien gleichzeitig einplant; die Rechnung steht jeweils als Kommentar in
+[`charts/kafka-cluster/values.yaml`](charts/kafka-cluster/values.yaml) und
+[`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml). *Nachweis im
+Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
+`kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
+Controller pro Region. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
 `reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
 ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
 natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
@@ -326,6 +343,13 @@ verwaltet PVCs für Primary+2 Replicas, Strimzi-Kafka-Broker laufen als Stateful
 PodDisruptionBudgets sichern Rolling Updates ab (für `notification-worker` bereits umgesetzt:
 `replicaCount: 3`, `minAvailable: 2`, siehe
 [`charts/notification-worker/templates/poddisruptionbudget.yaml`](charts/notification-worker/templates/poddisruptionbudget.yaml)).
+Kafka: Replication-Factor 3 mit `min.insync.replicas: 2` und ein Strimzi-PDB `maxUnavailable: 1`
+— Strimzi rollt Broker einzeln, und solange nur einer fehlt, nehmen die beiden anderen weiter
+Reservierungen an; PVCs mit `deleteClaim: false` überleben jeden Pod-Neustart.
+`reservation-worker` bestätigt den Kafka-Offset erst nach dem DB-Commit und bucht idempotent auf
+`reservation_id`: Stirbt ein Pod mitten in der Verarbeitung, liefert Kafka die Nachricht erneut aus,
+ohne dass ein Sitzplatz doppelt vergeben wird. Sein PDB ist `maxUnavailable: 1` statt
+`minAvailable: 1`, weil letzteres bei KEDAs `minReplicaCount: 1` jeden Node-Drain blockieren würde.
 *Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
 *Begründung:* `emptyDir` und ein Single-Instance-Postgres wären einfacher aufzusetzen, aber jeder
 Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich löschen statt sie
@@ -410,6 +434,10 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
   aber nicht in jedem Detail wie ein Cloud-Provider-Kubernetes.
 - Der Lastgenerator bildet einen synthetischen "alle klicken gleichzeitig"-Fall nach; reales
   Nutzerverhalten (Netzwerklatenz-Verteilung, Retry-Verhalten von Browsern) ist nicht modelliert.
+- Longhorn läuft mit einer Volume-Replica (`charts/longhorn/values.yaml`, `defaultReplicaCount: 1`).
+  Ein **Pod**-Verlust ist damit unkritisch, ein **Node**-Verlust macht dessen PVCs aber unerreichbar,
+  bis der Node zurück ist. Für Kafka fängt die Replikation auf Anwendungsebene (Replication-Factor 3
+  über drei Regionen) das ab; einzelne Volumes sind dadurch nicht zusätzlich gesichert.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant);
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
 
