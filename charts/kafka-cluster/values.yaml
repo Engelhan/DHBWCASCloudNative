@@ -37,37 +37,78 @@ kafka:
   # Getrennte Pools statt Combined-Role (anders als unser erster Entwurf) - orientiert an der
   # realen Referenz. Braucht mehr Pods als Combined-Role, aber ist die im Referenz-Setup
   # tatsaechlich genutzte Aufteilung.
+  #
+  # P4/P5: je DREI Replicas, in dev wie in prod (values-dev.yaml unterscheidet sich nur noch bei
+  # Storage-Groesse). Drei, weil der Cluster drei simulierte Regionen hat und die
+  # topologySpreadConstraints in den NodePool-Templates genau einen Pod pro Region erzwingen:
+  #   - Broker: replicationFactor 3 + min.insync.replicas 2 -> eine Region (Node) darf ausfallen
+  #     bzw. per Rolling Update neu starten, ohne dass catalog-api eine Reservierung abweisen muss.
+  #   - Controller: KRaft-Quorum braucht eine Mehrheit - 3 ist die kleinste Zahl, die den
+  #     Verlust eines Controllers uebersteht (2 von 3), 2 Controller haetten keine Toleranz.
+  #
+  # Requests/Limits - hergeleitet, nicht geraten (Budget-Rechnung: 3 Worker; Summe aller
+  # Kafka-Requests = 3 x 1Gi + 3 x 512Mi = 4,5Gi):
+  #   memory request == limit: Broker/Controller sind zustandsbehaftet - ein OOM-Kill oder eine
+  #     Eviction bei Node-Memory-Druck loest Log-Recovery + Leader-Wechsel aus. Mit request ==
+  #     limit reserviert der Scheduler den vollen Speicher, der Pod wird nie ueberbucht.
+  #   cpu request < limit: CPU ist komprimierbar (Drosselung statt Kill). Der Request deckt den
+  #     Grundbetrieb, das hohe Limit laesst Bursts (Flash-Sale, Log-Recovery nach Neustart, GC)
+  #     zu, ohne dass Drosselung die Produce-Latenz von catalog-api hochtreibt.
+  #   Nachmessen: Grafana container_memory_working_set_bytes / container_cpu_usage_seconds_total
+  #   waehrend des k6-Flash-Sale-Tests (src/load-generator) - bei Abweichung hier anpassen.
   controller:
-    replicas: 1
+    replicas: 3
     storage:
       type: persistent-claim
+      # KRaft-Metadaten-Log: nur Topic-/Partition-/User-Metadaten (2 Topics, 4 KafkaUser) -
+      # Kilobytes, 2Gi ist reine Reserve fuer Snapshots.
       size: 2Gi
+    # 256m Heap: der Metadaten-Zustand von 2 Topics/wenigen Partitionen ist winzig. Rest bis
+    # 512Mi: ~100Mi Metaspace, ~50Mi JMX-Exporter-Agent (metricsConfig, P7), Thread-Stacks und
+    # Netzwerk-Puffer.
+    jvmOptions:
+      heap: 256m
     resources:
       requests:
+        cpu: 100m
         memory: 512Mi
       limits:
+        cpu: 500m
         memory: 512Mi
 
   broker:
-    replicas: 1
+    replicas: 3
     storage:
       type: persistent-claim
+      # Reservierungs-Events sind ~300 Byte JSON. Selbst 1 Mio. Events (weit ueber 3 Hallen x
+      # 1000 Plaetze inkl. abgelehnter Versuche) x 2 Topics = ~600MB bei 7 Tagen Retention.
       size: 5Gi
+    # 512m Heap = Haelfte des Limits: Kafka haelt Nachrichten nicht im Heap, sondern liest/
+    # schreibt ueber den OS-Page-Cache - ein grosser Heap bringt nichts, nur laengere GC-Pausen.
+    # Rest bis 1Gi: ~250-300Mi Off-Heap (Metaspace, Direct-Buffers fuer Netzwerk/Replikation,
+    # JMX-Exporter) + ~200Mi Page-Cache (reclaimbar, fuehrt nicht zum OOM-Kill).
+    jvmOptions:
+      heap: 512m
     resources:
       requests:
-        memory: 512Mi
+        # Grundlast: Replikation von 3 Partitionen x 2 Topics + Metrik-Scrapes. Drei Broker
+        # zusammen reservieren damit 0,6 Kerne.
+        cpu: 200m
+        memory: 1Gi
       limits:
+        cpu: "1"
         memory: 1Gi
 
-  # Von values-dev.yaml/values-prod.yaml passend zur jeweiligen Replica-Zahl ueberschrieben -
-  # bei replicas: 1 muss der Replication-Factor ebenfalls 1 sein, sonst bleiben interne Topics
-  # dauerhaft under-replicated.
+  # Muss zur Broker-Zahl passen: replicationFactor 3 bei 3 Brokern, min.insync.replicas 2 ->
+  # Produce mit acks=all toleriert genau einen fehlenden Broker (Ausfall ODER Rolling-Update-
+  # Schritt, P5). Wirkt fuer die internen Topics (__consumer_offsets) nur beim ersten Anlegen -
+  # siehe README ## Umstellung von 1 auf 3 Broker.
   config:
-    offsetsTopicReplicationFactor: 1
-    transactionStateLogReplicationFactor: 1
-    transactionStateLogMinIsr: 1
-    defaultReplicationFactor: 1
-    minInsyncReplicas: 1
+    offsetsTopicReplicationFactor: 3
+    transactionStateLogReplicationFactor: 3
+    transactionStateLogMinIsr: 2
+    defaultReplicationFactor: 3
+    minInsyncReplicas: 2
 
   entityOperator:
     topicOperator:
@@ -79,20 +120,24 @@ kafka:
 
   # RESERVATION_TOPIC (catalog-api -> reservation-worker) und RESULT_TOPIC
   # (reservation-worker -> notification-worker), siehe src/*/README.md ## Konfiguration.
-  # replicationFactor darf weder controller.replicas noch broker.replicas uebersteigen.
+  # replicationFactor darf broker.replicas nicht uebersteigen. partitions: 3 = Obergrenze der
+  # parallelen Consumer je Consumer-Group, passend zu charts/reservation-worker
+  # config.keda.maxReplicaCount: 3 (values-prod.yaml: 8/8).
   topics:
     - name: reservation-requested
       partitions: 3
-      replicationFactor: 1
+      replicationFactor: 3
       config:
         retention.ms: "604800000"
         cleanup.policy: delete
+        min.insync.replicas: "2"
     - name: reservation-result
       partitions: 3
-      replicationFactor: 1
+      replicationFactor: 3
       config:
         retention.ms: "604800000"
         cleanup.policy: delete
+        min.insync.replicas: "2"
 
   # B2 (Root-README ## Entscheidungen): eine KafkaUser-CR (SCRAM-SHA-512 + engst moegliche ACLs)
   # pro Client-Identitaet statt eines einzigen geteilten Credentials - siehe

@@ -23,6 +23,22 @@ image:
 # wuerde selfHeal jede KEDA-Skalierung sofort wieder auf diesen Wert zuruecksetzen.
 replicaCount: 1
 
+# P4 - Herleitung der Zahlen (statisch gelinktes Go-Binary, kein JVM/Runtime-Overhead):
+#   memory 48Mi request: Go-Runtime + Prometheus-Registry ~10-15Mi, kafka-go-Reader-Fetch-Puffer
+#     (Default MaxBytes 1MB je Fetch) + pgxpool (Default max(4, CPU-Anzahl) Verbindungen) +
+#     eingebettete JSON-Schemas - im Leerlauf ~20-30Mi, 48Mi = Leerlauf plus Puffer fuer den
+#     normalen Durchsatz. Klein gehalten, weil KEDA bis zu maxReplicaCount Kopien davon
+#     gleichzeitig einplant - jedes Mi hier zaehlt dreifach (prod: achtfach).
+#   memory 128Mi limit: ~2,5x Request - deckt GC-Spitzen im Flash-Sale-Burst (viele kurzlebige
+#     Event-Structs/JSON-Decodes), begrenzt aber ein Leck, bevor es den Node belastet.
+#   cpu 25m request: ein Consumer verarbeitet nachrichtenweise und wartet dabei fast nur auf
+#     Postgres (UPDATE ... WHERE status='free') und Kafka - I/O-gebunden, deshalb skaliert P6
+#     auch nicht auf CPU. 25m reicht, damit Idle-Pods auf keinem Node Platz blockieren.
+#   cpu 250m limit: 10x Request fuer Bursts (JSON-Schema-Validierung + Framing je Nachricht);
+#     mehr bringt nichts, weil der Durchsatz je Pod von der DB-Latenz begrenzt wird - mehr
+#     Durchsatz kommt ueber mehr Pods (KEDA), nicht ueber mehr CPU je Pod.
+#   Nachmessen: `kubectl top pod -n ticketflow -l app.kubernetes.io/name=reservation-worker`
+#   waehrend des k6-Flash-Sale-Tests.
 resources:
   requests:
     cpu: 25m
@@ -131,9 +147,16 @@ podMonitor:
 networkPolicy:
   enabled: false # Default aus, wie im Repo sonst ueblich (siehe charts/README.md)
 
+# maxUnavailable: 1 statt minAvailable: 1 - KEDAs minReplicaCount ist 1, und bei genau einem Pod
+# wuerde minAvailable: 1 jede freiwillige Eviction verbieten: `kubectl drain` (z.B. k3s-Upgrade
+# eines Workers) bliebe dauerhaft haengen. maxUnavailable: 1 laesst die Eviction zu - das ist
+# fuer diesen Dienst unkritisch (P5): Anfragen warten im Kafka-Topic, der Offset wird erst nach
+# dem DB-Commit bestaetigt, ein Ersatz-Pod arbeitet den Rueckstand ab, ohne dass eine
+# Reservierung verloren geht. Skaliert KEDA hoch, begrenzt das Budget einen Drain weiterhin auf
+# einen Pod gleichzeitig.
 podDisruptionBudget:
-  enabled: true # jetzt sinnvoll: KEDA kann tatsaechlich > 1 Replica fahren (siehe keda oben)
-  minAvailable: 1
+  enabled: true
+  maxUnavailable: 1
 
 # Weiche Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
 # charts/ticketflow-app catalogApi.topologySpreadConstraint. Bei replicaCount: 1 (bzw. KEDAs
