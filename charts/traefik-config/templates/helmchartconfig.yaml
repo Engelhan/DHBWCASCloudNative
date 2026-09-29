@@ -12,6 +12,8 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    resources:
+      {{- toYaml .Values.resources | nindent 6 }}
     service:
       annotations:
         external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname | default (printf "traefik.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) }}

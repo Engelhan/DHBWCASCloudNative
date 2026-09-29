@@ -15,3 +15,15 @@ ticketflow: {}
 # Konfiguration ab (gitops/env/cluster.yaml) und liegt damit automatisch innerhalb der
 # aktivierten RFC2136-Zone.
 traefikHostname: ""
+
+# Requests/Limits fuer k3s' mitgelieferten Traefik (Chart-Default: keine). Werden per
+# HelmChartConfig in dessen HelmChart gemerged. Traefik liegt im Flash-Sale-Lastpfad - jeder
+# Request aus src/load-generator geht ueber den Ingress zu catalog-api -, deshalb ein hohes
+# CPU-Limit, damit Drosselung nicht die Reservierungs-Latenz bestimmt. Live im Leerlauf ~33Mi.
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
