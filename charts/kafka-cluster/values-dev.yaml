@@ -7,7 +7,7 @@
 # Pod-Verlust ohne Ausfall) gezeigt werden. Mit einem einzigen Broker waere beides unmoeglich -
 # jeder Broker-Neustart waere ein Totalausfall des Reservierungs-Eingangs. Replicas, Requests/
 # Limits, Heap, Replication-Factor und Topics kommen deshalb unveraendert aus values.yaml; dev
-# unterscheidet sich von prod nur in Storage-Groesse und Partitionszahl.
+# unterscheidet sich von prod nur in der Storage-Groesse.
 
 kafka:
   controller:

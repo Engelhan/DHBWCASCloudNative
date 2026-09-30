@@ -91,8 +91,8 @@ kafka:
       heap: 512m
     resources:
       requests:
-        # Grundlast: Replikation von 3 Partitionen x 2 Topics + Metrik-Scrapes. Drei Broker
-        # zusammen reservieren damit 0,6 Kerne.
+        # Grundlast: Follower-Replikation von ~40 Partition-Replicas je Broker (siehe topics)
+        # + Metrik-Scrapes. Drei Broker zusammen reservieren damit 0,6 Kerne.
         cpu: 200m
         memory: 1Gi
       limits:
@@ -145,9 +145,17 @@ kafka:
 
   # RESERVATION_TOPIC (catalog-api -> reservation-worker) und RESULT_TOPIC
   # (reservation-worker -> notification-worker), siehe src/*/README.md ## Konfiguration.
-  # replicationFactor darf broker.replicas nicht uebersteigen. partitions: 3 = Obergrenze der
-  # parallelen Consumer je Consumer-Group, passend zu charts/reservation-worker
-  # config.keda.maxReplicaCount: 3 (values-prod.yaml: 8/8).
+  # replicationFactor darf broker.replicas nicht uebersteigen.
+  #
+  # partitions: 20 (dev und prod gleich) = Obergrenze der parallelen Consumer je Consumer-Group.
+  # charts/reservation-worker skaliert per KEDA auf maximal 10 Pods (config.keda.maxReplicaCount)
+  # - 20 ist ein Vielfaches davon (jeder Pod genau 2 Partitionen) und laesst Reserve bis 20 Pods.
+  # Nicht "auf Vorrat" hoeher: Kafka kann Partitionen eines Topics nie reduzieren, nur erhoehen,
+  # und jede Erhoehung verschiebt die Zuordnung Key (seat_id) -> Partition. Kosten auf den
+  # Brokern: 2 Topics x 20 Partitionen x RF 3 = 120 Partition-Replicas, ~40 je Broker -
+  # vernachlaessigbar fuer Heap und Page-Cache bei ~300-Byte-Events.
+  # reservation-result hat dieselbe Zahl, damit notification-worker unabhaengig davon mitwachsen
+  # kann.
   topics:
     - name: reservation-requested
       partitions: 20
