@@ -30,7 +30,19 @@ func New(brokers []string, topic string, schema *schemareg.Client, saslMechanism
 			// Key = reservation_id: jede Reservierung erzeugt genau ein
 			// Result-Event, eine Ordering-Garantie zwischen verschiedenen
 			// Reservierungen ist nicht erforderlich.
-			Balancer:               &kafka.Hash{},
+			Balancer: &kafka.Hash{},
+			// Der Consumer verarbeitet streng eine Nachricht nach der anderen
+			// und wartet synchron auf dieses Publish, bevor er den Offset
+			// committet - hier liegt also nie mehr als eine Nachricht an.
+			// Mit kafka-go-Defaults (BatchSize 100, BatchTimeout 1s) wartete
+			// jedes Publish die volle Sekunde auf einen Batch, der nie voll
+			// wird: ~1 Reservierung/s pro Pod, egal wie viele KEDA startet.
+			BatchSize: 1,
+			// kafka-go-Default ist RequireNone (acks=0): ein verlorenes
+			// Result-Event fiele nie auf, weil der Offset danach trotzdem
+			// committet wird. acks=all passt zu replicationFactor 3 /
+			// min.insync.replicas 2 (P5, charts/kafka-cluster).
+			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true, // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
 			Transport:              &kafka.Transport{SASL: saslMechanism},
 		},
