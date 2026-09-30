@@ -1,11 +1,4 @@
-# Kleine Werte fuer Funktionstests auf den Lab-VMs. KEDA bleibt aktiv, skaliert aber in einem
-# engeren Fenster - ein Flash-Sale-Lasttest ist auf dem Dev-Setup nicht das Ziel.
-replicaCount: 1
-
-config:
-  keda:
-    minReplicaCount: 1
-    maxReplicaCount: 10
-
-podDisruptionBudget:
-  enabled: false
+# Lab-Profil (aktiv, gitops/env/cluster.yaml environment: dev). Bewusst keine Abweichungen von
+# values.yaml: genau auf diesem Cluster laeuft der Flash-Sale-Lasttest, er braucht also dasselbe
+# KEDA-Fenster (1-10 Pods) wie prod. Das PodDisruptionBudget (maxUnavailable: 1) bleibt ebenfalls
+# an - es blockiert auch bei einem einzigen Pod keinen Node-Drain.

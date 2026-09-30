@@ -49,6 +49,13 @@ spec:
   maxReplicaCount: {{ .Values.config.keda.maxReplicaCount }}
   pollingInterval: {{ .Values.config.keda.pollingInterval }}
   cooldownPeriod: {{ .Values.config.keda.cooldownPeriod }}
+  # cooldownPeriod wirkt nur beim Skalieren auf 0 - bei minReplicaCount >= 1 bestimmt allein das
+  # vom KEDA erzeugte HPA das Rueckskalieren, und dessen Default-Stabilisierungsfenster ist 300s.
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.config.keda.scaleDownStabilizationSeconds }}
   triggers:
     - type: kafka
       authenticationRef:
@@ -58,6 +65,10 @@ spec:
         consumerGroup: {{ .Values.config.consumerGroup | quote }}
         topic: {{ .Values.config.reservationTopic | quote }}
         lagThreshold: {{ .Values.config.keda.lagThreshold | quote }}
-        offsetResetPolicy: latest
+        # Muss zum Consumer passen: kafka-go startet eine Partition ohne committeten Offset bei
+        # FirstOffset (= earliest). Mit "latest" zaehlte KEDA jede solche Partition pauschal als
+        # Lag 1 - nach frischem Cluster oder neu angelegten Partitionen sah KEDA also hoechstens
+        # "Lag = Partitionszahl", egal wie gross der echte Rueckstand war.
+        offsetResetPolicy: earliest
         sasl: {{ .Values.config.kafkaSasl.enabled | ternary "scram_sha512" "none" | quote }}
         tls: disable

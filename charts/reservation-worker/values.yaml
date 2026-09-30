@@ -84,26 +84,38 @@ config:
     username: reservation-worker
     secretName: reservation-worker
 
-  # P6 (Root-README ## Entscheidungen): KEDA skaliert auf Basis des Kafka-Consumer-Group-Lags
-  # von config.consumerGroup, nicht CPU. Siehe templates/keda-scaledobject.yaml + gitops/apps/
-  # keda.yaml (Operator-Chart). maxReplicaCount: 3 ist bewusst an die tatsaechlich synchte
-  # Kafka-Partitionszahl gebunden - gitops/apps/kafka-cluster.yaml faehrt aktuell mit
-  # values-dev.yaml (charts/kafka-cluster), das reservation-requested nur 3 Partitionen gibt (ein
-  # Consumer pro Partition ist das Maximum innerhalb einer Consumer-Group; mehr Replicas als
-  # Partitionen wuerden nur untaetig herumstehen). Bei einem Wechsel auf values-prod.yaml (8
-  # Partitionen) muss dieser Wert auf 8 mitgezogen werden. lagThreshold: "10" ist bewusst
-  # niedrig: jede Halle hat 1000 Plaetze (drei Veranstaltungen, siehe local/postgres/init.sql bzw.
-  # src/catalog-api/internal/db/migrate.go), ein Flash-Sale-Burst erzeugt also weit mehr als 10
-  # unverarbeitete Nachrichten und skaliert zuverlaessig bis auf maxReplicaCount hoch, ohne dass
-  # der Schwellwert bei kleineren Lasttests gleich unerreichbar wird.
-  # pollingInterval/cooldownPeriod bewusst kuerzer als KEDAs Standard (30s/300s), damit ein
-  # Flash-Sale-Screencast Skalierung UND Rueckskalierung in vertretbarer Zeit zeigt, statt bis zu
-  # 5 Minuten auf das Cooldown zu warten.
+  # B2 (Root-README ## Bonus): KEDA skaliert auf Basis des Kafka-Consumer-Group-Lags von
+  # config.consumerGroup, nicht CPU. Siehe templates/keda-scaledobject.yaml + charts/keda
+  # (Operator).
+  #
+  # maxReplicaCount: 10 bei 20 Partitionen von reservation-requested (charts/kafka-cluster
+  # values.yaml, in dev und prod gleich). Innerhalb einer Consumer-Group bekommt jede Partition
+  # genau einen Consumer - die Partitionszahl ist die harte Obergrenze, KEDA kappt ohnehin dort.
+  # 10 statt 20, weil jeder Pod exakt 2 Partitionen bekommt (20/10, keine ungleiche Last) und die
+  # eigentliche Grenze dahinter der eine Postgres-Primary ist, auf den alle Pods gleichzeitig
+  # schreiben (Verbindungen sind kein Engpass: jeder Pod arbeitet sequenziell und haelt damit
+  # praktisch eine, max_connections ist 100). Ist der Primary ausgelastet, bringen weitere Pods
+  # keinen Durchsatz mehr. Die 20
+  # Partitionen lassen Reserve bis 20 Pods, ohne das Topic neu anlegen zu muessen (Kafka kann
+  # Partitionen nur erhoehen, nie reduzieren).
+  #
+  # lagThreshold: "10" = Ziel-Rueckstand pro Pod. KEDA rechnet gewuenschte Replicas =
+  # ceil(Gesamt-Lag / 10). Bewusst niedrig: jede der drei Hallen hat 1000 Plaetze, ein
+  # Flash-Sale-Burst erzeugt weit mehr als 10 offene Nachrichten und skaliert zuverlaessig, sobald
+  # der Zufluss die Verarbeitung eines Pods uebersteigt.
+  #
+  # pollingInterval 15s (KEDA-Default 30s): Lag wird doppelt so oft geprueft. Das Hochskalieren
+  # selbst begrenzt das HPA auf Verdopplung bzw. +4 Pods je 15s - 1 -> 10 in ~30s.
+  # scaleDownStabilizationSeconds 60 (HPA-Default 300): das HPA nimmt fuer das Rueckskalieren
+  # den hoechsten Wunschwert der letzten 60s - kein Flattern zwischen zwei Polls, aber ein
+  # Screencast zeigt das Zurueckgehen nach einer Minute statt nach fuenf.
+  # cooldownPeriod wirkt nur beim Skalieren auf 0, bei minReplicaCount: 1 also nicht.
   keda:
     minReplicaCount: 1
     maxReplicaCount: 10
     lagThreshold: "10"
     pollingInterval: 15
+    scaleDownStabilizationSeconds: 60
     cooldownPeriod: 60
 
   # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer

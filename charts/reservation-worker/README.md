@@ -50,9 +50,12 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
 
 | Wert | dev | prod | Begründung |
 |---|---|---|---|
-| `replicaCount` | 1 | 2 | prod startet bereits redundant, dev reicht ein Consumer |
-| `config.keda.maxReplicaCount` | 3 | 10 | nur prod soll einen echten Flash Sale hochskalieren können |
-| `podDisruptionBudget.enabled` | false | true | bei einem einzigen Replica würde ein Budget jeden Node-Drain blockieren |
+| `replicaCount` / `config.keda.minReplicaCount` | 1 | 2 | prod hält auch ohne Last zwei Consumer, damit ein Pod-/Node-Ausfall die Verarbeitung nicht bis zum nächsten KEDA-Poll anhält |
+
+Alles andere ist in beiden Profilen gleich, weil der Flash-Sale-Lasttest auf dem dev-Cluster läuft:
+KEDA skaliert 1–10 Pods (`maxReplicaCount` 10 bei 20 Partitionen, jeder Pod genau 2), das
+PodDisruptionBudget (`maxUnavailable: 1`) ist an — es blockiert auch bei einem einzigen Pod keinen
+Node-Drain. Herleitung aller KEDA-Werte als Kommentar in `values.yaml` (`config.keda`).
 
 Welche Datei greift, steuert `ticketflow.environment` in `gitops/env/cluster.yaml`.
 
