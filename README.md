@@ -467,11 +467,14 @@ bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung 
 | `keda.pollingInterval` | 15s | 15s | doppelt so oft wie KEDAs Default (30s); das HPA verdoppelt je 15s (bzw. +4 Pods), 1 → 10 in ~30s |
 | `scaleDownStabilizationSeconds` | 60s | 60s | Rückskalieren nach 60s statt nach dem HPA-Default von 300s — `cooldownPeriod` wirkt nur beim Skalieren auf 0, bei `minReplicaCount` ≥ 1 also gar nicht |
 
-Zwei Befunde aus dem ersten Lasttest auf dem Cluster, beide behoben: (1) Der Worker veröffentlichte
-jedes Ergebnis mit den Defaults von kafka-go — Batch-Timeout 1s, `acks=0`. Weil er Nachrichten
-streng nacheinander verarbeitet, wartete jedes Publish die volle Sekunde auf einen Batch, der nie
-voll wurde: ~1 Reservierung/s pro Pod, unabhängig von der Pod-Zahl. Jetzt `BatchSize: 1` und
-`acks=all` (passend zu `min.insync.replicas: 2`, P5). (2) KEDA lief mit `offsetResetPolicy:
+Zwei Befunde aus dem ersten Lasttest auf dem Cluster, beide behoben: (1) Beide Kafka-Producer
+(`catalog-api`, `reservation-worker`) liefen mit den Defaults von kafka-go — Batch-Timeout 1s,
+`acks=0`. Der Worker verarbeitet Nachrichten streng nacheinander, jedes Publish wartete also die
+volle Sekunde auf einen Batch, der nie voll wurde: ~1 Reservierung/s pro Pod, unabhängig von der
+Pod-Zahl (jetzt `BatchSize: 1`). `catalog-api` beantwortete dadurch jede Reservierung erst nach ~1s
+(jetzt Batch-Timeout 5ms — gleichzeitige Requests werden weiter gebündelt). Beide senden jetzt mit
+`acks=all`, passend zu `min.insync.replicas: 2` (P5); vorher hätte `catalog-api` auch dann `202`
+geantwortet, wenn die Anfrage nie im Topic angekommen wäre. (2) KEDA lief mit `offsetResetPolicy:
 latest`, der Consumer startet aber bei `earliest`. Für Partitionen ohne committeten Offset (frischer
 Cluster, neu angelegte Partitionen) zählte KEDA deshalb pauschal Lag 1 statt des echten
 Rückstands.

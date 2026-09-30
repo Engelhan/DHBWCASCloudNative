@@ -687,9 +687,9 @@ commands here once these gaps close instead of leaving this section stale.
   `BatchTimeout` 1s and `RequiredAcks` `RequireNone` (acks=0). Since the consumer handles one
   message at a time and publishes synchronously, every publish waited the full second for a batch
   that never fills: ~1 reservation/s per pod. Now `BatchSize: 1` + `RequireAll`.
-  **`catalog-api`'s producer (Philipp's code) still has the same two defaults** — every
-  `POST /reservations` blocks ~1s and is sent with acks=0, contradicting the P5 "acks=all" claim;
-  not changed here, flagged to the team. `replicaCount: 1` in this chart is purely the
+  `catalog-api`'s producer had the same two defaults (every `POST /reservations` blocked ~1s, sent
+  with acks=0, contradicting P5) — fixed with the team's agreement: `BatchTimeout: 5ms` (not
+  `BatchSize: 1` — concurrent HTTP handlers still batch usefully) + `RequireAll`. `replicaCount: 1` in this chart is purely the
   Deployment's starting value — the `reservation-worker` ApplicationSet element has an
   `ignoreDifferences` entry on `spec.replicas` (standard ArgoCD + HPA/KEDA pattern), otherwise
   `selfHeal: true` would stomp every KEDA scale event. PDB is `maxUnavailable: 1` in both profiles
