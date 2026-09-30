@@ -42,10 +42,19 @@ func NewProducer(brokers []string, topic string, schema *schemareg.Client, saslM
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, SASLMechanism: saslMechanism}
 	return &Producer{
 		writer: &kafka.Writer{
-			Addr:                   kafka.TCP(brokers...),
-			Topic:                  topic,
-			Balancer:               &kafka.Hash{}, // Key = seat_id: Nachrichten zum selben Sitzplatz bleiben geordnet
-			AllowAutoTopicCreation: true,          // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
+			Addr:     kafka.TCP(brokers...),
+			Topic:    topic,
+			Balancer: &kafka.Hash{}, // Key = seat_id: Nachrichten zum selben Sitzplatz bleiben geordnet
+			// Jeder POST /reservations wartet synchron auf dieses Publish. kafka-go
+			// fuellt einen Batch per Default bis zu 1s lang - jede Reservierung
+			// antwortete dadurch erst nach ~1s. 5ms fassen gleichzeitige Requests
+			// im Flash Sale weiterhin zu einem Batch zusammen, ohne spuerbare Latenz.
+			BatchTimeout: 5 * time.Millisecond,
+			// kafka-go-Default ist RequireNone (acks=0): catalog-api antwortete 202,
+			// auch wenn die Anfrage nie im Topic ankam. acks=all passt zu
+			// replicationFactor 3 / min.insync.replicas 2 (P5, charts/kafka-cluster).
+			RequiredAcks:           kafka.RequireAll,
+			AllowAutoTopicCreation: true, // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
 			Transport:              &kafka.Transport{SASL: saslMechanism},
 		},
 		dialer:      dialer,
