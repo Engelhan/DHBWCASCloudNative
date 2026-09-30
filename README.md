@@ -320,7 +320,7 @@ Zusammenrutschen. Requests/Limits sind je Chart hergeleitet statt geschätzt: Ka
 1Gi Memory (Request = Limit, weil ein OOM-Kill bei einem zustandsbehafteten Broker Log-Recovery und
 Leader-Wechsel auslöst) bei explizit 512m JVM-Heap — Kafka hält Nachrichten im OS-Page-Cache, nicht
 im Heap —, `reservation-worker` nur 25m CPU/48Mi, weil er I/O-gebunden auf Postgres wartet und KEDA
-bis zu drei Kopien gleichzeitig einplant; die Rechnung steht jeweils als Kommentar in
+bis zu zehn Kopien gleichzeitig einplant; die Rechnung steht jeweils als Kommentar in
 [`charts/kafka-cluster/values.yaml`](charts/kafka-cluster/values.yaml) und
 [`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml). *Nachweis im
 Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
@@ -461,9 +461,20 @@ bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung 
 
 | Wert | dev (aktuell synct) | prod | Begründung |
 |---|---|---|---|
-| `keda.maxReplicaCount` | 3 | 8 | = Partitionszahl von `reservation-requested` je Kafka-Profil (`charts/kafka-cluster` `values-dev.yaml`/`values-prod.yaml`) — mehr Consumer als Partitionen innerhalb einer Consumer-Group wären untätig |
-| `keda.lagThreshold` | 10 | 10 | bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): ein Flash-Sale-Burst erzeugt weit mehr unverarbeitete Nachrichten und skaliert zuverlässig bis `maxReplicaCount`, ohne bei kleineren Lasttests unerreichbar zu sein |
-| `keda.pollingInterval`/`.cooldownPeriod` | 15s/60s | 15s/60s | kürzer als KEDAs Default (30s/300s), damit ein Screencast Hoch- **und** Rückskalierung in vertretbarer Zeit zeigt |
+| Partitionen `reservation-requested` | 20 | 20 | Obergrenze paralleler Consumer je Consumer-Group. Nicht je Profil verschieden: Kafka kann Partitionen nie reduzieren |
+| `keda.minReplicaCount` / `maxReplicaCount` | 1 / 10 | 2 / 10 | 10 statt 20: jeder Pod bekommt genau 2 Partitionen; die eigentliche Grenze dahinter ist der eine Postgres-Primary, auf den alle Pods schreiben. 20 Partitionen lassen Reserve, ohne das Topic neu anzulegen |
+| `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
+| `keda.pollingInterval` | 15s | 15s | doppelt so oft wie KEDAs Default (30s); das HPA verdoppelt je 15s (bzw. +4 Pods), 1 → 10 in ~30s |
+| `scaleDownStabilizationSeconds` | 60s | 60s | Rückskalieren nach 60s statt nach dem HPA-Default von 300s — `cooldownPeriod` wirkt nur beim Skalieren auf 0, bei `minReplicaCount` ≥ 1 also gar nicht |
+
+Zwei Befunde aus dem ersten Lasttest auf dem Cluster, beide behoben: (1) Der Worker veröffentlichte
+jedes Ergebnis mit den Defaults von kafka-go — Batch-Timeout 1s, `acks=0`. Weil er Nachrichten
+streng nacheinander verarbeitet, wartete jedes Publish die volle Sekunde auf einen Batch, der nie
+voll wurde: ~1 Reservierung/s pro Pod, unabhängig von der Pod-Zahl. Jetzt `BatchSize: 1` und
+`acks=all` (passend zu `min.insync.replicas: 2`, P5). (2) KEDA lief mit `offsetResetPolicy:
+latest`, der Consumer startet aber bei `earliest`. Für Partitionen ohne committeten Offset (frischer
+Cluster, neu angelegte Partitionen) zählte KEDA deshalb pauschal Lag 1 statt des echten
+Rückstands.
 
 `reservation-worker`s `replicaCount` im Chart ist seit KEDA nur noch der Deployment-Startwert; das
 Element `reservation-worker` im ApplicationSet ignoriert `spec.replicas` explizit
@@ -477,17 +488,6 @@ dass sich ein Kafka-Backlog bildet (siehe dessen README); live auf dem Cluster n
 (kein Zugriff, siehe `## Grenzen`) — Nachweis wäre `kubectl get scaledobject,hpa -n ticketflow`
 während eines Lasttests, Replica-Zahl wächst sichtbar mit.
 
-**B3 – Weiteres Wahlthema: W7 Cluster-Härtung.** *Was getan werden soll (NetworkPolicy-Hälfte):*
-Deny-by-default Network Policies je Namespace (`kafka`, `cnpg-system`, künftiger
-`ticketflow`-App-Namespace) plus explizite Allow-Regeln für die tatsächlich benötigten Pfade —
-`catalog-api`/`reservation-worker` → CNPG-Primary auf Port 5432,
-`catalog-api`/`reservation-worker`/`notification-worker` → Kafka-Broker auf 9092/9093, Prometheus
-→ `/metrics` auf allen drei Services, ArgoCD → Kubernetes-API-Server. Drei Charts haben ein
-solches Netzwerk-Policy-Netz bereits scope-geprüft aktiv (`cert-manager`, `kube-prometheus-stack`,
-`tempo`, siehe `charts/README.md` ## Resource-Limits, Security-Context, NetworkPolicy); CNPG,
-Strimzi, Longhorn und `external-dns` bringen aber kein eigenes `networkPolicy`-Feld mit (dort
-müssten die Policies selbst geschrieben werden) und `notification-worker`/`loki` haben ihr Toggle
-bewusst noch aus.
 **B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Umgesetzt (NetworkPolicy-Hälfte):* Jeder
 Namespace — die eigenen wie `kube-system`, `argocd` und die workloadfreien Standard-Namespaces —
 startet mit **default-deny für Ingress und Egress**; danach ist jede einzelne Verbindung explizit

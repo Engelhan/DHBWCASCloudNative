@@ -670,22 +670,31 @@ commands here once these gaps close instead of leaving this section stale.
   never as a literal metadata value) and the Strimzi-generated Secret
   (`config.kafkaSasl.secretName`) has no separate `username` key to reuse — the **password**
   comes straight from that existing Strimzi Secret, no copy. `config.keda.{minReplicaCount,
-  maxReplicaCount,lagThreshold,pollingInterval,cooldownPeriod}` are new values, deliberately NOT
-  defaulted to KEDA's own generic defaults: `maxReplicaCount: 3` is pinned to
-  `reservation-requested`'s actual partition count on the profile that's actually synced right
-  now (the `kafka-cluster` ApplicationSet element runs `values-dev.yaml`, 3 partitions — a consumer group
-  can't usefully run more consumers than partitions) and needs bumping to 8 alongside any future
-  switch to `values-prod.yaml`; `lagThreshold: "10"` is deliberately low against the 1000 seats per
-  venue (three events, see `local/postgres/init.sql` / `src/catalog-api/internal/db/migrate.go`),
-  so a flash-sale burst reliably scales out to `maxReplicaCount` without the threshold being out
-  of reach for smaller load tests; `pollingInterval: 15`/`cooldownPeriod: 60` are shorter than KEDA's defaults
-  (30s/300s) so a screencast shows both scale-up and scale-down without a multi-minute wait.
-  `replicaCount: 1` in this chart is now purely the Deployment's starting value, not an ongoing
-  source of truth — the `reservation-worker` ApplicationSet element gained an `ignoreDifferences` entry on
-  `spec.replicas` for the Deployment (the standard ArgoCD + HPA/KEDA pattern), otherwise
-  `selfHeal: true` would stomp every KEDA scale event back to `replicaCount: 1` on the next sync
-  tick. `podDisruptionBudget.enabled` flipped from `false` to `true` (`minAvailable: 1`) now that
-  the replica count is no longer statically 1.
+  maxReplicaCount,lagThreshold,pollingInterval,scaleDownStabilizationSeconds,cooldownPeriod}`
+  (**re-tuned 2026-09-30 after a live load test that didn't scale**, derivation in the
+  `config.keda` comment of `values.yaml`): `reservation-requested` has **20 partitions in dev and
+  prod** (`charts/kafka-cluster/values.yaml`; prod no longer overrides topics — Kafka can never
+  reduce partitions, so a smaller prod value couldn't even be applied to an existing cluster),
+  `maxReplicaCount: 10` in both profiles (2 partitions per pod; the single Postgres primary is the
+  real ceiling), `minReplicaCount` 1 dev / 2 prod, `lagThreshold: "10"`, `pollingInterval: 15`.
+  **`cooldownPeriod` only applies to scale-to-zero** — with `minReplicaCount >= 1` scale-down is
+  governed by the KEDA-created HPA's own 300s stabilization window, so the ScaledObject now sets
+  `advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds` from
+  `scaleDownStabilizationSeconds: 60`. `offsetResetPolicy` is `earliest` (was `latest`): kafka-go's
+  group reader starts uncommitted partitions at `FirstOffset`, and with `latest` KEDA counts every
+  partition without a committed offset as lag 1 regardless of the real backlog. Root cause found in
+  the same review: `src/reservation-worker/internal/producer` used kafka-go `Writer` defaults —
+  `BatchTimeout` 1s and `RequiredAcks` `RequireNone` (acks=0). Since the consumer handles one
+  message at a time and publishes synchronously, every publish waited the full second for a batch
+  that never fills: ~1 reservation/s per pod. Now `BatchSize: 1` + `RequireAll`.
+  **`catalog-api`'s producer (Philipp's code) still has the same two defaults** — every
+  `POST /reservations` blocks ~1s and is sent with acks=0, contradicting the P5 "acks=all" claim;
+  not changed here, flagged to the team. `replicaCount: 1` in this chart is purely the
+  Deployment's starting value — the `reservation-worker` ApplicationSet element has an
+  `ignoreDifferences` entry on `spec.replicas` (standard ArgoCD + HPA/KEDA pattern), otherwise
+  `selfHeal: true` would stomp every KEDA scale event. PDB is `maxUnavailable: 1` in both profiles
+  (the template picks `maxUnavailable` over `minAvailable` if both are set — prod's former
+  `minAvailable: 1` override was silently ignored and has been removed).
 - **Done, `helm lint`/`template` clean for all three (2026-09-16):** P4 scheduling/placement for
   `charts/reservation-worker`/`charts/akhq`/`charts/apicurio` — previously only
   `charts/ticketflow-app` and the Kafka/Postgres node pools had a region-spread preference; these
@@ -713,7 +722,7 @@ commands here once these gaps close instead of leaving this section stale.
   the hard region-spread was switched off and every broker restart was an outage of the
   reservation intake — P4/P5 unmet on exactly the cluster they must be shown on. Now
   `charts/kafka-cluster/values.yaml` = 3 brokers + 3 controllers, RF 3, `min.insync.replicas: 2`
-  in dev too (`values-dev.yaml` only shrinks storage; prod additionally 8 partitions). Node pools
+  in dev too (`values-dev.yaml` only shrinks storage; 20 partitions in both profiles, see the KEDA bullet above). Node pools
   now template full `resources` (incl. CPU) plus explicit `jvmOptions` `-Xms`/`-Xmx` from
   `kafka.<pool>.jvmOptions.heap` (schema-required) — derivation of every number is a comment in
   `values.yaml`. `charts/reservation-worker`: PDB `maxUnavailable: 1` (was `minAvailable: 1`,

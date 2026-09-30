@@ -14,8 +14,8 @@ und der CNPG-Postgres-Cluster sind ebenfalls eigene, eigenständige Charts
 kafka-cluster/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte
-├── values-dev.yaml          # Lab-Profil: 3 Broker/3 Controller, kleiner Storage, 3 Partitionen
-├── values-prod.yaml         # 3 Broker/3 Controller, groesserer Storage, 8 Partitionen
+├── values-dev.yaml          # Lab-Profil: 3 Broker/3 Controller, kleiner Storage
+├── values-prod.yaml         # 3 Broker/3 Controller, groesserer Storage
 ├── values.schema.json       # JSON-Schema: Pflichtfelder, Typen
 ├── files/schemas/            # kanonische JSON-Schemas (reservation-requested, reservation-result)
 └── templates/
@@ -38,7 +38,7 @@ kafka-cluster/
 |---|---|---|---|
 | `kafka.controller/broker.replicas` | 3 | 3 | beide: ein Pod je simulierter Region (P4, harte `topologySpreadConstraint`); 3 Controller = kleinstes KRaft-Quorum, das einen Ausfall übersteht |
 | Topic-`replicationFactor` / `min.insync.replicas` | 3 / 2 | 3 / 2 | ein Broker darf ausfallen oder per Rolling Update neu starten, ohne dass Produce mit `acks=all` scheitert (P5) |
-| `partitions` | 3 | 8 | Obergrenze paralleler Consumer je Group = KEDA `maxReplicaCount` in `charts/reservation-worker` |
+| `partitions` | 20 | 20 | Obergrenze paralleler Consumer je Group; KEDA `maxReplicaCount` in `charts/reservation-worker` ist 10, jeder Pod bekommt genau 2 Partitionen. Kommt in beiden Profilen aus `values.yaml` — Kafka kann Partitionen nie reduzieren, ein kleinerer prod-Wert ließe sich auf einem bestehenden Cluster nicht anwenden |
 | Broker-/Controller-Storage | 5Gi / 2Gi | 10Gi / 5Gi | dev: Lab-Longhorn-Platz; Herleitung siehe `values.yaml` |
 
 dev lief bis 2026-09-29 mit einem einzigen Broker/Controller. Das hat P4 (keine Verteilung sichtbar,
