@@ -104,8 +104,11 @@ config:
   # Flash-Sale-Burst erzeugt weit mehr als 10 offene Nachrichten und skaliert zuverlaessig, sobald
   # der Zufluss die Verarbeitung eines Pods uebersteigt.
   #
-  # pollingInterval 15s (KEDA-Default 30s): Lag wird doppelt so oft geprueft. Das Hochskalieren
-  # selbst begrenzt das HPA auf Verdopplung bzw. +4 Pods je 15s - 1 -> 10 in ~30s.
+  # Bei minReplicaCount >= 1 fragt das von KEDA erzeugte HPA den Lag selbst ab, im eigenen
+  # 15s-Takt ueber KEDAs Metrics-API; pollingInterval wirkt dann gar nicht (nur bei Skalierung
+  # auf/von 0 bzw. useCachedMetrics - KEDAs Admission-Webhook warnt entsprechend). Der Wert bleibt
+  # nur gesetzt, damit ein spaeteres minReplicaCount: 0 nicht auf 30s zurueckfaellt. Das
+  # Hochskalieren begrenzt das HPA auf Verdopplung bzw. +4 Pods je 15s - 1 -> 10 in ~30s.
   # scaleDownStabilizationSeconds 60 (HPA-Default 300): das HPA nimmt fuer das Rueckskalieren
   # den hoechsten Wunschwert der letzten 60s - kein Flattern zwischen zwei Polls, aber ein
   # Screencast zeigt das Zurueckgehen nach einer Minute statt nach fuenf.

@@ -677,6 +677,9 @@ commands here once these gaps close instead of leaving this section stale.
   reduce partitions, so a smaller prod value couldn't even be applied to an existing cluster),
   `maxReplicaCount: 10` in both profiles (2 partitions per pod; the single Postgres primary is the
   real ceiling), `minReplicaCount` 1 dev / 2 prod, `lagThreshold: "10"`, `pollingInterval: 15`.
+  **`pollingInterval` is inert at `minReplicaCount >= 1`** too (the HPA queries KEDA's metrics API
+  on its own 15s sync; KEDA's admission webhook warns about it — confirmed by a live server-side
+  dry-run 2026-10-01), kept only for a future scale-to-zero.
   **`cooldownPeriod` only applies to scale-to-zero** — with `minReplicaCount >= 1` scale-down is
   governed by the KEDA-created HPA's own 300s stabilization window, so the ScaledObject now sets
   `advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds` from

@@ -464,7 +464,7 @@ bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung 
 | Partitionen `reservation-requested` | 20 | 20 | Obergrenze paralleler Consumer je Consumer-Group. Nicht je Profil verschieden: Kafka kann Partitionen nie reduzieren |
 | `keda.minReplicaCount` / `maxReplicaCount` | 1 / 10 | 2 / 10 | 10 statt 20: jeder Pod bekommt genau 2 Partitionen; die eigentliche Grenze dahinter ist der eine Postgres-Primary, auf den alle Pods schreiben. 20 Partitionen lassen Reserve, ohne das Topic neu anzulegen |
 | `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
-| `keda.pollingInterval` | 15s | 15s | doppelt so oft wie KEDAs Default (30s); das HPA verdoppelt je 15s (bzw. +4 Pods), 1 → 10 in ~30s |
+| `keda.pollingInterval` | 15s | 15s | wirkt bei `minReplicaCount` ≥ 1 nicht: dann fragt das HPA den Lag selbst alle 15s über KEDAs Metrics-API ab und verdoppelt je 15s (bzw. +4 Pods), 1 → 10 in ~30s. Gesetzt bleibt er nur für den Fall einer Skalierung auf 0 |
 | `scaleDownStabilizationSeconds` | 60s | 60s | Rückskalieren nach 60s statt nach dem HPA-Default von 300s — `cooldownPeriod` wirkt nur beim Skalieren auf 0, bei `minReplicaCount` ≥ 1 also gar nicht |
 
 Zwei Befunde aus dem ersten Lasttest auf dem Cluster, beide behoben: (1) Beide Kafka-Producer
