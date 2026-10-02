@@ -62,17 +62,6 @@ zu beachten sind:
   über 40 Reihen und sprengte die Spalte; ihn tragen der farbige Punkt, die Legende und der
   `title`.
 
-## Lokal starten
-
-Über das repo-weite `docker-compose.yml` (siehe Root-README `## Betrieb`):
-
-```bash
-docker compose up catalog-api frontend
-```
-
-Frontend läuft dann auf `http://localhost:8081`, catalog-api auf `http://localhost:8080` (in
-`index.html` als `API_BASE_URL` hinterlegt).
-
 ## Image bauen
 
 ```bash

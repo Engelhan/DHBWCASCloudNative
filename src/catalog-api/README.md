@@ -81,9 +81,7 @@ pro Nachricht. Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
 `price_cents`, Status `free`/`occupied`) werden zur Laufzeit von catalog-api **nur gelesen** —
 angelegt und mit Stammdaten befüllt werden sie einmalig beim Start durch
 [`internal/db/migrate.go`](internal/db/migrate.go) (idempotent): drei Veranstaltungen in drei
-Hallen mit je 1000 Plätzen (40 Reihen à 25), alle auf `free`.
-[`local/postgres/init.sql`](../../local/postgres/init.sql) enthält dasselbe SQL für den
-docker-compose-Stack — beide Dateien müssen zusammen gepflegt werden. `reservations`
+Hallen mit je 1000 Plätzen (40 Reihen à 25), alle auf `free`. `reservations`
 wird ausschließlich vom `reservation-worker` geschrieben (Status `pending`/`confirmed`/`rejected`);
 catalog-api liest dort nur für `GET /reservations/{id}` – existiert (noch) keine Zeile, gilt die
 Anfrage als `pending`.
@@ -109,17 +107,6 @@ Anfrage als `pending`.
 catalog-api baut den Postgres-Connection-String selbst aus diesen Einzelteilen zusammen (Team-
 Entscheidung), statt ein fertiges `DATABASE_URL`-Secret zu erwarten – CNPG-Cluster (siehe
 `charts/postgres-cluster`) liefern ohnehin nur `username`/`password` getrennt.
-
-## Lokal starten
-
-Über das repo-weite `docker-compose.yml` (siehe Root-README `## Betrieb`):
-
-```bash
-docker compose up postgres kafka catalog-api
-```
-
-Postgres/Kafka werden dabei aus `local/` vorbefüllt bzw. bereitgestellt – dieser Compose-Stack ist
-rein lokales Entwickler-Tooling, kein Teil des Terraform/Ansible/ArgoCD/Helm-Deploy-Pfads.
 
 ## Image bauen
 

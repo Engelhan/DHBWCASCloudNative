@@ -93,19 +93,14 @@ Apicurio Registry (`charts/apicurio`) registriert; `reservation-worker` validier
 die aus `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_SSLMODE`/`DB_USER`/`DB_PASSWORD` zusammengesetzte
 Connection-String an (Reihenfolge nach Dateiname, je Datei eine Transaktion, Fortschritt in
 einer `schema_migrations`-Tabelle) – das ist die "DB Schema aufbauen und über Applikation
-versionieren"-Aufgabe. `0001_init.sql` legt `events`/`seats`/`reservations` an (identisches
-Schema zu [`local/postgres/init.sql`](../../local/postgres/init.sql), dem reinen
-Dev-Seed-Skript für docker-compose) – `CREATE TABLE IF NOT EXISTS`, damit die Migration sowohl
-gegen eine leere CNPG-Datenbank (echter Cluster-Pfad über
-[`charts/postgres-cluster/`](../../charts/postgres-cluster/)) als auch gegen die von `init.sql`
-bereits vorbefüllte lokale Dev-DB idempotent ist. `reservation-worker` schreibt ausschließlich
-in `reservations`; `events`/`seats` werden nur gelesen (Sitzplatz-Claim) bzw. von `catalog-api`
-gelesen. Die Demo-Stammdaten legt `catalog-api` beim Start selbst an
-([`internal/db/migrate.go`](../catalog-api/internal/db/migrate.go), idempotent per
-`ON CONFLICT DO NOTHING`) – **auch im Cluster**: drei Veranstaltungen in drei Hallen mit je 1000
-Plätzen (40 Reihen à 25), alle auf `free`. `local/postgres/init.sql` enthält dasselbe SQL, greift
-aber ausschließlich in docker-compose (der `docker-entrypoint-initdb.d`-Hook existiert nur im
-einfachen `postgres`-Image, nicht in CNPG).
+versionieren"-Aufgabe. `0001_init.sql` legt `events`/`seats`/`reservations` an –
+`CREATE TABLE IF NOT EXISTS`, damit die Migration idempotent gegen eine leere CNPG-Datenbank
+läuft (echter Cluster-Pfad über [`charts/postgres-cluster/`](../../charts/postgres-cluster/)).
+`reservation-worker` schreibt ausschließlich in `reservations`; `events`/`seats` werden nur
+gelesen (Sitzplatz-Claim) bzw. von `catalog-api` gelesen. Die Demo-Stammdaten legt `catalog-api`
+beim Start selbst an ([`internal/db/migrate.go`](../catalog-api/internal/db/migrate.go), idempotent
+per `ON CONFLICT DO NOTHING`): drei Veranstaltungen in drei Hallen mit je 1000 Plätzen (40 Reihen
+à 25), alle auf `free`.
 
 ## Konfiguration
 
@@ -135,14 +130,6 @@ vom Chart selbst angelegten Secret (`charts/reservation-worker/templates/secret.
 `CHANGE_ME`-Platzhalter, echte Werte via `--set`/`--set-file` zur Deploy-Zeit – müssen mit
 `charts/postgres-cluster` `values.yaml` `database.owner`/`.password` übereinstimmen, gleiches
 Muster wie `charts/notification-worker` und `charts/ticketflow-app`).
-
-## Lokal starten
-
-Über das repo-weite `docker-compose.yml` (siehe Root-README `## Betrieb`):
-
-```bash
-docker compose up postgres kafka reservation-worker
-```
 
 ## Image bauen
 

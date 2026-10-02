@@ -1,8 +1,9 @@
 # load-generator
 
-Erzeugt den künstlichen Lastpfad, der laut Aufgabenstellung reproduzierbar auslösbar sein muss
-(Abschnitt 3) und die beiden Pflichtszenen des Screencasts bedient (Last erzeugen → Replicas
-wachsen → Wirkung im Grafana-Dashboard).
+Erzeugt den künstlichen Lastpfad, der reproduzierbar auslösbar sein muss
+(Abschnitt 3) und die Screencast-Szene für Bonus B2 (Autoscaling) bedient: Last erzeugen →
+Replicas wachsen, gezeigt live über `kubectl get pods`/`scaledobject` und den Consumer-Lag in
+AKHQ (kein Grafana-Dashboard, siehe Root-`README.md` ## Grenzen).
 
 ## Szenario "Flash Sale"
 
@@ -38,20 +39,12 @@ k6 run flash-sale.js \
   --env DURATION=3m
 ```
 
-Lokal gegen den docker-compose-Stack (siehe Root-README `## Betrieb`):
-
-```bash
-docker compose up -d
-k6 run flash-sale.js --env API_URL=http://localhost:8080 --env EVENT_ID=demo-konzert --env VUS=50 --env DURATION=30s
-```
-
 Ohne lokale k6-Installation, im offiziellen `grafana/k6`-Container (nur Docker nötig; gleiche
 Parameter als Umgebungsvariablen, weitere Argumente gehen an `k6 run`):
 
 ```bash
 ./run.sh                                   # Volllast gegen den Cluster
 VUS=2000 DURATION=5m ./run.sh              # noch mehr Last
-API_URL=http://localhost:8080 EVENT_ID=demo-konzert VUS=50 DURATION=30s ./run.sh   # docker-compose
 ```
 
 Ohne `API_URL` zielt das Skript auf `https://ticketflow.<dnsZone>` (Zone aus
@@ -76,7 +69,8 @@ auf das KEDA mit zusätzlichen Replicas reagiert (siehe `charts/keda`, P6).
 k6 zählt `202`/`409` als Erfolg (siehe `options.thresholds`), da ein abgelehnter Sitzplatz ein
 korrektes, erwartetes Ergebnis des Flash-Sale-Szenarios ist, kein Fehler des Systems. Die
 eigentliche Kapazitätsaussage (wie viele Reservierungen/Sekunde `reservation-worker` verarbeiten
-kann, wie schnell KEDA hochskaliert) liest man aus den Prometheus-Metriken der Services selbst
-(`reservation_requests_total`, `reservations_processed_total`), nicht aus den k6-Zahlen –
-`custom.reservations_accepted`/`reservations_conflicted` in der k6-Ausgabe zeigen nur, was
-`catalog-api` unmittelbar beim Annehmen der Anfrage zurückgegeben hat.
+kann, wie schnell KEDA hochskaliert) liest man direkt aus dem Cluster ab — `kubectl get
+scaledobject,pods -n ticketflow` und der Consumer-Lag in AKHQ (kein Observability-Stack, siehe
+Root-`README.md` ## Grenzen) — nicht aus den k6-Zahlen: `custom.reservations_accepted`/
+`reservations_conflicted` in der k6-Ausgabe zeigen nur, was `catalog-api` unmittelbar beim
+Annehmen der Anfrage zurückgegeben hat.
