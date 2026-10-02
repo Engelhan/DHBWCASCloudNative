@@ -130,7 +130,10 @@ openbao:
             export BAO_ADDR="http://127.0.0.1:8200"
             while true; do
               STATUS=$(bao status -format=json 2>/dev/null || true)
-              SEALED=$(echo "$STATUS" | grep -o '"sealed":[a-z]*' | cut -d: -f2)
+              # `bao status -format=json` schreibt "sealed": true - mit Leerzeichen nach dem
+              # Doppelpunkt. Ohne ' *' im Muster blieb SEALED leer und der Sidecar entsiegelte
+              # nie (live gefunden 2026-10-02: openbao-1 blieb nach einem Neustart versiegelt).
+              SEALED=$(echo "$STATUS" | grep -o '"sealed": *[a-z]*' | tr -d ' ' | cut -d: -f2)
               if [ "$SEALED" = "true" ] && [ -f /openbao/unseal-keys/key1 ]; then
                 bao operator unseal "$(cat /openbao/unseal-keys/key1)" || true
               fi
