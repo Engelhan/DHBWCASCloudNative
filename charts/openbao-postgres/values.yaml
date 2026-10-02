@@ -32,7 +32,13 @@ database:
       effective_cache_size: 512MB
       work_mem: 4MB
       max_connections: "50"
-    extraParameters: { }
+    extraParameters:
+      # Obergrenze fuer WAL, das ein Replication Slot zurueckhalten darf. CNPG legt fuer jede
+      # Replica einen HA-Slot an; faellt eine Replica dauerhaft aus, haelt der Primary sonst jedes
+      # WAL-Segment fuer sie fest. OpenBao schreibt seine HA-Lock-Zeilen alle paar Sekunden -
+      # am 29.09. lief so ein 5Gi-Volume in ~2,5 Tagen voll und CNPG startete den Primary nicht
+      # mehr. Mit der Grenze verwirft Postgres den Slot, die Replica muss sich neu klonen.
+      max_slot_wal_keep_size: 1GB
     pg_hba: [ ]
 
 # Optional backup configuration. Enable it to render backup resources. Standardmaessig aus, wie im
@@ -65,8 +71,10 @@ affinity:
 
 storage:
   storageClass: longhorn
-  # Kleiner als charts/postgres-cluster (10Gi) - nur KV-Metadaten + HA-Lock-Tabelle.
-  size: 5Gi
+  # Kleiner als charts/postgres-cluster (10Gi) - nur KV-Metadaten + HA-Lock-Tabelle. 8Gi statt
+  # 5Gi: Platz fuer wal_keep_size (512MB) + max_slot_wal_keep_size (1GB) mit Reserve. CNPG
+  # vergroessert die PVCs laufend (resizeInUseVolumes), Longhorn erlaubt Volume-Expansion.
+  size: 8Gi
 
 resources:
   requests:
