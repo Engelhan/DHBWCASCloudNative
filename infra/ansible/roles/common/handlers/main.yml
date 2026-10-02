@@ -1,0 +1,6 @@
+---
+# Laedt die Longhorn-Sperre aus /etc/multipath/conf.d/longhorn.conf (siehe tasks/main.yml).
+- name: Multipathd neu starten
+  systemd:
+    name: multipathd
+    state: restarted

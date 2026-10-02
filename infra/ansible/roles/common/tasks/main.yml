@@ -25,3 +25,35 @@
     regexp: '^127\.0\.1\.1'
     line: "127.0.1.1 {{ inventory_hostname }}"
     state: present
+
+# Longhorn haengt jedes Volume als iSCSI-Geraet (/dev/sdX) ein. Das Ubuntu-Cloud-Image bringt
+# multipathd mit, und das baut beim Booten aus solchen Geraeten eine Multipath-Map - das Geraet
+# ist dann belegt und der Mount scheitert mit "already mounted or mount point busy". Live
+# passiert am 2026-10-02 nach einem Reboot des Control-Plane-Nodes (OpenBao-DB kam nicht hoch).
+# Die Root-Platte ist virtio (vda), die Sperre trifft also nur Longhorns Geraete. Empfehlung aus
+# Longhorns eigenem Troubleshooting fuer multipathd.
+- name: Dienste erfassen (multipathd vorhanden?)
+  service_facts:
+
+# Standard-config_dir von multipath-tools; existiert auf dem Cloud-Image nicht zwingend.
+- name: Verzeichnis fuer multipath-Drop-ins anlegen
+  file:
+    path: /etc/multipath/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: "'multipathd.service' in ansible_facts.services"
+
+- name: Longhorn-Geraete von multipathd ausnehmen
+  copy:
+    dest: /etc/multipath/conf.d/longhorn.conf
+    content: |
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    owner: root
+    group: root
+    mode: "0644"
+  when: "'multipathd.service' in ansible_facts.services"
+  notify: Multipathd neu starten
