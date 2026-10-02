@@ -158,6 +158,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 
 		metrics.ReservationsProcessed.WithLabelValues(result.Result()).Inc()
 		metrics.ReservationProcessingDuration.WithLabelValues(result.Result()).Observe(time.Since(start).Seconds())
+		c.logger.Info("reservation processed", "reservationId", req.ReservationID, "seatId", req.SeatID, "eventId", req.EventID, "result", result.Result())
 		c.commit(ctx, msg)
 		return
 	}
