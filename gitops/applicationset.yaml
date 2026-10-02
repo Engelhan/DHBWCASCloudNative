@@ -125,17 +125,6 @@ spec:
                 - name: openbao-secretstore
                   chartPath: charts/openbao-secretstore
                   namespace: external-secrets
-                # --- Observability (LGTM) ---
-                - name: kube-prometheus-stack
-                  chartPath: charts/kube-prometheus-stack
-                  namespace: monitoring
-                  serverSideApply: true
-                - name: loki
-                  chartPath: charts/loki
-                  namespace: monitoring
-                - name: tempo
-                  chartPath: charts/tempo
-                  namespace: monitoring
                 # --- Datenhaltung / Messaging ---
                 # Bewusst derselbe Namespace wie die Anwendung: catalog-api und
                 # reservation-worker lesen das CNPG-Credentials-Secret per secretKeyRef, was
