@@ -17,7 +17,9 @@ Exam project ("Laborarbeit: Cloud-native Anwendung", DHBW) building **TicketFlow
 cloud-native event-ticket-sales platform, entirely on the DHBWCloud OpenStack platform (no
 managed external cloud services allowed — no hosted DB, no hosted Kubernetes, no managed
 Grafana, no external LLM APIs; only container registries/package sources and the git host are
-permitted external dependencies). The full graded spec is in `2026_07_17_Aufgabenstellung.pdf`.
+permitted external dependencies). The full graded spec is in `2026_07_23_Aufgabenstellung - v2.pdf`
+(V2 supersedes the original `2026_07_17_Aufgabenstellung.pdf`, which was removed from the repo
+2026-10-02 as stale/superseded — see Current implementation status).
 
 **The root `README.md` is itself a graded deliverable** with a fixed, mandatory section order
 (`## Problem`, `## Architektur`, `## Betrieb`, `## Entscheidungen`, `## Grenzen`, optionally
@@ -326,11 +328,6 @@ cd infra/ansible
 ansible-playbook playbooks/site.yml --syntax-check
 ansible-lint
 
-# catalog-api + frontend local dev stack (docker-compose, repo root — no Go/Node install needed
-# locally, everything builds inside containers)
-docker compose up -d --build
-docker compose down -v
-
 # catalog-api build/vet without a local Go toolchain
 cd src/catalog-api
 docker run --rm -v "$PWD":/src -w /src golang:1.25-alpine sh -c "go vet ./... && go build -o /tmp/catalog-api-bin ."
@@ -446,25 +443,43 @@ commands here once these gaps close instead of leaving this section stale.
     proving the path resolves. **Not** verified: any of it against a live cluster (none
     available), and the ApplicationSet's own rendering by a real ArgoCD — the `templatePatch`
     output was checked by re-implementing its logic in Python, not by ArgoCD itself.
-- **Committed but not yet re-verified live** (check `kubectl -n argocd get applications` before
-  assuming any of this is synced clean — several commits landed after the last confirmed-live
-  check): the Longhorn/cert-manager/external-dns wrapper-chart restructure, the ArgoCD/Longhorn/
-  cert-manager/external-dns version bumps (latest stable as of this writing), and five new
-  wrapper charts + Applications:
+- **REMOVED 2026-09-29** (`chore: remove observability stack as it is not used`, commit
+  `ccc730c`): `charts/kube-prometheus-stack`, `charts/loki`, `charts/tempo` and their
+  Chart.yaml/values.yaml are deleted from the repo entirely — there is no Grafana/Prometheus/Loki/
+  Tempo anywhere in this deployment any more. **The three ApplicationSet elements that pointed at
+  them were left dangling** (pointing at chart paths that no longer exist, which would fail
+  ArgoCD's sync) until fixed here on 2026-10-02 by removing those three `elements:` entries from
+  `gitops/applicationset.yaml` — if you see this file referencing `kube-prometheus-stack`/`loki`/
+  `tempo` again, that's a regression, not a revert worth keeping. Every `ServiceMonitor`/
+  `PodMonitor`/`release: kube-prometheus-stack` label left in app charts (catalog-api, frontend,
+  reservation-worker, notification-worker) is now scraped by nothing — harmless (no-op), not
+  cleaned up. Root `README.md` no longer references Grafana anywhere (## Betrieb's dashboard
+  step and B2's "Wirkung im Grafana-Dashboard" framing were removed/reworded accordingly) — if
+  the team ever claims B1 (Observability) or wants the screencast's optional Grafana scene, this
+  stack needs to be rebuilt first, not just un-deleted (its old values.yaml is gone, not just
+  disabled).
+
+  The paragraph below describes the stack **as it existed before this removal** — kept for
+  historical context (why CRD-size workarounds existed, the Loki-NetworkPolicy incident, etc.),
+  not as a description of current state:
+
+  Previously committed, now gone: the Longhorn/cert-manager/external-dns wrapper-chart
+  restructure, the ArgoCD/Longhorn/cert-manager/external-dns version bumps (latest stable as of
+  this writing), and five wrapper charts + Applications:
   - the `cnpg-operator` ApplicationSet element (`charts/cnpg-operator/`, CloudNativePG `v1.30.0`/chart
     `0.29.0`, cluster-wide, namespace `cnpg-system`)
   - `strimzi-operator.yaml` (`charts/strimzi-operator/`, Strimzi `1.1.0`,
     `watchAnyNamespace: true`, namespace `kafka`)
-  - `kube-prometheus-stack.yaml` (`charts/kube-prometheus-stack/`, chart `87.19.0`, namespace
+  - ~~`kube-prometheus-stack.yaml` (`charts/kube-prometheus-stack/`, chart `87.19.0`, namespace
     `monitoring`; Grafana service ends up named `kube-prometheus-stack-grafana` — matches what
-    root `README.md` ## Betrieb already assumed)
-  - `loki.yaml` (`charts/loki/`, chart `7.1.0`, `SingleBinary` mode + bundled MinIO, namespace
-    `monitoring`)
-  - `tempo.yaml` (`charts/tempo/`, chart `1.24.4`, local storage backend, namespace `monitoring`)
+    root `README.md` ## Betrieb already assumed)`~~ **removed, see above**
+  - ~~`loki.yaml` (`charts/loki/`, chart `7.1.0`, `SingleBinary` mode + bundled MinIO, namespace
+    `monitoring`)`~~ **removed, see above**
+  - ~~`tempo.yaml` (`charts/tempo/`, chart `1.24.4`, local storage backend, namespace `monitoring`)`~~
+    **removed, see above**
 
-  cnpg-operator/strimzi-operator/kube-prometheus-stack need `syncOptions: [ServerSideApply=true]`
-  (see Infra layering above) — already set on all three; Loki/Tempo don't ship CRDs, don't need
-  it. All eight workload charts (the five above plus Longhorn/cert-manager/external-dns) now set
+  cnpg-operator/strimzi-operator need `syncOptions: [ServerSideApply=true]`
+  (see Infra layering above) — already set on both. All eight workload charts (the five above plus Longhorn/cert-manager/external-dns) now set
   explicit `resources.requests`/`resources.limits`. (They used to enable the chart's own
   `networkPolicy` where one existed — superseded 2026-09-29, all toggles are off now, see the
   `charts/network-policies` bullet further below.) **Loki's `networkPolicy.enabled` is deliberately `false`**, unlike the others —
@@ -535,7 +550,14 @@ commands here once these gaps close instead of leaving this section stale.
   real CRD unchanged, confirmed via a server-side dry-run apply). AKHQ now exists (see
   the `akhq` ApplicationSet element below); a schema registry (also Carlos' scope) is still **not** part of
   this yet — separate follow-up, registry implementation undecided.
-- **Done, verified locally via `docker-compose.yml` (repo root, local dev only — not part of the
+- **`docker-compose.yml` and `local/` (its Postgres seed) removed 2026-10-02** as part of a repo
+  cleanup — the local dev loop they describe no longer exists; every `docker compose`/
+  `local/postgres/init.sql` reference below (and in `src/*/README.md`) is historical record of how
+  this was verified at the time, not a reproducible command any more. Local development against
+  `catalog-api`/`reservation-worker`/`notification-worker` now means pointing a locally-run binary
+  at a real (or port-forwarded) Postgres/Kafka instead.
+- **Done, verified locally (at the time) via `docker-compose.yml` (repo root, local dev only — not
+  part of the
   Terraform/Ansible/ArgoCD/Helm chain) against real Postgres + Kafka (KRaft, `apache/kafka:3.8.0`
   single-node) and a headless-Chromium click-through:** `src/catalog-api/` (Go 1.25 + `chi`,
   `pgx/v5` read-only DB access, `segmentio/kafka-go` producer, routes `GET /events`,
@@ -945,11 +967,14 @@ commands here once these gaps close instead of leaving this section stale.
   VUs/15s: 878 requests, 694×`202`, 183×`409`, 0 unexpected errors); `reservation-worker` visibly
   lagged behind afterwards processing the Kafka backlog (single local instance, no KEDA) — this
   is exactly the consumer-lag signal KEDA reacts to in the real cluster (`charts/keda`, P6).
-- **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`),
-  `observability/dashboards/` + `observability/alerts/` content. (B1's deny-by-default
-  `NetworkPolicy` set is written now, see the `charts/network-policies` bullet below.) The cross-namespace `DATABASE_URL`
-  blocker mentioned in older versions of this line is resolved (see the Postgres-wiring paragraph
-  above) — `reservation-worker`'s chart is deploy-ready.
+- **Not started:** a dedicated ArgoCD `AppProject` (everything still runs on `project: default`).
+  (B1's deny-by-default `NetworkPolicy` set is written now, see the `charts/network-policies`
+  bullet below.) The cross-namespace `DATABASE_URL` blocker mentioned in older versions of this
+  line is resolved (see the Postgres-wiring paragraph above) — `reservation-worker`'s chart is
+  deploy-ready. The `observability/` directory (placeholder `dashboards/`/`alerts/` folders, never
+  filled in) was removed 2026-10-02 as part of a repo cleanup, alongside the observability stack
+  itself (see the REMOVED-2026-09-29 bullet above) — B1 (Observability) is not planned, not just
+  unimplemented.
 - **Done, live-verified on the real cluster (2026-09-23):** OpenBao (HA secret vault, PostgreSQL
   storage backend) + External Secrets
   Operator, replacing the SOPS plan under root `README.md` ## Bonus B1 (see there for the full
