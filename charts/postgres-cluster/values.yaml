@@ -40,7 +40,11 @@ database:
       # Maximum number of PostgreSQL connections.
       max_connections: "100"
     # extend the postgresql.conf file with custom parameters
-    extraParameters: { }
+    extraParameters:
+      # Obergrenze fuer WAL, das ein Replication Slot einer ausgefallenen Replica zurueckhalten
+      # darf - ohne sie laeuft der Primary voll und CNPG startet ihn nicht mehr (so passiert mit
+      # charts/openbao-postgres am 29.09.). Danach verwirft Postgres den Slot, die Replica klont neu.
+      max_slot_wal_keep_size: 2GB
       # Example:
       # password_encryption: "md5"
     # set the pg_hba.conf file with custom parameters
