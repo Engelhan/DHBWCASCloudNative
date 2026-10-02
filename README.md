@@ -91,11 +91,15 @@ nicht nur vorgeführt.
 
 ```mermaid
 flowchart TB
-    LOADGEN["🌐 load-generator (k6)<br/>künstliche Lastspitze"] --> FRONTEND
+    USER["🧑 Browser"] --> FRONTEND
+    LOADGEN["🌐 load-generator (k6)<br/>künstliche Lastspitze"] --> CATALOG_API
 
     subgraph FEPLANE["Frontend-Plane"]
-        FRONTEND["⬡ Frontend<br/>(UI-Pod + catalog-api REST, HPA)"]
+        FRONTEND["⬡ frontend<br/>(nginx, 2-3 Pods)"]
+        CATALOG_API["⬡ catalog-api<br/>(Go REST, 2-3 Pods)"]
     end
+
+    FRONTEND -->|"REST, same-origin Ingress"| CATALOG_API
 
     subgraph BUSPLANE["Event-Bus-Plane"]
         KAFKA[("📨 Kafka - Strimzi<br/>Event Bus, 3 Broker<br/>Topology-Spread: region-a/b/c")]
@@ -107,8 +111,8 @@ flowchart TB
         PG[("🗄️ PostgreSQL - CNPG<br/>Persistence Layer<br/>Primary + 2 Replicas<br/>Topology-Spread: region-a/b/c")]
     end
 
-    FRONTEND -->|"produce ReservationRequested"| KAFKA
-    FRONTEND -->|"read Sitzplatzverfügbarkeit"| PG
+    CATALOG_API -->|"produce ReservationRequested"| KAFKA
+    CATALOG_API -->|"read Sitzplatzverfügbarkeit"| PG
     KAFKA -->|"consume"| RESERVATION
     RESERVATION -->|"seat lock / commit"| PG
     RESERVATION -->|"produce Confirmed/Rejected"| KAFKA
@@ -127,17 +131,21 @@ flowchart TB
    Workern), übernimmt die simulierte Region als Kubernetes-Node-Label
    (`topology.ticketflow/region`) und bootstrapt ArgoCD — siehe [`infra/ansible/`](infra/ansible/).
 3. ArgoCD übernimmt ab hier per GitOps den Rest: ein einziges `ApplicationSet`
-   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugt alle 19 Applications —
-   CNPG-Operator, Strimzi-Operator, KEDA, kube-prometheus-stack und die TicketFlow-Charts selbst.
-   Alle deployment-spezifischen Werte kommen dabei aus der zentralen
-   [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) — siehe [`gitops/`](gitops/).
+   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugt alle 21 Applications —
+   Cluster-Addons (Longhorn, cert-manager, external-dns), die Operatoren (CNPG, Strimzi, KEDA,
+   External Secrets), den zentralen Secret-Vault OpenBao, die projektweiten NetworkPolicies (siehe
+   `## Bonus`) und die TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
+   aus der zentralen [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) — siehe
+   [`gitops/`](gitops/).
 4. `catalog-api` nimmt Reservierungsanfragen entgegen und veröffentlicht sie als Event auf Kafka,
    statt synchron in die Datenbank zu schreiben.
 5. `reservation-worker` konsumiert diese Events, sperrt den Sitzplatz transaktional in CNPG-Postgres
    und veröffentlicht das Ergebnis (bestätigt/abgelehnt) wieder auf Kafka.
 6. `notification-worker` konsumiert das Ergebnis und simuliert eine Bestätigungs-Benachrichtigung.
-7. Der `load-generator` erzeugt künstlich die namensgebende Lastspitze; Prometheus/Grafana machen
-   Backlog, Fehlerquote und Replica-Anzahl sichtbar, KEDA reagiert auf den Kafka-Consumer-Lag.
+7. Der `load-generator` erzeugt künstlich die namensgebende Lastspitze; KEDA reagiert auf den
+   dadurch wachsenden Kafka-Consumer-Lag und skaliert `reservation-worker` hoch — sichtbar über
+   `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
+   kein Grafana-Dashboard, siehe `## Grenzen`).
 
 Detailskizze und Screenshots des tatsächlichen Deployments folgen in
 [`docs/architecture/`](docs/architecture/) (`TODO`, sobald der Cluster steht).
@@ -223,17 +231,20 @@ ansible-playbook playbooks/site.yml
 cd ../..
 export KUBECONFIG=infra/ansible/kubeconfig
 kubectl -n argocd get applicationset ticketflow
-kubectl -n argocd get applications          # 19 Stueck, alle Synced/Healthy
+kubectl -n argocd get applications          # 21 Stueck, alle Synced/Healthy
 kubectl get pods -A -o wide
 kubectl get kafka,cluster.postgresql.cnpg.io -A
 
-# 4. Künstlichen Lastpfad auslösen
+# 4. Künstlichen Lastpfad auslösen (Docker-Container, kein lokales k6 noetig)
 cd src/load-generator
+./run.sh                                   # Default: https://ticketflow.<dnsZone>, EVENT_ID=all, 1000 VUs, 3 Min.
+# alternativ mit lokal installiertem k6 und expliziten Parametern:
 k6 run flash-sale.js --env API_URL=https://ticketflow.<dns-zone> --env EVENT_ID=demo-konzert --env VUS=500 --env DURATION=3m
 
-# 5. Beobachten
-kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
-# -> Dashboard "TicketFlow Overview" öffnen
+# 5. Beobachten (kein Observability-Stack im Cluster, siehe ## Grenzen)
+kubectl get pods -n ticketflow -l app.kubernetes.io/name=reservation-worker -w   # Replica-Zahl waechst/sinkt mit KEDA
+kubectl get scaledobject -n ticketflow
+# Kafka-Consumer-Lag live: https://akhq.<dnsZone> (dnsZone aus gitops/env/cluster.yaml)
 ```
 
 Von `dev` auf `prod` (mehr Replicas, Topology-Spread mit Wirkung, engere PodDisruptionBudgets)
@@ -242,27 +253,6 @@ ApplicationSet zieht daraufhin für jeden Chart die passende `values-<env>.yaml`
 
 Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten zum laufenden
 Stack führen.
-
-### Lokale Entwicklung (catalog-api + frontend)
-
-Rein für die Entwicklung von `catalog-api`/`frontend`, kein Teil des obigen Cluster-Pfads:
-
-```bash
-docker compose up -d --build
-# frontend: http://localhost:8081, catalog-api: http://localhost:8080
-docker compose down -v
-```
-
-Postgres/Kafka laufen dabei als lokale Stand-ins für CNPG/Strimzi (Seed-Daten aus
-`local/postgres/init.sql`). `reservation-worker` läuft im selben Compose-Stack mit (baut sein
-eigenes DB-Schema beim Start über versionierte Migrationen auf, siehe
-`src/reservation-worker/README.md`) und verarbeitet die Buchung bis `confirmed`/`rejected` durch
-— die Kafka-Message (`ReservationRequested`) lässt sich trotzdem direkt prüfen:
-
-```bash
-docker exec $(docker compose ps -q kafka) /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server localhost:29092 --topic reservation-requested --from-beginning
-```
 
 ## Entscheidungen
 
@@ -433,11 +423,15 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
   weil er für Longhorns privilegierte Pods geratene Werte erzwingen würde.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant);
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
-- Observability ist unvollständig: jeder Service exponiert `/metrics`, `ServiceMonitor`/
-  `PodMonitor` scrapen sie bereits — aber `observability/dashboards/` und `observability/alerts/`
-  sind noch leer (kein Grafana-Dashboard als Code, keine feuernde Alert-Regel). Seit
-  Aufgabenstellung V2 kein Pflichtthema mehr (P7 entfällt), aber auch als Bonus B1 noch nicht
-  beanspruchbar, solange Dashboard/Alert fehlen.
+- Observability ist nicht vorhanden, nicht nur unvollständig: jeder Service exponiert zwar
+  weiterhin `/metrics` mit `ServiceMonitor`/`PodMonitor`-Ressourcen, aber der komplette
+  Scrape-/Dashboard-Stack (kube-prometheus-stack, Loki, Tempo) wurde am 29.09. entfernt, weil er
+  im Betrieb ungenutzt blieb — `charts/kube-prometheus-stack`, `charts/loki`, `charts/tempo`
+  existieren nicht mehr, die `/metrics`-Endpunkte laufen damit aktuell ins Leere. Seit
+  Aufgabenstellung V2 kein Pflichtthema mehr (P7 entfällt); Bonus B1 (Observability) wird bewusst
+  **nicht** beansprucht (siehe `## Bonus`). Die Wirkung von KEDAs Autoscaling (Bonus B2) wird
+  deshalb direkt über `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ gezeigt, nicht
+  über ein Grafana-Dashboard (siehe `## Betrieb`).
 
 *(TODO: nach Lasttests unter echten Bedingungen konkretisieren, was tatsächlich beobachtet wurde.)*
 
@@ -463,7 +457,7 @@ bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung 
 |---|---|---|---|
 | Partitionen `reservation-requested` | 20 | 20 | Obergrenze paralleler Consumer je Consumer-Group. Nicht je Profil verschieden: Kafka kann Partitionen nie reduzieren |
 | `keda.minReplicaCount` / `maxReplicaCount` | 1 / 10 | 2 / 10 | 10 statt 20: jeder Pod bekommt genau 2 Partitionen; die eigentliche Grenze dahinter ist der eine Postgres-Primary, auf den alle Pods schreiben. 20 Partitionen lassen Reserve, ohne das Topic neu anzulegen |
-| `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`local/postgres/init.sql`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
+| `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`src/catalog-api/internal/db/migrate.go`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
 | `keda.pollingInterval` | 15s | 15s | wirkt bei `minReplicaCount` ≥ 1 nicht: dann fragt das HPA den Lag selbst alle 15s über KEDAs Metrics-API ab und verdoppelt je 15s (bzw. +4 Pods), 1 → 10 in ~30s. Gesetzt bleibt er nur für den Fall einer Skalierung auf 0 |
 | `scaleDownStabilizationSeconds` | 60s | 60s | Rückskalieren nach 60s statt nach dem HPA-Default von 300s — `cooldownPeriod` wirkt nur beim Skalieren auf 0, bei `minReplicaCount` ≥ 1 also gar nicht |
 
@@ -489,9 +483,11 @@ der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest schlicht am fal
 skalieren würde. *Nachweis im Betrieb:* lokal mit `src/load-generator/flash-sale.js` verifiziert,
 dass sich ein Kafka-Backlog bildet (siehe dessen README); live auf dem Cluster noch nicht geprüft
 (kein Zugriff, siehe `## Grenzen`) — Nachweis wäre `kubectl get scaledobject,hpa -n ticketflow`
-während eines Lasttests, Replica-Zahl wächst sichtbar mit.
+während eines Lasttests, Replica-Zahl wächst sichtbar mit. Ohne Grafana-Dashboard (siehe
+`## Grenzen`) zeigt die Screencast-Pflichtszene die Wirkung stattdessen live über `kubectl get
+pods -w`/`scaledobject` und den wachsenden/fallenden Consumer-Lag in AKHQ.
 
-**B1 – Drittes Wahlthema: W7 Cluster-Härtung.** *Umgesetzt (NetworkPolicy-Hälfte):* Jeder
+**B3 – Weiteres Wahlthema: W7 Cluster-Härtung.** *Umgesetzt (NetworkPolicy-Hälfte):* Jeder
 Namespace — die eigenen wie `kube-system`, `argocd` und die workloadfreien Standard-Namespaces —
 startet mit **default-deny für Ingress und Egress**; danach ist jede einzelne Verbindung explizit
 erlaubt, Komponente für Komponente (`charts/network-policies`, ~80 Policies, eine

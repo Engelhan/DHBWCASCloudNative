@@ -4,8 +4,9 @@ Hier liegt am Ende die Screencast-Datei (z.B. `demo.mp4`), maximal 7 Minuten, mi
 oder englisch. Pflichtszenen laut Aufgabenstellung:
 
 1. Pod löschen → Anwendung erholt sich → Daten sind noch da (P5-Nachweis).
-2. Last erzeugen (`src/load-generator/`) → Replicas wachsen → Wirkung im Grafana-Dashboard
-   sichtbar (P6/P7-Nachweis).
+2. Last erzeugen (`src/load-generator/`) → Replicas wachsen (Bonus B2 Autoscaling, KEDA) —
+   gezeigt über `kubectl get pods -w`/`scaledobject` und den Consumer-Lag in AKHQ, kein
+   Grafana-Dashboard (siehe Root-`README.md` ## Grenzen).
 
 Beide Szenen live im Terminal, keine vorproduzierten Standbilder oder Folien.
 
