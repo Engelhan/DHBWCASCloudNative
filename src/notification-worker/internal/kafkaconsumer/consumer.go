@@ -109,6 +109,13 @@ func (c *Consumer) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return nil
 			}
+			// Re-probe the broker instead of waiting for the next message:
+			// on an idle topic FetchMessage just blocks once Kafka is back, and
+			// readiness would otherwise stay false until traffic arrives.
+			if err := c.waitForBroker(ctx); err != nil {
+				return nil
+			}
+			c.ready.Store(true)
 			continue
 		}
 		c.ready.Store(true)
