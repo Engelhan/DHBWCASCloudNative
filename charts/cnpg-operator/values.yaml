@@ -6,10 +6,9 @@
 # verschachtelt sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart
 # durchreicht.
 cloudnative-pg:
-  # kube-prometheus-stack ist inzwischen deployt (siehe gitops/apps/kube-prometheus-stack.yaml)
-  # - PodMonitor-CRD existiert also.
+  # Aus: kube-prometheus-stack ist entfernt, die PodMonitor-CRD existiert nicht mehr.
   monitoring:
-    podMonitorEnabled: true
+    podMonitorEnabled: false
 
   # podSecurityContext/containerSecurityContext sind bereits Chart-Default gehaertet
   # (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL, seccompProfile

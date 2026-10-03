@@ -128,13 +128,10 @@ catalogApi:
   service:
     port: 8080
 
+  # Aus: kube-prometheus-stack ist entfernt, die ServiceMonitor-CRD existiert nicht mehr.
   serviceMonitor:
-    enabled: true
+    enabled: false
     interval: 30s
-    # Gleiche Annahme wie charts/notification-worker/values.yaml (nicht live verifiziert):
-    # kube-prometheus-stack hat keinen expliziten serviceMonitorSelector-Override im values.yaml
-    # dieses Repos -> Chart-Default "release: <helm-release-name>" (Release-Name = ArgoCD
-    # Application-Name "kube-prometheus-stack"). Falls falsch: nur dieses Label anpassen.
     labels:
       release: kube-prometheus-stack
 

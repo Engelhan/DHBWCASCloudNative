@@ -71,13 +71,12 @@ keda:
     enabled: false
     flavor: kubernetes
 
-  # kube-prometheus-stack ist inzwischen deployt - ServiceMonitor-CRD existiert also. KEDAs
-  # eigene Operator-Metriken (u.a. aktive Trigger/Scaler-Fehler) ergaenzen den
-  # Kafka-Consumer-Lag als zweites P7-Signal fuer die P6-Skalierungsdemo.
+  # Metrik-Endpunkt des Operators bleibt an; der ServiceMonitor ist aus, weil kube-prometheus-stack
+  # entfernt ist und die ServiceMonitor-CRD nicht mehr existiert.
   prometheus:
     operator:
       enabled: true
       serviceMonitor:
-        enabled: true
+        enabled: false
         additionalLabels:
           release: kube-prometheus-stack

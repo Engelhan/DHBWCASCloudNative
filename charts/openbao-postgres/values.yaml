@@ -83,7 +83,8 @@ resources:
     memory: 512Mi
     cpu: "1"
 
-monitoring: true
+# Rendert den PodMonitor - aus, seit kube-prometheus-stack entfernt ist (keine CRD mehr).
+monitoring: false
 
 podMonitor:
   labels:

@@ -152,10 +152,11 @@ database:
   sslMode: "require"
   credentialsSecretName: ""
 
+# Aus, wie in charts/notification-worker: kube-prometheus-stack ist entfernt, die PodMonitor-CRD
+# existiert nicht mehr. KEDA liest den Lag direkt aus Kafka, nicht aus Prometheus.
 podMonitor:
-  enabled: true
+  enabled: false
   interval: 30s
-  # Analog zu charts/notification-worker/values.yaml: Annahme, nicht live verifiziert.
   labels:
     release: kube-prometheus-stack
 

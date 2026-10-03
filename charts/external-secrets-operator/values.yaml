@@ -42,9 +42,9 @@ external-secrets:
     # charts/openbao (Kubernetes-Auth-Role "external-secrets") referenzieren.
     name: external-secrets
 
-  # P7 - selbes Muster wie kube-prometheus-stack ueberall sonst.
+  # Aus: kube-prometheus-stack ist entfernt, die ServiceMonitor-CRD existiert nicht mehr.
   serviceMonitor:
-    enabled: true
+    enabled: false
 
   # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
   networkPolicy:

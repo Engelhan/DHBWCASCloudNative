@@ -113,13 +113,12 @@ externalSecret:
 
 # PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (siehe
 # templates/podmonitor.yaml), daher auch keine eigene Service-Ressource in diesem Chart.
+# Aus: der Observability-Stack (kube-prometheus-stack) ist entfernt, die PodMonitor-CRD gibt es
+# im Cluster nicht mehr - ein gerenderter PodMonitor liesse den Sync scheitern. /metrics bleibt.
 podMonitor:
-  enabled: true
+  enabled: false
   interval: 30s
-  # Annahme, nicht live verifiziert: charts/kube-prometheus-stack/values.yaml hat keinen
-  # expliziten podMonitorSelector-Override, das deutet auf den Chart-Default
-  # "release: <helm-release-name>" hin (symmetrisch zum serviceMonitorSelector-Default). Falls
-  # falsch: nur dieses Label anpassen, keine Code-/Template-Aenderung noetig.
+  # Chart-Default-Selector von kube-prometheus-stack ("release: <helm-release-name>").
   labels:
     release: kube-prometheus-stack
 
