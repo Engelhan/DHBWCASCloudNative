@@ -1075,9 +1075,24 @@ commands here once these gaps close instead of leaving this section stale.
   `ExternalSecret` (`akhq-basic-auth`, `akhq-kafka-sasl`, `postgres-postgres-user`,
   `notification-worker-credentials`) reaching `SecretSynced`/`Ready: True` against a `Valid`
   `ClusterSecretStore`. **Still not live-verified:** real HA failover between already-unsealed
-  standbys (no leader kill tested yet), and the auto-unseal sidecar specifically firing against a
-  deliberately, cleanly restarted pod (as opposed to the crash-loop restarts from the bootstrap
-  debugging session itself).
+  standbys (no leader kill tested yet).
+
+  **Incident 2026-09-29 → 10-02 (Niklas' cluster), fixed:** the `openbao-postgres` replica
+  disappeared, its CNPG HA replication slot kept every WAL segment, and OpenBao's HA-lock writes
+  filled the 5Gi primary in ~2.5 days — CNPG refuses to start a primary on a full volume, so
+  OpenBao lost its storage. Fixes: `max_slot_wal_keep_size` (`1GB` openbao-postgres, `2GB`
+  postgres-cluster, via `extraParameters`) + openbao-postgres `8Gi`. Recovery lessons: CNPG does
+  **not** resize PVCs while stuck on its disk-space check (patch the PVC by hand); Longhorn's
+  online expansion hung on a stale host-PID in the node's instance-manager (restart that pod); and
+  after the node reboot, Ubuntu's `multipathd` had grabbed the Longhorn iSCSI device (`mount …
+  already mounted or mount point busy`) — `infra/ansible/roles/common` now blacklists `sd*` for
+  multipathd (needs a playbook re-run on existing nodes). A replica whose slot went `lost` cannot
+  catch up: delete its PVC so CNPG re-clones it. CNPG still reports "healthy" for such a replica —
+  check `pg_stat_replication` on the primary, not the cluster phase. **The auto-unseal sidecar
+  never worked before this:** its `grep -o '"sealed":[a-z]*'` missed the space in `bao status
+  -format=json` output, so pods were only ever unsealed by the bootstrap hook. Fixed and
+  live-verified (a deleted `openbao-1` unsealed itself within 10s). The StatefulSet uses
+  `updateStrategy: OnDelete` — sidecar/config changes need a manual pod delete to roll out.
 
   **Extended 2026-09-23 with `PushSecret` (ESO's other direction — K8s → vault, `external-
   secrets.io/v1alpha1`, a separate, still-`v1alpha1` CRD from `ExternalSecret`'s stable `v1`) so
