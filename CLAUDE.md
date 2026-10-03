@@ -245,7 +245,14 @@ if needed rather than reviving the Ansible role.
   control-plane lab cluster) and applies `gitops/applicationset.yaml` **only if that file
   already exists** (checked via `stat`, skips otherwise instead of failing); the `stat` guard
   stays as a safety net for older checkouts/tags without it. This is the only object Ansible
-  applies in the GitOps layer — ArgoCD creates the 19 Applications from it.
+  applies in the GitOps layer — ArgoCD creates the Applications from it. **Nothing syncs the
+  ApplicationSet itself afterwards:** a change to `gitops/applicationset.yaml` (e.g. adding or
+  removing an element) needs `kubectl apply -f gitops/applicationset.yaml` (or a re-run of
+  `playbooks/bootstrap-gitops.yml`) on every running cluster — found 2026-10-03, when the removed
+  observability elements kept their Applications alive. Removing an element cascades through
+  `resources-finalizer` and deletes the app's resources, but **not** its CRDs, StatefulSet PVCs or
+  the namespace; a chart still rendering a CR of a removed CRD fails to sync, so switch those off
+  first.
 - `gitops_secrets` (new role) creates two things GitOps structurally can't provide itself: the
   ArgoCD repository credential for this repo (**this repo is private** — every generated
   `Application` uses `repoURL: git@github.com:...` SSH, not `https://`, since every one of them
