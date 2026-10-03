@@ -12,7 +12,9 @@ ticketflow: {}
 # ApplicationSet-Elementliste (gitops/applicationset.yaml) fest verdrahtet und muessen mit ihr
 # uebereinstimmen.
 namespaces:
-  monitoring: monitoring
+  # monitoring: monitoring - Observability-Stack entfernt. Wieder setzen (plus
+  # templates/monitoring.yaml aus der git-Historie), dann rendern auch die Prometheus-Scrape-
+  # Regeln (np.ingress.prometheus) wieder.
   certManager: cert-manager
   externalDns: external-dns
   cnpg: cnpg-system

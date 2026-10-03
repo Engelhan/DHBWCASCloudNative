@@ -185,9 +185,11 @@ gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressber
 {{/*
 Ingress fuer Prometheus-Scrapes auf den angegebenen Ports.
 Aufruf: include "np.ingress.prometheus" (list $ 8080 9090)
+Rendert nichts, solange namespaces.monitoring nicht gesetzt ist (kein Prometheus im Cluster).
 */}}
 {{- define "np.ingress.prometheus" -}}
 {{- $root := first . -}}
+{{- if $root.Values.namespaces.monitoring }}
 - from:
     {{- include "np.peer.prometheus" $root | nindent 4 }}
   ports:
@@ -195,6 +197,7 @@ Aufruf: include "np.ingress.prometheus" (list $ 8080 9090)
     - port: {{ . }}
       protocol: TCP
     {{- end }}
+{{- end }}
 {{- end -}}
 
 {{/*
