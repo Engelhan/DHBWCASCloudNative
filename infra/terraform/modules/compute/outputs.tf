@@ -1,11 +1,10 @@
-# DHBWV6 ist trotz des Namens tatsaechlich dual-stack: die VMs bekommen per DHCP zusaetzlich
-# zur IPv6-Adresse eine private, aber tatsaechlich Internet-geroutete IPv4-Adresse
-# (10.200.0.0/19, siehe access_ip_v4) auf demselben Interface - urspruenglich angenommen, das
-# Netz sei IPv6-only (siehe Git-Historie), auf einem laufenden Cluster widerlegt (VMs erreichen
-# github.com per IPv4 problemlos). IPv6 bleibt die primaere Adresse (SSH, kubeconfig-Server-URL,
-# k3s --node-ip/--tls-san zuerst) - IPv4 wird zusaetzlich fuer k3s-Dual-Stack-Networking
-# durchgereicht, das braucht Pods/Services fuer Egress zu IPv4-only-Zielen wie github.com
-# (siehe CLAUDE.md ## Infra layering).
+# Despite its name, DHBWV6 is actually dual-stack: in addition to the IPv6 address, the VMs get a
+# private but genuinely internet-routed IPv4 address via DHCP (10.200.0.0/19, see access_ip_v4) on
+# the same interface - originally assumed to be IPv6-only (see git history), disproved on a running
+# cluster (the VMs reach github.com over IPv4 without issues). IPv6 stays the primary address (SSH,
+# kubeconfig server URL, k3s --node-ip/--tls-san first) - IPv4 is passed through additionally for
+# k3s dual-stack networking, which pods/services need for egress to IPv4-only targets such as
+# github.com (see CLAUDE.md ## Infra layering).
 
 output "control_plane" {
   value = {
@@ -15,8 +14,8 @@ output "control_plane" {
   }
 }
 
-# Ein Eintrag je Worker, inkl. seiner virtuell simulierten Region - Grundlage fuer das
-# Ansible-Inventory-Template und spaeter fuer Kubernetes-Node-Labels.
+# One entry per worker, including its virtually simulated region - the basis for the Ansible
+# inventory template and, later, for the Kubernetes node labels.
 output "workers" {
   value = [
     for inst in openstack_compute_instance_v2.worker : {

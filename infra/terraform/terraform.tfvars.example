@@ -1,32 +1,32 @@
-# Kopieren nach terraform.tfvars (wird von git ignoriert) und mit echten Werten füllen.
-# Es gibt bewusst nur eine Umgebung/einen Cluster - kein dev/prod-Terraform-Split.
+# Copy to terraform.tfvars (ignored by git) and fill in real values.
+# There is deliberately only one environment/one cluster - no dev/prod Terraform split.
 
-# OpenStack-Zugangsdaten (DHBWCloud) - Application Credential statt Username/Passwort
+# OpenStack credentials (DHBWCloud) - application credential instead of username/password
 os_auth_url                      = "https://newstack.dhbw.cloud:5000/v3"
 os_region                        = "CHANGE_ME"
 os_application_credential_id     = "CHANGE_ME"
-os_application_credential_secret = "CHANGE_ME" # nur einmal beim Anlegen im Portal sichtbar
+os_application_credential_secret = "CHANGE_ME" # only shown once, when created in the portal
 
-# Netzwerk Test 
-network_name = "DHBWV6" # vorhandenes, extern routbares Projektnetz - kein eigenes Netz/Floating-IP/Security-Group nötig
+# Network
+network_name = "DHBWV6" # existing, externally routable project network - no own network/floating IP/security group needed
 
-# SSH-Keypair (öffentlicher Schlüssel wird importiert, privater bleibt lokal)
+# SSH keypair (the public key is imported, the private key stays local)
 ssh_public_key_path  = "~/.ssh/ticketflow_dhbwcloud.pub"
 ssh_private_key_path = "~/.ssh/ticketflow_dhbwcloud"
 ssh_user             = "ubuntu"
 
-# Basis-Image
-image_name = "CHANGE_ME" # z.B. eine Ubuntu-LTS-Variante der DHBWCloud-Registry
+# Base image
+image_name = "CHANGE_ME" # e.g. an Ubuntu LTS variant from the DHBWCloud registry
 
-# Größe der VMs
+# VM sizes
 control_plane_flavor = "CHANGE_ME"
-worker_flavor        = "CHANGE_ME" # gleiches Flavor für alle Worker
+worker_flavor        = "CHANGE_ME" # same flavor for all workers
 
-# Ein Worker je Eintrag, mit virtuell simulierter Region als Label (DHBWCloud hat real nur
-# eine Region/AZ). Default sind 3 Worker/3 Regionen; Liste ggf. erweitern/kürzen.
+# One worker per entry, with a virtually simulated region as label (DHBWCloud really has only one
+# region/AZ). Default is 3 workers/3 regions; extend/shorten the list if needed.
 # worker_regions = ["region-a", "region-b", "region-c"]
 
-# Optionales Suffix fuer alle Ressourcennamen (z.B. "carlos" -> ticketflow-worker-1-carlos),
-# nuetzlich wenn mehrere Studierende auf demselben OpenStack-Projekt eigene, unterscheidbare
-# VMs anlegen. Default leer (kein Suffix).
+# Optional suffix for all resource names (e.g. "carlos" -> ticketflow-worker-1-carlos), useful when
+# several students create their own, distinguishable VMs in the same OpenStack project. Default
+# empty (no suffix).
 # name_suffix = "CHANGE_ME"

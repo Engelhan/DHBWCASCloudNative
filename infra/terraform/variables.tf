@@ -1,30 +1,30 @@
-# --- OpenStack-Zugang (DHBWCloud) ---
+# --- OpenStack access (DHBWCloud) ---
 
 variable "os_auth_url" {
-  description = "Keystone-Auth-URL der DHBWCloud, z.B. https://newstack.dhbw.cloud:5000/v3"
+  description = "Keystone auth URL of DHBWCloud, e.g. https://newstack.dhbw.cloud:5000/v3"
   type        = string
 }
 
 variable "os_region" {
-  description = "OpenStack-Region der DHBWCloud"
+  description = "OpenStack region of DHBWCloud"
   type        = string
 }
 
 variable "os_application_credential_id" {
-  description = "ID des OpenStack Application Credential (Portal: Identity > Application Credentials)"
+  description = "ID of the OpenStack application credential (portal: Identity > Application Credentials)"
   type        = string
 }
 
 variable "os_application_credential_secret" {
-  description = "Secret des OpenStack Application Credential (nur einmal beim Anlegen sichtbar)"
+  description = "Secret of the OpenStack application credential (only shown once, when created)"
   type        = string
   sensitive   = true
 }
 
-# --- Netzwerk ---
+# --- Network ---
 
 variable "network_name" {
-  description = "Name des vorhandenen, extern routbaren DHBWCloud-Projektnetzes, an das die VMs direkt gehängt werden (kein eigenes Netz/Subnetz/Router, keine Floating-IPs nötig). Die Default-Security-Group des Projekts gilt, Terraform verwaltet keine eigene."
+  description = "Name of the existing, externally routable DHBWCloud project network the VMs are attached to directly (no own network/subnet/router, no floating IPs needed). The project's default security group applies; Terraform does not manage its own."
   type        = string
   default     = "DHBWV6"
 }
@@ -32,59 +32,59 @@ variable "network_name" {
 # --- Compute ---
 
 variable "name_prefix" {
-  description = "Präfix für alle erzeugten Ressourcennamen. Leer lassen: der Wert kommt dann aus gitops/env/cluster.yaml (ticketflow.namePrefix), der zentralen Konfigurationsdatei dieses Deployments."
+  description = "Prefix for all created resource names. Leave empty: the value then comes from gitops/env/cluster.yaml (ticketflow.namePrefix), the central configuration file of this deployment."
   type        = string
   default     = null
 }
 
 variable "name_suffix" {
-  description = "Optionales Suffix (ohne führenden Bindestrich, z.B. \"carlos\") für alle Ressourcennamen - nützlich, wenn mehrere Studierende auf demselben OpenStack-Projekt eigene, unterscheidbare VMs anlegen"
+  description = "Optional suffix (without a leading hyphen, e.g. \"carlos\") for all resource names - useful when several students create their own, distinguishable VMs in the same OpenStack project"
   type        = string
   default     = ""
 }
 
 variable "image_name" {
-  description = "Name des Basis-Images in der DHBWCloud-Image-Registry (z.B. eine Ubuntu-LTS-Variante)"
+  description = "Name of the base image in the DHBWCloud image registry (e.g. an Ubuntu LTS variant)"
   type        = string
 }
 
 variable "control_plane_flavor" {
-  description = "Flavor-Name für die Control-Plane-VM"
+  description = "Flavor name for the control-plane VM"
   type        = string
 }
 
 variable "worker_flavor" {
-  description = "Flavor-Name für die allgemeinen Worker-VMs"
+  description = "Flavor name for the general-purpose worker VMs"
   type        = string
 }
 
 variable "worker_regions" {
-  description = "Ein Worker je Listeneintrag, jeweils mit einer virtuell simulierten Region als Metadata-Label. Die DHBWCloud stellt real nur eine Region/AZ bereit; die Verteilung über 'Regionen' wird für Platzierungs-/Verteilungsentscheidungen (P4) nachgebildet, nicht als echtes OpenStack-AZ-Argument."
+  description = "One worker per list entry, each with a virtually simulated region as metadata label. DHBWCloud really provides only one region/AZ; the distribution across 'regions' is emulated for placement/spreading decisions (P4), not passed as a real OpenStack AZ argument."
   type        = list(string)
   default     = ["region-a", "region-b", "region-c"]
 
   validation {
     condition     = length(var.worker_regions) >= 2
-    error_message = "worker_regions muss mindestens 2 Einträge haben, damit mehrere Worker existieren (Vorgabe P4/P6: mehrere Worker, Pod-Verteilung sichtbar)."
+    error_message = "worker_regions must have at least 2 entries so that several workers exist (requirement P4/P6: several workers, visible pod distribution)."
   }
 }
 
 # --- SSH ---
 
 variable "ssh_public_key_path" {
-  description = "Pfad zum öffentlichen SSH-Schlüssel, der in die VMs importiert wird"
+  description = "Path to the public SSH key that is imported into the VMs"
   type        = string
   default     = "~/.ssh/ticketflow_dhbwcloud.pub"
 }
 
 variable "ssh_private_key_path" {
-  description = "Pfad zum privaten SSH-Schlüssel (nur für das generierte Ansible-Inventory, wird von Terraform nicht gelesen)"
+  description = "Path to the private SSH key (only written into the generated Ansible inventory, never read by Terraform)"
   type        = string
   default     = "~/.ssh/ticketflow_dhbwcloud"
 }
 
 variable "ssh_user" {
-  description = "Login-User des Basis-Images (z.B. ubuntu, debian)"
+  description = "Login user of the base image (e.g. ubuntu, debian)"
   type        = string
   default     = "ubuntu"
 }

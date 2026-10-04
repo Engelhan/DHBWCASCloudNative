@@ -3,7 +3,7 @@ variable "name_prefix" {
 }
 
 variable "name_suffix" {
-  description = "Optionales Suffix (ohne fuehrenden Bindestrich, z.B. \"carlos\") fuer alle Ressourcennamen, damit mehrere Studierende auf demselben Projekt unterscheidbare VMs anlegen koennen"
+  description = "Optional suffix (without a leading hyphen, e.g. \"carlos\") for all resource names, so that several students can create distinguishable VMs in the same project"
   type        = string
   default     = ""
 }
@@ -13,7 +13,7 @@ variable "network_id" {
 }
 
 variable "keypair_public_key" {
-  description = "Inhalt des oeffentlichen SSH-Schluessels"
+  description = "Contents of the public SSH key"
   type        = string
 }
 
@@ -30,11 +30,11 @@ variable "worker_flavor" {
 }
 
 variable "worker_regions" {
-  description = "Eine virtuell simulierte Region je Worker (DHBWCloud bietet real nur eine Region/AZ - die Verteilung wird per Metadata-Label nachgebildet, damit Platzierung/Verteilung ueber 'Regionen' hinweg gezeigt werden kann). Ein Worker pro Listenelement."
+  description = "One virtually simulated region per worker (DHBWCloud really offers only one region/AZ - the distribution is emulated via a metadata label so that placement/spreading across 'regions' can be demonstrated). One worker per list element."
   type        = list(string)
 
   validation {
     condition     = length(var.worker_regions) >= 2
-    error_message = "worker_regions muss mindestens 2 Eintraege haben, damit mehrere Worker existieren (Vorgabe P4/P6)."
+    error_message = "worker_regions must have at least 2 entries so that several workers exist (requirement P4/P6)."
   }
 }

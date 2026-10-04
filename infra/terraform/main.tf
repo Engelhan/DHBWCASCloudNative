@@ -1,14 +1,14 @@
-# Zentrale Konfiguration - dieselbe Datei, aus der auch ArgoCD, alle Helm-Charts und Ansible ihre
-# deployment-spezifischen Werte beziehen (siehe gitops/env/cluster.yaml). Terraform braucht davon
-# nur den Namenspraefix; alles Weitere dort ist Kubernetes-/DNS-Ebene. Credentials stehen bewusst
-# NICHT darin, die bleiben in der gitignorierten terraform.tfvars.
+# Central configuration - the same file ArgoCD, all Helm charts and Ansible read their
+# deployment-specific values from (see gitops/env/cluster.yaml). Terraform only needs the name
+# prefix from it; everything else there is Kubernetes/DNS level. Credentials are deliberately NOT
+# in it, they stay in the gitignored terraform.tfvars.
 locals {
   ticketflow = yamldecode(file("${path.module}/../../gitops/env/cluster.yaml")).ticketflow
 }
 
-# Kein eigenes Netz/Subnetz/Router und keine selbst verwaltete Security Group: die DHBWCloud
-# stellt mit DHBWV6 bereits ein extern routbares Projektnetz samt Default-Security-Group
-# bereit. Es wird nur nachgeschaut, nicht angelegt.
+# No own network/subnet/router and no self-managed security group: DHBWCloud already provides
+# DHBWV6, an externally routable project network including a default security group. It is only
+# looked up, never created.
 data "openstack_networking_network_v2" "existing" {
   name = var.network_name
 }
@@ -16,7 +16,7 @@ data "openstack_networking_network_v2" "existing" {
 module "compute" {
   source = "./modules/compute"
 
-  # var.name_prefix ueberschreibt den zentralen Wert, falls gesetzt (Default: leer).
+  # var.name_prefix overrides the central value if set (default: unset).
   name_prefix          = coalesce(var.name_prefix, local.ticketflow.namePrefix)
   name_suffix          = var.name_suffix
   network_id           = data.openstack_networking_network_v2.existing.id
@@ -27,8 +27,8 @@ module "compute" {
   worker_regions       = var.worker_regions
 }
 
-# Generiert das Ansible-Inventory direkt aus dem Terraform-Ergebnis, damit "ein Ablauf alles
-# hochbringt" (P2) - kein manuelles Abtippen von IPs zwischen Terraform und Ansible.
+# Generates the Ansible inventory directly from the Terraform result so that "one run brings
+# everything up" (P2) - no manual copying of IPs between Terraform and Ansible.
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../ansible/inventory/hosts.ini"
 

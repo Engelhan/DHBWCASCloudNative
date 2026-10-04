@@ -1,25 +1,24 @@
-# VMs fuer den k3s-Cluster: 1 Control-Plane + ein Worker je Eintrag in var.worker_regions.
+# VMs for the k3s cluster: 1 control plane + one worker per entry in var.worker_regions.
 #
-# Alle VMs haengen direkt am vorhandenen, extern routbaren Netz DHBWV6 (siehe root main.tf) -
-# keine eigenen Floating-IPs, keine selbst verwaltete Security Group (Projekt-Default gilt).
-# DHBWV6 ist trotz des Namens dual-stack: die Instanzen bekommen per DHCP sowohl eine
-# IPv6- als auch eine private, aber Internet-geroutete IPv4-Adresse (siehe outputs.tf). IPv6
-# bleibt primaer (--node-ip, --tls-san, kubeconfig-Server-URL in Klammer-Syntax), IPv4 wird
-# zusaetzlich fuer k3s-Dual-Stack-Networking durchgereicht.
+# All VMs are attached directly to the existing, externally routable DHBWV6 network (see root
+# main.tf) - no own floating IPs, no self-managed security group (the project default applies).
+# Despite its name, DHBWV6 is dual-stack: the instances get both an IPv6 and a private but
+# internet-routed IPv4 address via DHCP (see outputs.tf). IPv6 stays primary (--node-ip,
+# --tls-san, kubeconfig server URL in bracket syntax), IPv4 is passed through additionally for k3s
+# dual-stack networking.
 #
-# Platzierung (P4): die DHBWCloud stellt real nur eine Region/AZ bereit. Um trotzdem eine
-# region-bewusste Verteilung von CNPG-Replicas und Kafka-Brokern ueber die Worker zeigen zu
-# koennen, wird jedem Worker per Metadata ein virtuell simulierter Regionsname zugewiesen
-# (kein echtes OpenStack availability_zone-Argument, da diese Regionen physisch nicht
-# existieren). Kubernetes-seitig wird daraus spaeter ein Node-Label
-# topology.ticketflow/region=<region>, gegen das Topology-Spread-Constraints/Anti-Affinity
-# fuer CNPG und Kafka planen - siehe infra/ansible/roles/node_labels.
+# Placement (P4): DHBWCloud really provides only one region/AZ. To still demonstrate a
+# region-aware distribution of CNPG replicas and Kafka brokers across the workers, each worker is
+# assigned a virtually simulated region name via metadata (no real OpenStack availability_zone
+# argument, since these regions do not physically exist). On the Kubernetes side this later
+# becomes the node label topology.ticketflow/region=<region>, which topology spread constraints /
+# anti-affinity schedule against - see infra/ansible/roles/node_labels.
 
 locals {
-  # Optionales Namens-Suffix (z.B. eigener Vorname), damit mehrere Studierende parallel auf
-  # demselben OpenStack-Projekt eigene, klar unterscheidbare VMs anlegen koennen, ohne den
-  # bestehenden name_prefix (Praefix, siehe var.name_prefix) zu veraendern. Default leer -> kein
-  # Verhaltensunterschied fuer alle, die die Variable nicht setzen.
+  # Optional name suffix (e.g. your first name) so that several students can create their own,
+  # clearly distinguishable VMs in parallel in the same OpenStack project without changing the
+  # existing name_prefix (see var.name_prefix). Default empty -> no behavioral difference for
+  # anyone who does not set the variable.
   name_suffix = var.name_suffix != "" ? "-${var.name_suffix}" : ""
 }
 

@@ -1,5 +1,5 @@
-; Automatisch von Terraform generiert (resource "local_file" "ansible_inventory" in main.tf).
-; Nicht manuell bearbeiten - Aenderungen gehen beim naechsten "terraform apply" verloren.
+; Generated automatically by Terraform (resource "local_file" "ansible_inventory" in main.tf).
+; Do not edit by hand - changes are lost on the next "terraform apply".
 
 [control_plane]
 ${control_plane_name} ansible_host=${control_plane_ip} node_ip_v4=${control_plane_ip_v4}
