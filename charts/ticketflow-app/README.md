@@ -67,7 +67,8 @@ wird das von CNPG selbst erzeugte Secret direkt referenziert statt dupliziert:
 `database.credentialsSecretName` ist leer und wird zu
 `<ticketflow.postgres.databaseName>-postgres-cluster-app` aufgelöst (bewusst nicht über OpenBao —
 die Kopie dort ist nur Audit, siehe `charts/postgres-cluster`), `database.host` zu
-`<...>-postgres-cluster-rw`.
+`<...>-postgres-cluster-ro`, dem Read-Only-Service auf die Replica. `catalog-api` schreibt nie;
+Schema und Stammdaten kommen vom `reservation-worker`.
 
 ## values-dev.yaml vs. values-prod.yaml
 

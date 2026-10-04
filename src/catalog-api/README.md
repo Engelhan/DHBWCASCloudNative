@@ -71,13 +71,18 @@ jedem Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; catalog-ap
 lokal dagegen (embedded, siehe `internal/schemareg`) vor jedem Publish - kein Registry-Roundtrip
 pro Nachricht. Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
 
-## Datenmodell (Postgres, siehe `internal/db/migrate.go`)
+## Datenmodell (Postgres, Schema im `reservation-worker`)
 
 `events`, `seats` (`row_number`, `seat_number`, `category` — `premium`/`parkett`/`balkon`,
-`price_cents`, Status `free`/`occupied`) werden zur Laufzeit von catalog-api **nur gelesen** —
-angelegt und mit Stammdaten befüllt werden sie einmalig beim Start durch
-[`internal/db/migrate.go`](internal/db/migrate.go) (idempotent): drei Veranstaltungen in drei
-Hallen mit je 1000 Plätzen (40 Reihen à 25), alle auf `free`. `reservations`
+`price_cents`, Status `free`/`occupied`) werden von catalog-api **nur gelesen**, und zwar über
+den Read-Only-Service von CNPG (`<db>-postgres-cluster-ro`, also die Replica) statt über den
+Primary. Schema und Demo-Stammdaten legt allein der `reservation-worker` über seine versionierten
+Migrationen an ([`0001_init.sql`](../reservation-worker/internal/migrate/sql/0001_init.sql),
+[`0002_seed_demo_events.sql`](../reservation-worker/internal/migrate/sql/0002_seed_demo_events.sql)):
+drei Veranstaltungen in drei Hallen mit je 1000 Plätzen (40 Reihen à 25), alle auf `free`. Bis der
+Worker einmal gelaufen ist, gibt es die Tabellen noch nicht, und `GET /events` antwortet mit einem
+Fehler. Weil die Replica asynchron repliziert, kann eine gerade gebuchte Reservierung einen
+Moment lang noch als `free` bzw. `pending` erscheinen. `reservations`
 wird ausschließlich vom `reservation-worker` geschrieben (Status `pending`/`confirmed`/`rejected`);
 catalog-api liest dort nur für `GET /reservations/{id}` – existiert (noch) keine Zeile, gilt die
 Anfrage als `pending`.
@@ -86,7 +91,7 @@ Anfrage als `pending`.
 
 | Variable | Quelle | Bedeutung |
 |---|---|---|
-| `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres (z.B. `<cluster>-rw.<namespace>.svc`) |
+| `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres, im Cluster der Read-Only-Service `<cluster>-ro` |
 | `DB_PORT` | ConfigMap | Postgres-Port, Default `5432` |
 | `DB_NAME` | ConfigMap | Datenbankname |
 | `DB_SSLMODE` | ConfigMap | im Cluster `require` |

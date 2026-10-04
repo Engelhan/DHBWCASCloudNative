@@ -74,9 +74,9 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "ticketflow-app.schemaRegistryUrl" -}}
 {{- .Values.catalogApi.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}
-{{/* Postgres in the same namespace; host derived from ticketflow.postgres.databaseName. */}}
+{{/* Postgres in the same namespace; read-only service (replicas), catalog-api never writes. */}}
 {{- define "ticketflow-app.databaseHost" -}}
-{{- .Values.catalogApi.database.host | default (printf "%s-postgres-cluster-rw" (required "ticketflow.postgres.databaseName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- .Values.catalogApi.database.host | default (printf "%s-postgres-cluster-ro" (required "ticketflow.postgres.databaseName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
 {{- end -}}
 
 {{- define "ticketflow-app.databaseName" -}}

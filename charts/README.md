@@ -145,7 +145,7 @@ Duplikat im Chart. **Das Passwort steht nirgends im Repo:** die CNPG-`Cluster`-C
 spiegelt es nur als Audit-Kopie nach OpenBao (B1).
 
 Host, Datenbankname und Secret-Name leiten sich aus `ticketflow.postgres.databaseName` ab
-(`<name>-postgres-cluster-rw` bzw. `<name>-postgres-cluster-app`), `database.{host,name,credentialsSecretName}`
+(`<name>-postgres-cluster-rw` für den `reservation-worker`, `-ro` für `catalog-api`, bzw. `<name>-postgres-cluster-app`), `database.{host,name,credentialsSecretName}`
 bleiben als Override leer.
 
 ## Addon-Charts

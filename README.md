@@ -193,17 +193,19 @@ klein/schnell startend bleibt. *Alternative:* Python + FastAPI (schnelleres Prot
 größeres Image und eine zweite Toolchain neben Go).
 
 **P1 – Ergänzung: gemeinsame Datenbank für `catalog-api` und `reservation-worker`.** *Wahl:*
-Beide Services nutzen dieselbe CNPG-Datenbank (`ticketflow`, Service
-`<db>-postgres-cluster-rw`) mit demselben, von CNPG generierten App-User. Die Rollen sind fachlich
-getrennt: `catalog-api` liest nur (`events`, `seats`, `reservations` für die Status-Abfrage),
-`reservation-worker` schreibt als Einziger (`seats.status`, `reservations`). `notification-worker`
+Beide Services nutzen dieselbe CNPG-Datenbank (`ticketflow`) mit demselben, von CNPG generierten
+App-User. Die Rollen sind fachlich getrennt: `catalog-api` liest nur (`events`, `seats`,
+`reservations` für die Status-Abfrage), und zwar über den Read-Only-Service
+`<db>-postgres-cluster-ro`, also von der Replica. `reservation-worker` schreibt als Einziger
+(`seats.status`, `reservations`) über `<db>-postgres-cluster-rw` auf den Primary und legt als
+Einziger Schema und Stammdaten an (versionierte Migrationen). `notification-worker`
 hat keinen Datenbankzugriff. *Alternative:* „Database per Service“, also eine eigene Datenbank je
 Service: Die API hält eine Lese-Kopie der Sitzplatz-Verfügbarkeit, die sie aus den
 `reservation-result`-Events aufbaut (CQRS/Read-Model). *Begründung:* Das knappe Gut im Flash-Sale
 ist der einzelne Sitzplatz, und dessen Zustand darf es nur einmal geben. Der Worker sperrt ihn
-atomar per `UPDATE seats … WHERE status = 'free'`; die API zeigt denselben Datensatz an. Mit
-getrennten Datenbanken wäre die Sitzplatzanzeige nur *eventually consistent*: Gerade in der
-Lastspitze, wenn der Consumer-Lag hoch ist (genau dann skaliert KEDA), sähen Käufer längst
+atomar per `UPDATE seats … WHERE status = 'free'`, und die API zeigt denselben Datensatz an,
+nur um die Streaming-Replikation versetzt (typisch Millisekunden). Mit getrennten Datenbanken hinge
+die Sitzplatzanzeige dagegen am Consumer-Lag einer Projektion: Gerade in der Lastspitze, wenn der Consumer-Lag hoch ist (genau dann skaliert KEDA), sähen Käufer längst
 vergebene Plätze als frei und würden massenhaft in `409`/`Rejected` laufen. Außerdem bräuchte es
 einen zweiten CNPG-Cluster samt Replikation und Backup sowie einen Projektionsdienst. Das ist für
 drei Tabellen unverhältnismäßig.
@@ -213,20 +215,29 @@ drei Tabellen unverhältnismäßig.
   und Buchung;
 - die API kann den Endstatus einer Reservierung direkt aus `reservations` lesen;
 - nur ein zustandsbehafteter Datenbankdienst muss betrieben, repliziert (Primary + Replica in zwei
-  Regionen, P4/P5) und gesichert werden.
+  Regionen, P4/P5) und gesichert werden;
+- die Replica, die für P5 ohnehin läuft, trägt die Leselast: Die Abfragen der Seat-Map aus dem
+  Frontend konkurrieren in der Lastspitze nicht mit den Buchungen des Workers um den Primary.
 
 *Nachteile:*
-- **Schema-Kopplung:** Beide Services legen das Schema an (`src/catalog-api/internal/db/migrate.go`
-  und `src/reservation-worker/internal/migrate/sql/0001_init.sql`, jeweils
-  `CREATE TABLE IF NOT EXISTS`). Eine Schemaänderung muss deshalb in beiden Services abgestimmt und
-  rückwärtskompatibel ausgerollt werden. Unabhängige Deployments gelten damit nur, solange das
-  Schema stabil bleibt.
-- **Gemeinsamer Engpass und Fehlerbereich:** Alle Lese- und Schreibzugriffe laufen auf denselben
-  Primary. Ein Ausfall oder Failover trifft beide Services gleichzeitig, und die eigentliche
-  Skalierungsgrenze des Workers ist dieser Primary, nicht die Pod-Zahl (siehe B2,
-  `maxReplicaCount`).
-- **Kein Least-Privilege auf DB-Ebene:** Dass `catalog-api` nur liest, ist eine Code-Konvention.
-  Ein Rechte-Konzept setzt das nicht durch, denn beide nutzen denselben DB-User.
+- **Schema-Kopplung:** Das Schema gehört allein dem `reservation-worker`
+  (`src/reservation-worker/internal/migrate/sql/`), aber die SQL-Abfragen von `catalog-api` hängen
+  an denselben Tabellen und Spalten. Eine Schemaänderung muss deshalb rückwärtskompatibel
+  ausgerollt werden (erst erweitern, dann beide Services umstellen, dann aufräumen). Unabhängige
+  Deployments gelten damit nur, solange das Schema stabil bleibt. Außerdem gibt es auf einem
+  frischen Cluster die Tabellen erst, wenn der Worker einmal gelaufen ist.
+- **Gemeinsamer Fehlerbereich:** Beide hängen am selben CNPG-Cluster. Schreibend bleibt der eine
+  Primary die Skalierungsgrenze des Workers, nicht die Pod-Zahl (siehe B2, `maxReplicaCount`).
+  Lesend hängt `catalog-api` an der Replica. Bei `instances: 2` gibt es nur eine; fällt sie aus
+  oder wird sie beim Failover zum Primary befördert, hat `-ro` keine Endpoints, bis CNPG eine
+  neue Replica erzeugt hat. Weil `/readyz` die Datenbank prüft, ist `catalog-api` in dieser Zeit
+  nicht bereit. Abhilfe wäre eine dritte Instanz (eine Replica je weiterer Region).
+- **Replikationsverzug:** Die Replica läuft asynchron hinterher. Ein gerade gebuchter Platz kann
+  für Millisekunden noch als frei erscheinen. Der Worker entscheidet aber auf dem Primary, so dass
+  höchstens ein zusätzliches `Rejected` entsteht, nie eine Doppelbuchung.
+- **Kein Least-Privilege über DB-Rechte:** Beide nutzen denselben DB-User. Dass `catalog-api` nicht
+  schreibt, erzwingt nur die Replica, weil sie Schreibzugriffe technisch ablehnt, und kein
+  Rechte-Konzept.
 
 *Bezug zur Microservice-Architektur:* Das Muster „Database per Service“ fordert, dass jeder
 Service seine Daten exklusiv besitzt und andere nur über seine API oder Events darauf zugreifen.
@@ -235,11 +246,12 @@ Muster zwischen zwei Services desselben Bounded Context „Reservierung“. Die 
 im Lastpfad ankommt, bleibt erhalten, denn die API schreibt nie synchron und die Annahme läuft
 über Kafka. Damit lassen sich API und Worker unabhängig skalieren und ausfallen: Ist der Worker
 weg, nimmt die API weiter an und Kafka puffert. Gekoppelt sind die beiden Services nur über das
-gemeinsame Schema. `notification-worker` hält sich dagegen vollständig an das Microservice-Prinzip
-und kennt nur Events. Falls Lesezugriffe den Primary später überlasten, wäre der erste Schritt,
-`catalog-api` auf den Read-Only-Service `<db>-postgres-cluster-ro` (CNPG-Replica) und einen
-eigenen Nur-Lese-DB-User umzustellen. Erst danach käme eine eigene Datenbank mit
-eventbasiertem Read-Model.
+gemeinsame Schema, und das Schema hat genau einen Besitzer (den Worker als einzigen Schreiber).
+Lesepfad (Replica) und Schreibpfad (Primary) sind bereits physisch getrennt, eine abgeschwächte
+Form von CQRS innerhalb einer Datenbank. `notification-worker` hält sich dagegen vollständig an das
+Microservice-Prinzip und kennt nur Events. Die nächsten Schritte wären ein eigener
+Nur-Lese-DB-User für `catalog-api` und erst danach eine eigene Datenbank mit eventbasiertem
+Read-Model.
 
 **P2 – Infrastruktur als Code.** *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap — ein `terraform apply` gefolgt von einem
@@ -389,8 +401,10 @@ abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). 
 ## Grenzen
 
 - `catalog-api` und `reservation-worker` teilen sich eine Datenbank und einen DB-User. Schema-
-  Änderungen müssen daher in beiden Services abgestimmt werden, und der eine Postgres-Primary
-  begrenzt den Durchsatz beider Services (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
+  Änderungen müssen rückwärtskompatibel erfolgen, der eine Postgres-Primary begrenzt den
+  Buchungsdurchsatz, und `catalog-api` liest von der einzigen Replica: Fällt diese aus oder wird
+  sie beim Failover befördert, ist die API nicht bereit, bis CNPG eine neue Replica erzeugt hat
+  (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit; CNPG- und Kafka-Replikation
   sind daher klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
 - Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` kann
@@ -456,7 +470,7 @@ bleiben kann, obwohl die Warteschlange wächst und Kunden auf ihre Bestätigung 
 |---|---|---|---|
 | Partitionen `reservation-requested` | 20 | 20 | Obergrenze paralleler Consumer je Consumer-Group. Nicht je Profil verschieden: Kafka kann Partitionen nie reduzieren |
 | `keda.minReplicaCount` / `maxReplicaCount` | 2 / 10 | 2 / 10 | min. 2: auch ohne Last zwei Pods in zwei Regionen (P4). Max. 10 statt 20: jeder Pod bekommt genau 2 Partitionen; die eigentliche Grenze dahinter ist der eine Postgres-Primary, auf den alle Pods schreiben. 20 Partitionen lassen Reserve, ohne das Topic neu anzulegen |
-| `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`src/catalog-api/internal/db/migrate.go`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
+| `keda.lagThreshold` | 10 | 10 | Ziel-Rückstand je Pod, gewünschte Replicas = ⌈Gesamt-Lag / 10⌉. Bewusst niedrig gegenüber den 1000 Plätzen je Halle (`src/reservation-worker/internal/migrate/sql/0002_seed_demo_events.sql`): skaliert, sobald der Zufluss die Verarbeitung eines Pods übersteigt |
 | `keda.pollingInterval` | 15s | 15s | wirkt bei `minReplicaCount` ≥ 1 nicht: dann fragt das HPA den Lag selbst alle 15s über KEDAs Metrics-API ab und verdoppelt je 15s (bzw. +4 Pods), 2 → 10 in ~30s. Gesetzt bleibt er nur für den Fall einer Skalierung auf 0 |
 | `scaleDownStabilizationSeconds` | 60s | 60s | Rückskalieren nach 60s statt nach dem HPA-Default von 300s — `cooldownPeriod` wirkt nur beim Skalieren auf 0, bei `minReplicaCount` ≥ 1 also gar nicht |
 

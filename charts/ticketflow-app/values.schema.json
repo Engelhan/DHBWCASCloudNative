@@ -199,7 +199,7 @@
           "properties": {
             "host": {
               "type": "string",
-              "description": "Empty = <ticketflow.postgres.databaseName>-postgres-cluster-rw (same namespace)."
+              "description": "Empty = <ticketflow.postgres.databaseName>-postgres-cluster-ro (read replicas, same namespace)."
             },
             "port": {
               "type": "string",
