@@ -1,8 +1,3 @@
-# HA-Profil. Einziger Unterschied zu dev: mindestens zwei Pods auch ohne Last, damit der Ausfall
-# eines Pods/Nodes die Reservierungsverarbeitung nicht bis zum naechsten KEDA-Poll anhaelt.
-# maxReplicaCount (10) und das PodDisruptionBudget (maxUnavailable: 1) kommen aus values.yaml.
-replicaCount: 2
-
-config:
-  keda:
-    minReplicaCount: 2
+# HA-Profil. Mindestens zwei Pods auch ohne Last gelten inzwischen schon in values.yaml (dev und
+# prod gleich), maxReplicaCount (10) und das PodDisruptionBudget (maxUnavailable: 1) ebenso -
+# diese Datei bleibt fuer kuenftige prod-Abweichungen bestehen.

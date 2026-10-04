@@ -6,7 +6,10 @@ ticketflow: {}
 # (ReservationRequested/ReservationResult), Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
 # reservation-worker), siehe CLAUDE.md ## Team. Volleigener Chart statt Upstream-Wrapper - siehe
 # Chart.yaml fuer die Begruendung (community Upstream-Chart nicht mehr pullbar).
-replicaCount: 1
+# Zwei Replicas in zwei Regionen (P4). Mit kafkasql-Storage problemlos: jede Instanz liest das
+# Journal-Topic mit einer eigenen, zufaellig benannten Consumer-Group vollstaendig in ihre eigene
+# In-Memory-H2 - die Instanzen teilen keinen Zustand ausser Kafka.
+replicaCount: 2
 
 image:
   repository: quay.io/apicurio/apicurio-registry
@@ -67,16 +70,13 @@ securityContext:
 nameOverride: ""
 fullnameOverride: ""
 
-# Weiche Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
-# charts/ticketflow-app catalogApi.topologySpreadConstraint. Bei replicaCount: 1 wirkungslos,
-# schadet aber nicht (ScheduleAnyway) und ist korrekt vorbereitet, falls replicaCount je erhoeht wird.
+# Harte Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
+# charts/ticketflow-app catalogApi.topologySpreadConstraint.
 topologySpreadConstraint:
   enabled: true
   maxSkew: 1
 
-# Default aus: bei replicaCount: 1 wuerde ein Budget jeden Node-Drain blockieren. Eingeschaltet
-# sinnvoll, sobald mehr als ein Replica laeuft - dann auch in values-prod.yaml von
-# charts/ticketflow-app/... analog mitziehen.
+# Bei zwei Replicas haelt minAvailable: 1 immer eine Instanz erreichbar und laesst einen Drain zu.
 podDisruptionBudget:
-  enabled: false
+  enabled: true
   minAvailable: 1

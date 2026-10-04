@@ -139,10 +139,10 @@ catalogApi:
     enabled: true
     minAvailable: 1
 
-  # Weiche Verteilung ueber die drei simulierten Regionen (P4) - catalog-api ist stateless und
-  # horizontal skaliert, damit ein Ausfall einer Region waehrend eines Flash Sales nicht alle
-  # Replicas gleichzeitig verliert. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, weil
-  # values-dev.yaml mit replicaCount: 1 sonst auf einem Ein-Node-Dev-Setup haengen bleiben wuerde.
+  # Harte Verteilung ueber die drei simulierten Regionen (P4, whenUnsatisfiable: DoNotSchedule im
+  # Template) - catalog-api ist stateless und horizontal skaliert, ein Ausfall einer Region
+  # waehrend eines Flash Sales darf nie alle Replicas gleichzeitig treffen. Setzt mindestens zwei
+  # Nodes mit Regions-Label voraus, deshalb auch im dev-Profil >= 2 Replicas auf 3 Workern.
   topologySpreadConstraint:
     enabled: true
     maxSkew: 1

@@ -1,7 +1,8 @@
-# Kleine Werte fuer Funktionstests auf den Lab-VMs. Ein Replica reicht, um den Consumer-Pfad
-# durchzuspielen; das PodDisruptionBudget wird dabei auf minAvailable: 1 gesenkt, weil ein Budget
-# von 2 bei einem einzigen Replica jeden Node-Drain blockieren wuerde.
-replicaCount: 1
+# Kleine Werte fuer Funktionstests auf den Lab-VMs. Zwei Replicas in zwei Regionen (harte
+# Verteilung, P4) - eins weniger als prod, ein Worker-Ausfall laesst trotzdem einen Consumer
+# uebrig. Das PodDisruptionBudget wird auf minAvailable: 1 gesenkt, weil ein Budget von 2 bei
+# zwei Replicas jeden Node-Drain blockieren wuerde.
+replicaCount: 2
 
 podDisruptionBudget:
   minAvailable: 1

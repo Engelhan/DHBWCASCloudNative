@@ -18,10 +18,11 @@ image:
   pullPolicy: IfNotPresent
 
 # Startwert, bis das ScaledObject unten (keda.minReplicaCount/.maxReplicaCount) den ersten Scale-
-# Reconcile durchfuehrt und die Kontrolle uebernimmt. gitops/apps/reservation-worker.yaml
+# Reconcile durchfuehrt und die Kontrolle uebernimmt. Das ApplicationSet-Element reservation-worker
 # ignoriert spec.replicas fuer dieses Deployment explizit (ArgoCD ignoreDifferences) - sonst
-# wuerde selfHeal jede KEDA-Skalierung sofort wieder auf diesen Wert zuruecksetzen.
-replicaCount: 1
+# wuerde selfHeal jede KEDA-Skalierung sofort wieder auf diesen Wert zuruecksetzen. Gleich
+# config.keda.minReplicaCount, damit schon vor dem ersten Reconcile zwei Pods in zwei Regionen laufen.
+replicaCount: 2
 
 # P4 - Herleitung der Zahlen (statisch gelinktes Go-Binary, kein JVM/Runtime-Overhead):
 #   memory 48Mi request: Go-Runtime + Prometheus-Registry ~10-15Mi, kafka-go-Reader-Fetch-Puffer
@@ -108,13 +109,15 @@ config:
   # 15s-Takt ueber KEDAs Metrics-API; pollingInterval wirkt dann gar nicht (nur bei Skalierung
   # auf/von 0 bzw. useCachedMetrics - KEDAs Admission-Webhook warnt entsprechend). Der Wert bleibt
   # nur gesetzt, damit ein spaeteres minReplicaCount: 0 nicht auf 30s zurueckfaellt. Das
-  # Hochskalieren begrenzt das HPA auf Verdopplung bzw. +4 Pods je 15s - 1 -> 10 in ~30s.
+  # Hochskalieren begrenzt das HPA auf Verdopplung bzw. +4 Pods je 15s - 2 -> 10 in ~30s.
   # scaleDownStabilizationSeconds 60 (HPA-Default 300): das HPA nimmt fuer das Rueckskalieren
   # den hoechsten Wunschwert der letzten 60s - kein Flattern zwischen zwei Polls, aber ein
   # Screencast zeigt das Zurueckgehen nach einer Minute statt nach fuenf.
-  # cooldownPeriod wirkt nur beim Skalieren auf 0, bei minReplicaCount: 1 also nicht.
+  # cooldownPeriod wirkt nur beim Skalieren auf 0, bei minReplicaCount: 2 also nicht.
+  # minReplicaCount: 2 - auch ohne Last immer zwei Pods in zwei Regionen (P4/P5), ein Node-Ausfall
+  # haelt die Reservierungsverarbeitung damit nie bis zum naechsten Scale-Up an.
   keda:
-    minReplicaCount: 1
+    minReplicaCount: 2
     maxReplicaCount: 10
     lagThreshold: "10"
     pollingInterval: 15
@@ -160,21 +163,19 @@ podMonitor:
   labels:
     release: kube-prometheus-stack
 
-# maxUnavailable: 1 statt minAvailable: 1 - KEDAs minReplicaCount ist 1, und bei genau einem Pod
-# wuerde minAvailable: 1 jede freiwillige Eviction verbieten: `kubectl drain` (z.B. k3s-Upgrade
-# eines Workers) bliebe dauerhaft haengen. maxUnavailable: 1 laesst die Eviction zu - das ist
-# fuer diesen Dienst unkritisch (P5): Anfragen warten im Kafka-Topic, der Offset wird erst nach
-# dem DB-Commit bestaetigt, ein Ersatz-Pod arbeitet den Rueckstand ab, ohne dass eine
-# Reservierung verloren geht. Skaliert KEDA hoch, begrenzt das Budget einen Drain weiterhin auf
-# einen Pod gleichzeitig.
+# maxUnavailable: 1 statt minAvailable - bei schwankender Replica-Zahl (KEDA, 2..10) bleibt
+# das Budget damit immer "hoechstens ein Pod gleichzeitig weg", ohne dass ein fester
+# minAvailable-Wert bei 2 Pods jeden Drain blockiert oder bei 10 zu viel zulaesst. Unkritisch
+# (P5): Anfragen warten im Kafka-Topic, der Offset wird erst nach dem DB-Commit bestaetigt, ein
+# Ersatz-Pod arbeitet den Rueckstand ab, ohne dass eine Reservierung verloren geht.
 podDisruptionBudget:
   enabled: true
   maxUnavailable: 1
 
-# Weiche Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
-# charts/ticketflow-app catalogApi.topologySpreadConstraint. Bei replicaCount: 1 (bzw. KEDAs
-# minReplicaCount: 1) wirkungslos, aber sobald KEDA hochskaliert (config.keda.maxReplicaCount),
-# verteilt sich reservation-worker ueber die Regionen statt sich auf einem Node zu haeufen.
+# Harte Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
+# charts/ticketflow-app catalogApi.topologySpreadConstraint. Die zwei Mindest-Pods liegen damit
+# immer in zwei Regionen; skaliert KEDA hoch, verteilt maxSkew 1 auch die weiteren Pods
+# gleichmaessig (bei 10 Pods 4/3/3) statt sie auf einem Node zu haeufen.
 topologySpreadConstraint:
   enabled: true
   maxSkew: 1

@@ -14,15 +14,18 @@ spec:
       labels:
         {{- include "notification-worker.labels" . | nindent 8 }}
     spec:
-      # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
-      # bei topologySpreadConstraint. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, damit
-      # ein Ein-Node-Dev-Setup nicht haengen bleibt - gleiches Muster wie in den anderen
-      # Applikations-Charts.
+      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
+      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
+      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
+      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
+      # Regionen, in die die neuen sollen.
       {{- if .Values.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
           topologyKey: topology.ticketflow/region
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
+          matchLabelKeys:
+            - pod-template-hash
           labelSelector:
             matchLabels:
               {{- include "notification-worker.selectorLabels" . | nindent 14 }}

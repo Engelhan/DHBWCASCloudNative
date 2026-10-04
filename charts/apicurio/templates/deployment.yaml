@@ -14,15 +14,18 @@ spec:
       labels:
         {{- include "apicurio.labels" . | nindent 8 }}
     spec:
-      # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
-      # bei topologySpreadConstraint. whenUnsatisfiable: ScheduleAnyway statt DoNotSchedule, weil
-      # replicaCount: 1 sonst auf einem Ein-Node-Dev-Setup haengen bleiben wuerde - gleiches
-      # Muster wie charts/ticketflow-app.
+      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
+      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
+      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
+      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
+      # Regionen, in die die neuen sollen.
       {{- if .Values.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
           topologyKey: topology.ticketflow/region
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
+          matchLabelKeys:
+            - pod-template-hash
           labelSelector:
             matchLabels:
               {{- include "apicurio.selectorLabels" . | nindent 14 }}

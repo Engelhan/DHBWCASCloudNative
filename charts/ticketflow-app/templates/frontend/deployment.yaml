@@ -15,13 +15,18 @@ spec:
       labels:
         {{- include "ticketflow-app.componentLabels" $ctx | nindent 8 }}
     spec:
-      # Weiche Verteilung ueber die drei simulierten Regionen (P4) - siehe values.yaml-Kommentar
-      # bei frontend.topologySpreadConstraint.
+      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
+      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
+      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
+      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
+      # Regionen, in die die neuen sollen.
       {{- if .Values.frontend.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.frontend.topologySpreadConstraint.maxSkew }}
           topologyKey: topology.ticketflow/region
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
+          matchLabelKeys:
+            - pod-template-hash
           labelSelector:
             matchLabels:
               {{- include "ticketflow-app.componentSelectorLabels" $ctx | nindent 14 }}
