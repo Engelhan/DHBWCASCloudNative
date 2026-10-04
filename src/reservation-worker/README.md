@@ -1,7 +1,7 @@
 # reservation-worker
 
 Kafka-Consumer, der die eigentliche Buchungslogik ausführt. Dies ist der Service, der unter Last
-(P6) über KEDA skaliert wird.
+über KEDA skaliert wird (Bonus B2, 2–10 Pods).
 
 ## Zweck
 
@@ -16,12 +16,11 @@ Kafka-Consumer, der die eigentliche Buchungslogik ausführt. Dies ist der Servic
   ## Datenbankschema.
 - `/metrics` (Prometheus-Format): `reservations_processed_total{result="confirmed|rejected"}`,
   `reservation_processing_duration_seconds{result}`,
-  `reservation_processing_errors_total{stage="unmarshal|db|publish"}`. Consumer-Lag für KEDA
-  (P6) wird nicht von diesem Service selbst exportiert, sondern von KEDAs eigenem
-  `kafka`-Scaler direkt gegen den Kafka-Cluster ermittelt (siehe
-  [`charts/kafka-cluster/`](../../charts/kafka-cluster/)).
-- `/healthz` (liveness) und `/readyz` (readiness: prüft DB- und Kafka-Erreichbarkeit, analog zu
-  [`catalog-api`](../catalog-api/)).
+  `reservation_processing_errors_total{stage="unmarshal|db|publish"}`. Den Consumer-Lag für KEDA
+  exportiert nicht dieser Service; KEDAs `kafka`-Scaler liest ihn direkt aus dem Kafka-Cluster
+  (ScaledObject in [`charts/reservation-worker/`](../../charts/reservation-worker/)).
+- `/healthz` (liveness) und `/readyz` (readiness: prüft DB, Kafka und beide Schemas in der
+  Registry, analog zu [`catalog-api`](../catalog-api/)).
 
 ## Warum ein eigener Service statt Logik in `catalog-api`
 
@@ -41,8 +40,7 @@ selbstgeschriebener Runner (siehe ## Datenbankschema) statt einer weiteren Abhä
 ## Kafka-Event-Schemas
 
 **Eingang** (`RESERVATION_TOPIC`, Key = `seat_id`) – exakt das von `catalog-api` bereits
-veröffentlichte Schema, siehe [`src/catalog-api/README.md`
-## Kafka-Event-Schema](../catalog-api/README.md#kafka-event-schema-entwurf-noch-nicht-final-mit-carlosreservation-worker-abgestimmt):
+veröffentlichte Schema, siehe [`src/catalog-api/README.md` ## Kafka-Event-Schema](../catalog-api/README.md#kafka-event-schema):
 
 ```json
 {
@@ -109,13 +107,16 @@ per `ON CONFLICT DO NOTHING`): drei Veranstaltungen in drei Hallen mit je 1000 P
 | `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres (z.B. `<cluster>-rw.<namespace>.svc`) |
 | `DB_PORT` | ConfigMap | Postgres-Port, Default `5432` |
 | `DB_NAME` | ConfigMap | Datenbankname |
-| `DB_SSLMODE` | ConfigMap | z.B. `disable` (lokal) / `require` (Cluster) |
+| `DB_SSLMODE` | ConfigMap | im Cluster `require` |
 | `DB_USER` | Secret | Postgres-Benutzername |
 | `DB_PASSWORD` | Secret | Postgres-Passwort |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Eingangstopic für `ReservationRequested` |
 | `RESULT_TOPIC` | ConfigMap | Kafka-Ausgangstopic für `ReservationConfirmed`/`ReservationRejected` |
 | `CONSUMER_GROUP` | ConfigMap | Kafka-Consumer-Group-ID (Grundlage für KEDA-Lag-Metrik) |
+| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_USERNAME` | ConfigMap | Name der `KafkaUser`-CR |
+| `KAFKA_SASL_PASSWORD` | Secret | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `PROCESS_MAX_RETRIES` | ConfigMap | Anzahl Verarbeitungsversuche (DB-Transaktion + Publish) vor Aufgabe, Default `3` |
 | `PROCESS_RETRY_BACKOFF` | ConfigMap | Wartezeit zwischen Versuchen, Default `2s` |
 | `REGISTRY_URL` | ConfigMap | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
@@ -125,11 +126,9 @@ per `ON CONFLICT DO NOTHING`): drei Veranstaltungen in drei Hallen mit je 1000 P
 
 `reservation-worker` baut den Postgres-Connection-String selbst aus diesen Einzelteilen zusammen
 (Team-Entscheidung, gleiches Muster wie `catalog-api`, siehe dessen README ## Konfiguration),
-statt ein fertiges `DATABASE_URL`-Secret zu erwarten. `DB_USER`/`DB_PASSWORD` kommen aus einem
-vom Chart selbst angelegten Secret (`charts/reservation-worker/templates/secret.yaml`,
-`CHANGE_ME`-Platzhalter, echte Werte via `--set`/`--set-file` zur Deploy-Zeit – müssen mit
-`charts/postgres-cluster` `values.yaml` `database.owner`/`.password` übereinstimmen, gleiches
-Muster wie `charts/notification-worker` und `charts/ticketflow-app`).
+statt ein fertiges `DATABASE_URL`-Secret zu erwarten. `DB_USER`/`DB_PASSWORD` kommen direkt aus
+dem von CNPG erzeugten Secret `<databaseName>-postgres-cluster-app` (gleicher Namespace, kein
+Duplikat im Chart).
 
 ## Image bauen
 

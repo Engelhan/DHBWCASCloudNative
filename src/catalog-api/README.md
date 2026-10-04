@@ -10,7 +10,7 @@
   [`reservation-worker`](../reservation-worker/)).
 - `/metrics` (Prometheus-Format): u.a. `reservation_requests_total`,
   `reservation_request_duration_seconds`.
-- `/healthz` (liveness) und `/readyz` (readiness: prüft DB- und Kafka-Erreichbarkeit).
+- `/healthz` (liveness) und `/readyz` (readiness: prüft DB, Kafka und Schema-Registry).
 
 ## Stack
 
@@ -29,7 +29,7 @@ Runtime-Abhängigkeiten) siehe Root-README `## Entscheidungen` P1. DB-Zugriff ü
 | `POST` | `/events/{eventID}/reservations` | Reservierungsanfrage entgegennehmen, `ReservationRequested` publishen |
 | `GET` | `/reservations/{id}` | Status einer Reservierung (`pending`/`confirmed`/`rejected`) |
 | `GET` | `/healthz` | Liveness |
-| `GET` | `/readyz` | Readiness (prüft DB- und Kafka-Erreichbarkeit) |
+| `GET` | `/readyz` | Readiness (prüft DB, Kafka und Schema-Registry) |
 | `GET` | `/metrics` | Prometheus-Metriken |
 
 `POST /events/{eventID}/reservations` erwartet `{"seat_id", "session_id", "first_name",
@@ -41,8 +41,8 @@ und merkt sich die Anfrage kurzzeitig im Speicher, um `GET /reservations/{id}` s
 
 ## Kafka-Event-Schema
 
-**`ReservationRequested`** (von catalog-api published). Topic: `RESERVATION_TOPIC` (env, lokal
-z.B. `reservation-requested`). Message-Key = `seat_id` (Ordering pro Sitzplatz). Value (JSON):
+**`ReservationRequested`** (von catalog-api published). Topic: `RESERVATION_TOPIC`
+(`reservation-requested`). Message-Key = `seat_id` (Ordering pro Sitzplatz). Value (JSON):
 
 ```json
 {
@@ -57,15 +57,11 @@ z.B. `reservation-requested`). Message-Key = `seat_id` (Ordering pro Sitzplatz).
 }
 ```
 
-`TODO`: Feldnamen/-inhalt final mit dem `reservation-worker`-Owner abstimmen, sobald der Consumer
-existiert.
+`reservation-worker` konsumiert genau dieses Format (`internal/event.Requested`, gleiche JSON-Keys).
 
 **`ReservationConfirmed`/`ReservationRejected`** (vom `reservation-worker` published, Topic
-`RESULT_TOPIC`/`reservation-result`) – Namen sind festgelegt, siehe
-[`src/reservation-worker/README.md`](../reservation-worker/README.md). Payload-Schema folgt dort,
-sobald der Service existiert.
-
-`TODO`: mit dem `reservation-worker`-Owner abstimmen, bevor das Schema als endgültig gilt.
+`RESULT_TOPIC`/`reservation-result`) – Schema siehe
+[`src/reservation-worker/README.md`](../reservation-worker/README.md).
 
 **Wire-Format seit der Apicurio-Integration:** der Message-`Value` ist nicht mehr reines JSON,
 sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId` +
@@ -93,20 +89,23 @@ Anfrage als `pending`.
 | `DB_HOST` | ConfigMap | Hostname des CNPG-Postgres (z.B. `<cluster>-rw.<namespace>.svc`) |
 | `DB_PORT` | ConfigMap | Postgres-Port, Default `5432` |
 | `DB_NAME` | ConfigMap | Datenbankname |
-| `DB_SSLMODE` | ConfigMap | z.B. `disable` (lokal) / `require` (Cluster) |
+| `DB_SSLMODE` | ConfigMap | im Cluster `require` |
 | `DB_USER` | Secret | Postgres-Benutzername |
 | `DB_PASSWORD` | Secret | Postgres-Passwort |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Topic für `ReservationRequested` |
+| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_USERNAME` | ConfigMap | Name der `KafkaUser`-CR |
+| `KAFKA_SASL_PASSWORD` | Secret | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `REGISTRY_URL` | ConfigMap | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
 | `REGISTRY_GROUP_ID` | ConfigMap | Registry-Group, Default `ticketflow` |
 | `LOG_LEVEL` | ConfigMap | z.B. `info` |
 | `PORT` | ConfigMap | HTTP-Port, Default `8080` |
-| `CORS_ALLOWED_ORIGIN` | ConfigMap | Origin des Frontends, Default `*` (nur für lokale Entwicklung sinnvoll) |
+| `CORS_ALLOWED_ORIGIN` | ConfigMap | Default `*`; nur für Aufrufe außerhalb des Same-Origin-Ingress relevant (z. B. load-generator) |
 
 catalog-api baut den Postgres-Connection-String selbst aus diesen Einzelteilen zusammen (Team-
-Entscheidung), statt ein fertiges `DATABASE_URL`-Secret zu erwarten – CNPG-Cluster (siehe
-`charts/postgres-cluster`) liefern ohnehin nur `username`/`password` getrennt.
+Entscheidung), statt ein fertiges `DATABASE_URL`-Secret zu erwarten. `DB_USER`/`DB_PASSWORD`
+kommen direkt aus dem von CNPG erzeugten Secret `<databaseName>-postgres-cluster-app`.
 
 ## Image bauen
 

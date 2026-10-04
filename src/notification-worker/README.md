@@ -3,7 +3,6 @@
 Zweiter Kafka-Consumer, unabhängige Consumer-Group. Konsumiert `ReservationConfirmed`/
 `ReservationRejected` und benachrichtigt den Käufer – standardmäßig per Log-Ausgabe (siehe
 `## Grenzen` in der Root-README), optional per echtem SMTP-Mailversand, wenn konfiguriert.
-Erster implementierter Service im Repo (Go) – siehe `../../CLAUDE.md` für den Gesamtkontext.
 
 ## Zweck
 
@@ -13,14 +12,12 @@ Erster implementierter Service im Repo (Go) – siehe `../../CLAUDE.md` für den
 - `/metrics`: `notifications_sent_total{result="confirmed|rejected"}`,
   `notification_dispatch_errors_total{channel="smtp|unmarshal"}`,
   `notification_dlt_published_total`.
-- `/healthz`, `/readyz` (Readiness spiegelt Kafka-Erreichbarkeit, nicht ob je eine Nachricht
-  ankam – es kann legitim lange keinen Traffic geben, solange `reservation-worker` noch nicht
-  existiert).
+- `/healthz`, `/readyz` (Readiness spiegelt Kafka- und Registry-Erreichbarkeit, nicht ob je eine
+  Nachricht ankam – zwischen zwei Flash Sales gibt es legitim lange keinen Traffic).
 
 ## Event-Contract (`RESULT_TOPIC`)
 
-`reservation-worker` (noch nicht implementiert) muss dieses JSON auf `RESULT_TOPIC`
-veröffentlichen:
+`reservation-worker` veröffentlicht dieses JSON auf `RESULT_TOPIC`:
 
 ```json
 {
@@ -36,7 +33,8 @@ veröffentlichen:
 
 `eventType`: `"ReservationConfirmed"` \| `"ReservationRejected"`. `customerEmail` ist nur
 Pflicht, wenn SMTP aktiv ist (Log-Only-Pfad funktioniert auch ohne). `reason` nur bei
-`ReservationRejected` relevant (z.B. `"SOLD_OUT"`).
+`ReservationRejected` relevant (aktuell immer `"SEAT_UNAVAILABLE"`). `eventName` ist vorgesehen,
+wird vom `reservation-worker` derzeit aber nicht befüllt.
 
 **Wire-Format seit der Apicurio-Integration:** der Message-`Value` ist nicht mehr reines JSON,
 sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-Endian-`globalId`
@@ -62,6 +60,9 @@ Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
 | `REGISTRY_GROUP_ID` | ConfigMap | `ticketflow` | – |
 | `LOG_LEVEL` | ConfigMap | `info` | – |
 | `HTTP_ADDR` | ConfigMap | `:8080` | – |
+| `KAFKA_SASL_ENABLED` | ConfigMap | `false` | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_USERNAME` | ConfigMap | leer | Name der `KafkaUser`-CR |
+| `KAFKA_SASL_PASSWORD` | **Secret** | leer | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `KAFKA_TLS_ENABLED` | ConfigMap | `false` | aktiviert mTLS zum Kafka-Broker |
 | `KAFKA_TLS_CA_CERT` | **Secret** | leer | PEM, Pflicht wenn `KAFKA_TLS_ENABLED=true` |
 | `KAFKA_TLS_CLIENT_CERT` | **Secret** | leer | PEM, Pflicht wenn `KAFKA_TLS_ENABLED=true` |
@@ -91,16 +92,21 @@ sie nie erfolgreich machen würde.
 
 ## Lokal starten
 
+Braucht einen erreichbaren Kafka-Broker und die Schema-Registry (z. B. per `kubectl port-forward`
+aus dem Cluster):
+
 ```bash
 cd src/notification-worker
 export KAFKA_BROKERS=localhost:9092
-export RESULT_TOPIC=reservation-results
+export RESULT_TOPIC=reservation-result
 export CONSUMER_GROUP=notification-worker-local
+export REGISTRY_URL=http://localhost:8081/apis/registry/v3
 go run .
 ```
 
-SMTP ist standardmäßig aus (`SMTP_ENABLED=false`), es wird also keine Mail-Infrastruktur zum
-lokalen Testen benötigt – Notifications erscheinen als strukturierte Log-Zeilen auf stdout.
+SMTP ist standardmäßig aus (`SMTP_ENABLED=false`), es wird also keine Mail-Infrastruktur
+benötigt – Notifications erscheinen als strukturierte Log-Zeilen auf stdout. Gegen den
+SASL-Listener im Cluster zusätzlich `KAFKA_SASL_ENABLED=true` plus Username/Passwort setzen.
 
 ## Image bauen
 
