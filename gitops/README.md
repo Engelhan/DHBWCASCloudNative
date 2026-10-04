@@ -26,7 +26,7 @@ werden muss. Sie wird an vier Stellen gelesen:
 | Helm-Charts | `.Values.ticketflow.*` — DNS-Zone, Image-Registry/-Tag, ACME-Kontakt, TSIG-Key-Name |
 | Terraform / Ansible | `namePrefix` bzw. `repoURL` (siehe `infra/`) |
 
-### Warum ein ApplicationSet statt 19 Application-Dateien
+### Warum ApplicationSets statt 19 Application-Dateien
 
 Vorher lag unter `apps/` je eine `Application`-Datei pro Komponente plus eine
 `app-of-apps.yaml` als Root. Die Repo-URL stand damit **19-mal** im Repo (plus einmal in
@@ -38,13 +38,13 @@ Generator muss wissen, aus welchem Repo er `env/cluster.yaml` überhaupt lesen s
 
 Jedes Listen-Element beschreibt eine Application mit `name`, `chartPath`, `namespace` und
 optional `serverSideApply`, `ignoreReplicas`. Alles, was nicht für alle Applications
-gleich ist, steht im `templatePatch` am Ende der Datei — `spec.template` ist ein typisiertes
+gleich ist, steht im `templatePatch` am Ende jeder Datei — `spec.template` ist ein typisiertes
 Kubernetes-Objekt, in dem Go-Ausdrücke nur innerhalb von String-Werten funktionieren, nicht als
 `{{- if }}`-Blöcke um YAML-Schlüssel herum.
 
 Jede erzeugte `Application` zeigt auf einen Chart unter [`../charts/`](../charts/) in diesem Repo
 — nie direkt auf ein Upstream-Helm-Repo. Für Addons, die es upstream als Chart gibt (Longhorn,
-cert-manager, external-dns, CNPG, Strimzi, kube-prometheus-stack, Loki, Tempo, KEDA, AKHQ), ist
+cert-manager, external-dns, CNPG, Strimzi, KEDA, External Secrets, OpenBao, AKHQ), ist
 das ein **Wrapper-Chart** (`Chart.yaml` mit `dependencies` auf den Upstream-Chart, eigene
 `values.yaml`), siehe `charts/README.md`.
 
@@ -55,43 +55,17 @@ Jeder Chart bekommt zusätzlich `values-<ticketflow.environment>.yaml` als Value
 `dev` auf `prod` ist deshalb genau eine Zeile in `env/cluster.yaml` und braucht keine Änderung am
 ApplicationSet — auch dann nicht, wenn ein Chart später einen dev/prod-Split bekommt.
 
-`cnpg-operator`/`strimzi-operator`/`kube-prometheus-stack`/`keda`/`external-secrets-operator`
-brauchen zusätzlich `syncOptions: [ServerSideApply=true]`: alle fünf Upstream-Charts bündeln
-einzelne CRDs deutlich über bzw. (bei `external-secrets-operator`) knapp unter 262144 Byte (CNPGs
-`poolers`-CRD über 650 KB, Strimzis `Kafka`-CRD über 330 KB, kube-prometheus-stacks
-`Prometheus`-CRD über 800 KB, `external-secrets-operator`s `secretstores`/`clustersecretstores`
-je ~252 KB reines YAML, gemessen) — Client-Side-Apply würde die komplette
+`cnpg-operator`/`strimzi-operator`/`keda`/`external-secrets-operator` brauchen zusätzlich
+`syncOptions: [ServerSideApply=true]`: alle vier Upstream-Charts bündeln einzelne CRDs deutlich
+über bzw. (bei `external-secrets-operator`) knapp unter 262144 Byte (CNPGs `poolers`-CRD über
+650 KB, Strimzis `Kafka`-CRD über 330 KB, KEDAs `scaledjobs`-CRD über 650 KB,
+`external-secrets-operator`s `secretstores`/`clustersecretstores` je ~252 KB reines YAML,
+gemessen) — Client-Side-Apply würde die komplette
 Ressource zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
 Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler wie beim
 ArgoCD-Install selbst, siehe `CLAUDE.md` ## Infra layering (Ansible specifics) —
-Server-Side-Apply schreibt diese Annotation gar nicht erst. Loki/Tempo/`openbao`/
-`openbao-postgres`/`openbao-secretstore` bringen selbst keine CRDs mit, brauchen das nicht.
-
-## Observability-Stack (kube-prometheus-stack, Loki, Tempo)
-
-Voller LGTM-Stack (Logs/Grafana/Tempo/Metrics) in **einem** Grafana, alle drei Applications im
-Namespace `monitoring`, Persistenz durchgehend über Longhorn (bereits Default-StorageClass):
-
-- **kube-prometheus-stack**: Prometheus (7 Tage Retention, 20Gi), Alertmanager (2Gi), Grafana
-  (5Gi, Service `kube-prometheus-stack-grafana`) sowie die Prometheus-Operator-CRDs
-  (ServiceMonitor/PodMonitor/PrometheusRule), die Longhorn/CNPG/Strimzi/Loki/Tempo für eigenes
-  Metrics-Scraping brauchen.
-- **Loki**: `SingleBinary`-Deployment-Modus (keine getrennten Read-/Write-/Backend-Komponenten -
-  reicht für die Lab-Größe) mit eingebautem MinIO als S3-kompatiblem Objektspeicher (offiziell
-  empfohlener Weg ohne echtes Cloud-Object-Storage), beides auf je einer Longhorn-PVC. Standard-
-  Entrypoint ist der Gateway-Service `loki-gateway`.
-- **Tempo**: einfacher Single-Instance-Chart, lokales Storage-Backend auf einer Longhorn-PVC,
-  Service `tempo` auf Port 3200.
-- Grafana bekommt Loki (`uid: loki`) und Tempo (`uid: tempo`) als `additionalDataSources` (siehe
-  `charts/kube-prometheus-stack/values.yaml`) — inklusive Traces→Logs-Verknüpfung
-  (`tracesToLogsV2`) und Service-Graph aus Tempo-Spans gegen Prometheus (`serviceMap`).
-- Kein Sync-Wave zwischen den drei Applications: Lokis/Tempos `ServiceMonitor`-Ressourcen
-  brauchen die von kube-prometheus-stack bereitgestellte CRD, aber falls die beim ersten Sync
-  noch fehlt, holt `selfHeal` das im nächsten Reconcile automatisch nach (dieselbe lose Kopplung
-  wie zwischen `cert-manager-issuer` und `argocd-ingress`).
-
-Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
-(Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
+Server-Side-Apply schreibt diese Annotation gar nicht erst. `openbao`/`openbao-postgres`/
+`openbao-secretstore` bringen selbst keine CRDs mit, brauchen das nicht.
 
 ### Gestufter Rollout
 
@@ -215,8 +189,7 @@ nicht mehr — es wurde zusammen mit `gitops/apps/` entfernt, weil es nichts meh
 
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
-per Ansible-Rolle installiert (siehe `infra/ansible/README.md` ## Übernommene Funktionen aus
-k3s-dhbw-cloud-role, Branch `ansible-bootstrap`, Commit `938a66f`), jetzt stattdessen hier über
+per Ansible-Rolle installiert (Branch `ansible-bootstrap`, Commit `938a66f`), jetzt stattdessen hier über
 ArgoCD/Helm, um die in `CLAUDE.md` ## Infra layering dokumentierte Grenze einzuhalten ("Ansible
 macht nichts über k3s/Labels/ArgoCD hinaus"). Die Ansible-Addon-Rollen auf `ansible-bootstrap`
 werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
@@ -225,9 +198,7 @@ werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
 
 Nutzen die echte DHBW-DNS-Zone aus `env/cluster.yaml` (`ticketflow.dnsZone`, registriert über
 self-service.dhbw.cloud). Zone, RFC2136-Server und TSIG-Key-Name stehen dort **einmal** und
-werden von beiden Charts gelesen — vorher lagen dieselben Werte doppelt in
-`charts/cert-manager-config/values.yaml` und `charts/external-dns/values.yaml` und konnten
-auseinanderlaufen.
+werden von beiden Charts gelesen.
 
 `charts/cert-manager-config` liest sie direkt in seinen eigenen Templates. `charts/external-dns`
 kann das nicht, weil die zonenabhängigen Werte in den Values des **gewrappten** Upstream-Charts
@@ -239,7 +210,9 @@ expandiert wird — derselbe Mechanismus, den der Chart für
 Beide `Application`s sind wie alle anderen auf `syncPolicy.automated` konfiguriert.
 
 **Das eigentliche TSIG-Secret steht bewusst NICHT im Repo** (nur die Referenz
-`external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`) — vor dem ersten Sync manuell anlegen:
+`external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`). `infra/ansible/roles/gitops_secrets`
+legt beide aus `infra/ansible/secrets.yml` an (siehe `infra/ansible/README.md` ## GitOps secrets);
+von Hand ginge es so:
 
 ```bash
 kubectl -n cert-manager create secret generic cert-manager-rfc2136-tsig \
@@ -249,8 +222,8 @@ kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
   --from-literal=secret=<TSIG-Wert>
 ```
 
-Ohne dieses Secret bleiben die jeweiligen Pods in `CreateContainerConfigError` hängen, bis das
-Secret existiert — `selfHeal` holt den Rollout dann automatisch nach, kein erneuter Sync nötig.
+Ohne dieses Secret bleiben die jeweiligen Pods in `CreateContainerConfigError` hängen und die
+Plattform-Stufe wird nie grün.
 
 Jede `Application` in diesem Ordner ist auf `syncPolicy.automated.selfHeal: true` und
 `prune: true` konfiguriert: manuelle `kubectl edit`-Änderungen (z.B. eine per Hand hochgesetzte
@@ -279,28 +252,18 @@ argocd app get cert-manager
 
 ## kafka-cluster / ticketflow-app
 
-Die Elemente `kafka-cluster` und `ticketflow-app` zeigen beide auf
-`targetRevision: main`. Beide nutzen `helm.valueFiles: [values-dev.yaml]` — auf dem Lab-Cluster
-bewusst die kleine Variante (1 Kafka-Broker, 1 Replica je App-Service) statt `values-prod.yaml`.
-Destination-Namespace für beide `ticketflow`, per `CreateNamespace=true` — getrennt vom
-Strimzi-Operator-Namespace `kafka` (dort laufen nur Operator/AKHQ/Apicurio als
-Plattform-Tooling, nicht die Kafka-Cluster-Instanz selbst).
-
-`charts/kafka-cluster/` (Kafka-CR, KafkaNodePools, KafkaTopics, Apicurio-Schema-Registrierung)
-und `charts/ticketflow-app/` (catalog-api + frontend) sind bewusst zwei getrennte Charts/
-Applications (Team-Entscheidung: nicht gemeinsam deployen, damit ein Sync/Rollback des einen den
-anderen nicht anfasst) — und seit der Namespace-Trennung auch in getrennten Namespaces: die
+`charts/kafka-cluster/` (Kafka-CR, KafkaNodePools, KafkaTopics, KafkaUser, Apicurio-
+Schema-Registrierung) und `charts/ticketflow-app/` (catalog-api + frontend) sind bewusst zwei
+getrennte Charts/Applications (Team-Entscheidung: nicht gemeinsam deployen, damit ein
+Sync/Rollback des einen den anderen nicht anfasst) und laufen in getrennten Namespaces: die
 Kafka-Plattform (Operator, Cluster, Apicurio, AKHQ) in `kafka`, die Anwendung in `ticketflow`.
 Beide Namen stehen in `env/cluster.yaml` (`ticketflow.namespaces.app`/`.kafka`); die Clients
 leiten ihre Bootstrap-Adresse daraus ab. Einzige Ausnahme sind die `KafkaUser`-CRs, die
 `charts/kafka-cluster` in den App-Namespace rendert, weil der Strimzi User Operator das
 generierte SCRAM-Secret immer im Namespace der CR ablegt und `secretKeyRef` keine
 Namespace-Grenze überschreitet — Details in `charts/kafka-cluster/README.md` ## Namespaces.
-`charts/kafka-cluster/` hieß ursprünglich `charts/ticketflow/` (bis 2026-09-16, umbenannt um
-Verwechslungen mit `charts/ticketflow-app/` zu vermeiden — reiner `git mv`, keine
-Inhaltsänderung). `notification-worker`/CNPG-Cluster sind ebenfalls **nicht** Teil von
-`kafka-cluster` oder `ticketflow-app` — eigene, volleigenständige Charts
-(`charts/notification-worker/`, `charts/postgres-cluster/`) mit eigenen Applications.
+Welche `values-<env>.yaml` greift, steuert `ticketflow.environment` (siehe ## dev/prod); im
+aktiven dev-Profil laufen Kafka mit 3 Brokern/3 Controllern und jeder App-Service mit 2 Replicas.
 
 `TODO`: ein dediziertes `AppProject` (Repo-/Namespace-/Ressourcen-Scoping) fehlt noch — alle
 Applications laufen bislang mit `project: default`.
@@ -317,26 +280,17 @@ implementation status; hier nur der GitOps-spezifische Teil.
 **Alle vier liegen in Stufe 1 (`ticketflow-platform`)**, ihre Konsumenten (`postgres-cluster`,
 `kafka-cluster`, `akhq`, `notification-worker`) in Stufe 2 — die Anwendung startet also erst, wenn
 der `ClusterSecretStore` gegen ein entsiegeltes OpenBao `Valid` ist (siehe ## Gestufter Rollout).
-Innerhalb der Stufe sorgt `retry` für die Reihenfolge. Die tatsächliche Abhängigkeitskette bis alles zum ersten Mal grün ist,
-ist trotzdem länger als bei jedem anderen Addon-Paar in diesem Repo: `cnpg-operator` →
-`openbao-postgres` → `openbao` (Bootstrap-Hook-Job läuft) → `openbao-secretstore` (wird `Valid`)
-→ jede migrierte `ExternalSecret` (`charts/postgres-cluster`, `charts/kafka-cluster`,
-`charts/akhq`, `charts/notification-worker`) kann erst danach syncen. ArgoCD zeigt beim ersten
-echten Rollout deshalb erwartungsgemäß vorübergehend `OutOfSync`/`Error`/`Degraded` auf mehreren
-dieser Applications gleichzeitig, bis jedes Glied per `selfHeal` nachgezogen hat — kein Bug,
-sondern derselbe "deklarativ da, funktional wartend"-Fall wie beim `cert-manager-config`
-`ClusterIssuer`, der ebenfalls erst nach dem TSIG-Secret funktioniert (siehe ## DNS/ACME oben).
+Innerhalb der Stufe sorgt `retry` für die Reihenfolge `cnpg-operator` → `openbao-postgres` →
+`openbao` (Bootstrap-Hook läuft) → `openbao-secretstore`; beim ersten Rollout sind deshalb einige
+dieser Applications vorübergehend `OutOfSync`/`Degraded`, bis das jeweils vorige Glied steht.
 
-**Seit 2026-09-23 zusätzlich `PushSecret` (K8s → OpenBao, das Gegenstück zu `ExternalSecret`) für
-`charts/postgres-cluster` und `charts/kafka-cluster`:** CNPGs und Strimzis selbst generierte
-Credentials werden nach OpenBao gespiegelt, damit die Vault wirklich jedes Credential im Cluster
-zeigt (zentrale Audit-Fläche, nicht nur eine Namespace-Überbrückung). Für `postgres-cluster`
-verbessert das sogar die Abhängigkeitskette: die CNPG-`Cluster`-CR bootstrapt jetzt unabhängig von
-OpenBao (kein vorgegebenes `bootstrap.initdb.secret` mehr, CNPG generiert es selbst) — nur der
-Rückweg zur konventionell benannten Secret-Kopie, die `catalog-api`/`reservation-worker`
-tatsächlich per `secretKeyRef` lesen, hängt noch am `PushSecret`→OpenBao→`ExternalSecret`-Dreieck.
-Vorher musste die Datenbank selbst auf einen bereits entsiegelten, befüllten Vault warten, bevor
-sie überhaupt initialisieren konnte — das ist mit dieser Umstellung entfallen.
+**`PushSecret` (K8s → OpenBao) in `charts/postgres-cluster` und `charts/kafka-cluster`:** CNPGs
+und Strimzis selbst generierte Credentials werden nach OpenBao gespiegelt (`updatePolicy:
+Replace`), damit die Vault jedes Credential im Cluster zeigt (zentrale Audit-Fläche). Die Dienste
+lesen ihre Postgres- und Kafka-Zugangsdaten trotzdem direkt aus den Operator-Secrets — ein
+versiegelter Vault hält den Ticketverkauf nicht an. Einzige Ausnahme ist AKHQ: es läuft im
+Namespace `kafka`, sein Strimzi-Secret liegt in `ticketflow`, deshalb holt es den Wert per
+`ExternalSecret` aus OpenBao zurück.
 
 **Bootstrap ist vollständig GitOps-nativ, keine Ansible-Rolle:** `charts/openbao` bringt einen
 `post-install,post-upgrade`-Helm-Hook-`Job` mit (`templates/bootstrap-job.yaml`), der bei jedem
@@ -351,6 +305,5 @@ kubectl -n openbao get secret openbao-unseal-keys -o yaml > openbao-unseal-keys.
 # openbao-unseal-keys.backup.yaml sicher (z.B. verschlüsselt) ablegen, NICHT committen.
 ```
 
-Ohne dieses Backup ist der Shamir-`1-von-1`-Key (bewusste Laborvereinfachung, siehe Root-README
-## Bonus B1) ausschließlich im gleichnamigen K8s-Secret vorhanden — geht dieses verloren, sind die
+Ohne dieses Backup ist der Shamir-`1-von-1`-Key (bewusste Laborvereinfachung, siehe Root-README ## Bonus B1) ausschließlich im gleichnamigen K8s-Secret vorhanden — geht dieses verloren, sind die
 in OpenBao gespeicherten Werte nicht wiederherstellbar.
