@@ -10,3 +10,17 @@
     --overwrite
   loop: "{{ groups['workers'] }}"
   changed_when: true
+
+# Die Control-Plane traegt nur k3s selbst (API-Server, etcd/kine, Controller). Ohne Taint plant der
+# Scheduler normale Workloads mit ein - live landete dort u.a. der Primary der OpenBao-Postgres-DB,
+# womit ein Ausfall der Control-Plane zugleich die Vault-Storage getroffen haette. Genau dieser
+# Taint wird von k3s' eigenen Komponenten (CoreDNS, Traefik, metrics-server, local-path,
+# svclb-traefik) bereits toleriert - die laufen weiter, alles andere nur noch auf den Workern.
+# Laeuft vor argocd_bootstrap, wirkt also schon vor dem ersten Chart. NoSchedule verdraengt keine
+# bereits laufenden Pods - auf einem bestehenden Cluster muessen die einmal verschoben werden.
+- name: Control-Plane fuer normale Workloads sperren (Taint)
+  command: >
+    k3s kubectl taint node {{ inventory_hostname }}
+    node-role.kubernetes.io/control-plane=:NoSchedule
+    --overwrite
+  changed_when: true

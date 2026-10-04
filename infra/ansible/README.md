@@ -59,7 +59,7 @@ ansible/
     ├── common/               # Paketindex, Basispakete, deterministischer Hostname
     ├── k3s_server/           # k3s-Server (IPv6-Flags), Node-Token, kubeconfig lokal abholen
     ├── k3s_agent/            # k3s-Agent, Join per Token/URL der Control-Plane
-    ├── node_labels/          # topology.ticketflow/region je Worker (aus dem Terraform-Inventory)
+    ├── node_labels/          # topology.ticketflow/region je Worker + NoSchedule-Taint auf der Control-Plane
     ├── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, ApplicationSet
     └── gitops_secrets/       # ArgoCD-Repo-Credential + RFC2136-TSIG-K8s-Secrets (aus secrets.yml)
 ```
