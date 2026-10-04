@@ -214,7 +214,7 @@ drei Tabellen unverhältnismäßig.
 - eine Quelle der Wahrheit für den Sitzplatzstatus, keine Synchronisationslücke zwischen Anzeige
   und Buchung;
 - die API kann den Endstatus einer Reservierung direkt aus `reservations` lesen;
-- nur ein zustandsbehafteter Datenbankdienst muss betrieben, repliziert (Primary + Replica in zwei
+- nur ein zustandsbehafteter Datenbankdienst muss betrieben, repliziert (Primary + zwei Replicas in drei
   Regionen, P4/P5) und gesichert werden;
 - die Replica, die für P5 ohnehin läuft, trägt die Leselast: Die Abfragen der Seat-Map aus dem
   Frontend konkurrieren in der Lastspitze nicht mit den Buchungen des Workers um den Primary.
@@ -228,10 +228,12 @@ drei Tabellen unverhältnismäßig.
   frischen Cluster die Tabellen erst, wenn der Worker einmal gelaufen ist.
 - **Gemeinsamer Fehlerbereich:** Beide hängen am selben CNPG-Cluster. Schreibend bleibt der eine
   Primary die Skalierungsgrenze des Workers, nicht die Pod-Zahl (siehe B2, `maxReplicaCount`).
-  Lesend hängt `catalog-api` an der Replica. Bei `instances: 2` gibt es nur eine; fällt sie aus
-  oder wird sie beim Failover zum Primary befördert, hat `-ro` keine Endpoints, bis CNPG eine
-  neue Replica erzeugt hat. Weil `/readyz` die Datenbank prüft, ist `catalog-api` in dieser Zeit
-  nicht bereit. Abhilfe wäre eine dritte Instanz (eine Replica je weiterer Region).
+  Lesend hängt `catalog-api` an den Replicas. Deshalb läuft der Cluster mit `instances: 3`
+  (Primary + zwei Replicas, je eine pro Region): Fällt eine Replica aus oder wird sie beim Failover
+  zum Primary befördert, bedient die andere `-ro` weiter. Mit nur einer Replica hätte `-ro` in
+  diesem Moment keine Endpoints, und weil `/readyz` die Datenbank prüft, wäre `catalog-api`
+  komplett nicht bereit, einschließlich der Annahme von Reservierungen. Der Preis ist ein dritter
+  Postgres-Pod mit 2Gi Memory-Request.
 - **Replikationsverzug:** Die Replica läuft asynchron hinterher. Ein gerade gebuchter Platz kann
   für Millisekunden noch als frei erscheinen. Der Worker entscheidet aber auf dem Primary, so dass
   höchstens ein zusätzliches `Rejected` entsteht, nie eine Doppelbuchung.
@@ -280,7 +282,7 @@ nicht pro Umgebung (dev/prod, siehe W1) austauschbar, ohne das Image neu zu baue
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
 vergeben und von Ansible in ein Kubernetes-Label übersetzt – die DHBWCloud stellt real nur eine
 Region/AZ bereit, die Verteilung wird für diese Entscheidung bewusst simuliert). CNPG-Postgres
-(Primary + Replica, `podAntiAffinityType: required` auf diesem Label) und Kafka (Strimzi, je 3
+(Primary + zwei Replicas, `podAntiAffinityType: required` auf diesem Label) und Kafka (Strimzi, je 3
 Broker und 3 KRaft-Controller — auch im aktiven dev-Profil, siehe
 [`charts/kafka-cluster/values-dev.yaml`](charts/kafka-cluster/values-dev.yaml)) erhalten je eine
 `topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas nie auf
@@ -332,7 +334,7 @@ Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (A
 beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
 **P5 – Resilienz und Persistenz.** *Wahl:* Liveness/Readiness-Probes auf allen drei Services, CNPG
-verwaltet PVCs für Primary + Replica, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
+verwaltet PVCs für Primary + zwei Replicas, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
 PodDisruptionBudgets sichern Rolling Updates und Node-Drains für jeden Dienst mit mindestens zwei
 Replicas ab (z. B.
 [`charts/notification-worker/templates/poddisruptionbudget.yaml`](charts/notification-worker/templates/poddisruptionbudget.yaml)).
@@ -402,9 +404,8 @@ abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). 
 
 - `catalog-api` und `reservation-worker` teilen sich eine Datenbank und einen DB-User. Schema-
   Änderungen müssen rückwärtskompatibel erfolgen, der eine Postgres-Primary begrenzt den
-  Buchungsdurchsatz, und `catalog-api` liest von der einzigen Replica: Fällt diese aus oder wird
-  sie beim Failover befördert, ist die API nicht bereit, bis CNPG eine neue Replica erzeugt hat
-  (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
+  Buchungsdurchsatz, und `catalog-api` liest von den Replicas: Erst wenn beide gleichzeitig
+  fehlen, ist die API nicht bereit (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit; CNPG- und Kafka-Replikation
   sind daher klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
 - Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` kann

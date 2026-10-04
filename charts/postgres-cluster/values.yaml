@@ -1,7 +1,8 @@
 # Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-instances: 2
+# Primary + 2 replicas, one per region: catalog-api reads via -ro and keeps a replica during failover.
+instances: 3
 # Namespace comes from the ArgoCD Application.
 
 image:

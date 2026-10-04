@@ -1262,5 +1262,13 @@ commands here once these gaps close instead of leaving this section stale.
   Longhorn DaemonSet pods) must be moved once by hand (switchover the CNPG primary first). Not applied
   to the live cluster yet. `docs/architecture/pod-distribution.drawio.svg` shows the state *before*
   this change.
+- **2026-10-05: `catalog-api` reads from the CNPG read replicas** (`<db>-postgres-cluster-ro`,
+  `charts/ticketflow-app` `databaseHost` helper); `reservation-worker` stays on `-rw` and is now the
+  **only** DB writer and schema owner — the demo seed moved from catalog-api's deleted
+  `internal/db/migrate.go` into `src/reservation-worker/internal/migrate/sql/0002_seed_demo_events.sql`.
+  `charts/postgres-cluster` therefore runs `instances: 3` (one per region): with a single replica,
+  a replica loss/promotion leaves `-ro` without endpoints and catalog-api's DB-checking `/readyz`
+  takes the whole API down. Rationale incl. shared-DB trade-offs: root README `## Entscheidungen`
+  "P1 – Ergänzung". Not yet live-synced.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
