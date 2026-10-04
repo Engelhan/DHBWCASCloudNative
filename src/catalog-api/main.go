@@ -118,11 +118,7 @@ func getenvBool(key string, def bool) (bool, error) {
 	return b, nil
 }
 
-// buildKafkaSASL builds a SCRAM-SHA-512 sasl.Mechanism for authenticating to the
-// Strimzi-managed KafkaUser "catalog-api" (see charts/kafka-cluster templates/messaging/
-// kafka-users.yaml), or returns (nil, nil) when KAFKA_SASL_ENABLED is false -- kafka-go treats a
-// nil sasl.Mechanism as "no auth", the current default for local docker-compose (no Strimzi
-// listener/ACLs there).
+// buildKafkaSASL returns a SCRAM-SHA-512 mechanism, or nil when KAFKA_SASL_ENABLED is false.
 func buildKafkaSASL() (sasl.Mechanism, error) {
 	enabled, err := getenvBool("KAFKA_SASL_ENABLED", false)
 	if err != nil {
@@ -136,12 +132,8 @@ func buildKafkaSASL() (sasl.Mechanism, error) {
 	return scram.Mechanism(scram.SHA512, username, password)
 }
 
-// buildDatabaseURL setzt den Connection-String aus Einzelteilen zusammen, statt einen fertigen
-// DATABASE_URL-String zu erwarten - CNPG-Cluster (siehe charts/postgres-cluster) liefern nur ein
-// Secret mit getrennten username/password-Feldern, kein zusammengesetztes Connection-String-Secret
-// (Team-Entscheidung: das baut sich jede Anwendung selbst, da das Format je Anwendung/Treiber
-// unterschiedlich sein kann). DB_USER/DB_PASSWORD kommen aus einem Secret, DB_HOST/DB_PORT/
-// DB_NAME/DB_SSLMODE aus einer ConfigMap (kein Geheimnis).
+// buildDatabaseURL builds the DSN from parts: CNPG provides username/password separately, the rest
+// comes from the ConfigMap.
 func buildDatabaseURL() string {
 	host := requireEnv("DB_HOST")
 	port := getenv("DB_PORT", "5432")

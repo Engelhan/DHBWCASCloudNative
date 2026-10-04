@@ -1,15 +1,7 @@
-// Package kafkaconsumer runs notification-worker's second, independent
-// Kafka consumer group off RESULT_TOPIC and implements the retry /
-// dead-letter-topic / commit-only-on-success semantics described in the
-// implementation plan: an offset is only committed once the notification
-// was actually sent (or the message is a poison pill that could never
-// succeed). A message that exhausts NOTIFY_MAX_RETRIES is published to
-// DLT_TOPIC (if configured) for visibility/manual reprocessing, but its
-// offset stays uncommitted -- it will be redelivered on the next
-// restart/rebalance until it succeeds or lands on the DLT again. This is a
-// deliberate at-least-once trade-off (documented, not silent): live
-// processing never blocks on one bad message, but nothing is silently
-// dropped either.
+// Package kafkaconsumer runs the second, independent consumer group on RESULT_TOPIC.
+// Offsets are committed only after a successful send (or for poison pills). After
+// NOTIFY_MAX_RETRIES a message goes to DLT_TOPIC but stays uncommitted, so it is redelivered on
+// restart: at-least-once, nothing dropped silently.
 package kafkaconsumer
 
 import (
@@ -39,9 +31,7 @@ type Consumer struct {
 	dialer     *kafka.Dialer
 	brokers    []string
 	dispatcher *notify.Dispatcher
-	// logFallback is used as a safety net when the active dispatcher
-	// channel (e.g. SMTP) exhausts all retries, so there is always at
-	// least a log record of what was attempted.
+	// logFallback guarantees a log record when the active channel exhausts its retries.
 	logFallback notify.Notifier
 	schema      *schemareg.Client
 	maxRetries  int
@@ -85,10 +75,7 @@ func New(cfg config.Config, tlsConfig *tls.Config, saslMechanism sasl.Mechanism,
 	}
 }
 
-// Run blocks until ctx is cancelled. Readiness (c.ready) reflects Kafka
-// broker reachability, not "a message has arrived" -- there may
-// legitimately be long stretches with no traffic until reservation-worker
-// (the producer for RESULT_TOPIC) exists.
+// Run blocks until ctx is cancelled. Readiness reflects broker reachability, not traffic.
 func (c *Consumer) Run(ctx context.Context) error {
 	if err := c.waitForBroker(ctx); err != nil {
 		return err
@@ -109,9 +96,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return nil
 			}
-			// Re-probe the broker instead of waiting for the next message:
-			// on an idle topic FetchMessage just blocks once Kafka is back, and
-			// readiness would otherwise stay false until traffic arrives.
+			// Re-probe the broker: on an idle topic readiness would otherwise wait for the next message.
 			if err := c.waitForBroker(ctx); err != nil {
 				return nil
 			}
@@ -152,9 +137,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 		metrics.DispatchErrors.WithLabelValues(channelUnmarshal).Inc()
 		c.logger.Error("malformed/invalid event, sending to DLT and skipping", "error", err, "offset", msg.Offset)
 		c.tryPublishToDLT(ctx, msg, err, 0)
-		// A malformed message can never succeed on retry -- commit
-		// regardless of DLT outcome so the consumer doesn't get stuck on a
-		// poison pill forever.
+		// Poison pill: commit regardless so the consumer never gets stuck.
 		c.commit(ctx, msg)
 		return
 	}
@@ -173,8 +156,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 			c.logger.Warn("notification attempt failed", "attempt", attempt+1, "reservationId", e.ReservationID, "error", err)
 			continue
 		}
-		// Success: only now do we commit, per the "commit only on actual
-		// send" requirement -- see package doc.
+		// Commit only after an actual send.
 		c.commit(ctx, msg)
 		return
 	}
@@ -182,17 +164,13 @@ func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 	c.logger.Error("all notification attempts exhausted, sending to DLT",
 		"reservationId", e.ReservationID, "attempts", c.maxRetries+1, "error", lastErr)
 
-	// Safety net: guarantee at least a log record even though the active
-	// channel (e.g. SMTP) failed. Skip the duplicate if log was already the
-	// active channel.
+	// Fall back to a log record unless log was already the channel.
 	if c.dispatcher.Channel != notify.ChannelLog {
 		_ = c.logFallback.Notify(ctx, e)
 	}
 
 	c.tryPublishToDLT(ctx, msg, lastErr, c.maxRetries+1)
-	// Deliberately no commit here: this message is redelivered on
-	// restart/rebalance until it either succeeds or lands on the DLT
-	// again -- see package doc.
+	// No commit: redelivered on restart/rebalance.
 }
 
 func (c *Consumer) tryPublishToDLT(ctx context.Context, msg kafka.Message, cause error, attempts int) {

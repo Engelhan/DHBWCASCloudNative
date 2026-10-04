@@ -1,4 +1,4 @@
-// Package metrics definiert die in src/catalog-api/README.md dokumentierten Prometheus-Metriken.
+// Package metrics defines the Prometheus metrics documented in the README.
 package metrics
 
 import (
@@ -9,12 +9,12 @@ import (
 var (
 	ReservationRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "reservation_requests_total",
-		Help: "Anzahl entgegengenommener Reservierungsanfragen nach Ergebnis.",
+		Help: "Number of received reservation requests by result.",
 	}, []string{"result"}) // "accepted" | "seat_unavailable" | "error"
 
 	ReservationRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "reservation_request_duration_seconds",
-		Help:    "Dauer der Bearbeitung von POST /events/{id}/reservations (DB-Read + Kafka-Publish).",
+		Help:    "Duration of POST /events/{id}/reservations (DB read + Kafka publish).",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"result"})
 )

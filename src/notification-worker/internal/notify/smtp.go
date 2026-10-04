@@ -15,8 +15,7 @@ import (
 	"ticketflow/notification-worker/internal/event"
 )
 
-// SMTPNotifier sends a real email via SMTP. Only constructed when
-// config.Config.SMTPEnabled is true.
+// SMTPNotifier sends email; only used when SMTP is enabled.
 type SMTPNotifier struct {
 	Host     string
 	Port     int
@@ -52,9 +51,7 @@ func (n *SMTPNotifier) Notify(ctx context.Context, e event.Event) error {
 	ctx, cancel := context.WithTimeout(ctx, n.Timeout)
 	defer cancel()
 
-	// net/smtp has no context-aware API: on timeout we stop waiting here,
-	// but the goroutine below keeps running until the underlying TCP dial/
-	// I/O itself times out.
+	// net/smtp has no context support: we stop waiting, the goroutine ends on its own I/O timeout.
 	done := make(chan error, 1)
 	go func() { done <- n.send(e.CustomerEmail, msg) }()
 

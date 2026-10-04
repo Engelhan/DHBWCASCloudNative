@@ -27,8 +27,7 @@ func TestUnmarshalRequested_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UnmarshalRequested() error: %v", err)
 	}
-	// Feldweiser Vergleich statt got != original: time.Time-Gleichheit per ==
-	// ist fragil (Wall/Monotonic-Repraesentation), siehe .Equal() unten.
+	// Field-wise: time.Time equality via == is fragile, use Equal.
 	if got.ReservationID != original.ReservationID || got.EventID != original.EventID ||
 		got.SeatID != original.SeatID || got.SessionID != original.SessionID ||
 		got.FirstName != original.FirstName || got.LastName != original.LastName ||

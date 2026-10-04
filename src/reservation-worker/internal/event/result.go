@@ -13,9 +13,7 @@ const (
 	TypeReservationRejected  Type = "ReservationRejected"
 )
 
-// Result mirrors src/notification-worker/internal/event.Event exactly (same
-// JSON keys) -- notification-worker already defined this contract as the
-// consumer, see its package doc. reservation-worker is the producer.
+// Result mirrors notification-worker's event.Event (same JSON keys).
 type Result struct {
 	EventType       Type      `json:"eventType"`
 	ReservationID   string    `json:"reservationId"`
@@ -35,8 +33,7 @@ func (r Result) Marshal() ([]byte, error) {
 	return data, nil
 }
 
-// Result returns the lowercase result label used for the
-// reservations_processed_total metric.
+// Result returns the label for reservations_processed_total.
 func (r Result) Result() string {
 	if r.EventType == TypeReservationConfirmed {
 		return "confirmed"

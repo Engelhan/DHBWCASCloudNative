@@ -1,6 +1,4 @@
-// Package config loads notification-worker's configuration from environment
-// variables (injected via ConfigMap/Secret in the Helm chart, see
-// charts/notification-worker/) and validates it at startup.
+// Package config loads and validates the environment configuration.
 package config
 
 import (
@@ -24,17 +22,14 @@ type Config struct {
 	KafkaBrokers  []string
 	ResultTopic   string
 	ConsumerGroup string
-	// DLTTopic is optional: empty disables dead-letter publishing, the
-	// consumer still refuses to commit offsets for undeliverable
-	// notifications either way (see internal/kafkaconsumer).
+	// Empty DLTTopic disables dead-letter publishing; undeliverable messages are never committed
+	// either way.
 	DLTTopic string
 
 	NotifyMaxRetries   int
 	NotifyRetryBackoff time.Duration
 
-	// RegistryURL is Apicurio Registry's v3 REST API root, e.g.
-	// "http://apicurio.kafka.svc:8080/apis/registry/v3" (no trailing slash). See
-	// internal/schemareg.
+	// RegistryURL is the Apicurio v3 REST root.
 	RegistryURL     string
 	RegistryGroupID string
 
@@ -46,10 +41,7 @@ type Config struct {
 	KafkaTLSClientCert string
 	KafkaTLSClientKey  string
 
-	// SASL/SCRAM-SHA-512 auth against the Strimzi-managed KafkaUser "notification-worker" (see
-	// charts/kafka-cluster templates/messaging/kafka-users.yaml). Independent of the mTLS config
-	// above (our listener is SASL_PLAINTEXT, not SASL_SSL) -- optional, local docker-compose has
-	// no Strimzi listener/ACLs so this defaults to false there.
+	// Optional SCRAM-SHA-512 auth as KafkaUser notification-worker (independent of mTLS).
 	KafkaSASLEnabled  bool
 	KafkaSASLUsername string
 	KafkaSASLPassword string
@@ -63,9 +55,7 @@ type Config struct {
 	SMTPPassword string
 }
 
-// Load reads and validates configuration from the environment. It fails
-// fast (returns an error, callers should exit non-zero) on any combination
-// that would otherwise fail silently or insecurely later at runtime.
+// Load reads and validates the configuration; it fails fast on insecure or incomplete settings.
 func Load() (Config, error) {
 	cfg := Config{
 		ResultTopic:        os.Getenv("RESULT_TOPIC"),

@@ -1,5 +1,4 @@
-// Package metrics defines the Prometheus metrics exposed on /metrics, as
-// documented in src/reservation-worker/README.md ## Zweck.
+// Package metrics defines the Prometheus metrics on /metrics.
 package metrics
 
 import (
@@ -19,9 +18,7 @@ var (
 		Buckets: prometheus.DefBuckets,
 	}, []string{"result"})
 
-	// ProcessingErrors counts failed attempts by stage -- "unmarshal" for
-	// malformed/invalid messages, "db" for the booking transaction, "publish"
-	// for the RESULT_TOPIC write.
+	// ProcessingErrors counts failures by stage: unmarshal, db, publish.
 	ProcessingErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "reservation_processing_errors_total",
 		Help: "Total number of failed reservation processing attempts, by stage.",

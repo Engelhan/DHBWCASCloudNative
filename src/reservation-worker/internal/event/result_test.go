@@ -50,9 +50,7 @@ func TestResultMarshal_JSONKeys(t *testing.T) {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
 
-	// These are the exact keys notification-worker's internal/event.Event
-	// expects (camelCase) -- a mismatch here would silently break the
-	// downstream consumer.
+	// Keys notification-worker expects; a mismatch breaks it silently.
 	for _, key := range []string{"eventType", "reservationId", "eventOccurredAt", "customerEmail", "seatId"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("Marshal() output missing expected key %q: %s", key, data)

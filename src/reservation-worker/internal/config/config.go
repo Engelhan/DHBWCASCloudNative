@@ -1,6 +1,4 @@
-// Package config loads reservation-worker's configuration from environment
-// variables (injected via ConfigMap/Secret in the Helm chart, see
-// charts/reservation-worker/) and validates it at startup.
+// Package config loads and validates the environment configuration.
 package config
 
 import (
@@ -13,11 +11,7 @@ import (
 )
 
 type Config struct {
-	// DB_HOST/DB_PORT/DB_NAME/DB_SSLMODE come from a ConfigMap, DB_USER/DB_PASSWORD from a
-	// Secret -- CNPG (charts/postgres-cluster) only provides a username/password Secret, not a
-	// pre-built connection string, so the application builds it itself (same team decision as
-	// catalog-api's buildDatabaseURL, see its main.go). Kept as separate fields + a DatabaseURL()
-	// method rather than a single DATABASE_URL env var so the construction is unit-testable here.
+	// CNPG provides username/password separately, so the DSN is built here (see DatabaseURL).
 	DBHost     string
 	DBPort     string
 	DBName     string
@@ -30,9 +24,7 @@ type Config struct {
 	ResultTopic      string
 	ConsumerGroup    string
 
-	// SASL/SCRAM-SHA-512 auth against the Strimzi-managed KafkaUser "reservation-worker" (see
-	// charts/kafka-cluster templates/messaging/kafka-users.yaml). Optional: local docker-compose
-	// has no Strimzi listener/ACLs, so KafkaSASLEnabled defaults to false there.
+	// Optional SCRAM-SHA-512 auth as KafkaUser reservation-worker.
 	KafkaSASLEnabled  bool
 	KafkaSASLUsername string
 	KafkaSASLPassword string
@@ -40,9 +32,7 @@ type Config struct {
 	ProcessMaxRetries   int
 	ProcessRetryBackoff time.Duration
 
-	// RegistryURL is Apicurio Registry's v3 REST API root, e.g.
-	// "http://apicurio.kafka.svc:8080/apis/registry/v3" (no trailing slash). See
-	// internal/schemareg.
+	// RegistryURL is the Apicurio v3 REST root.
 	RegistryURL     string
 	RegistryGroupID string
 
@@ -50,9 +40,7 @@ type Config struct {
 	HTTPAddr string
 }
 
-// Load reads and validates configuration from the environment. It fails
-// fast (returns an error, callers should exit non-zero) rather than let an
-// incomplete configuration fail confusingly later at runtime.
+// Load reads and validates the configuration; it fails fast on missing values.
 func Load() (Config, error) {
 	cfg := Config{
 		DBHost:            os.Getenv("DB_HOST"),
@@ -136,9 +124,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-// DatabaseURL builds the Postgres connection string from the separate host/port/name/user/
-// password/sslmode fields. See the Config struct doc for why it's built here instead of read
-// from a single DATABASE_URL env var.
+// DatabaseURL builds the Postgres DSN from the separate fields.
 func (c Config) DatabaseURL() string {
 	u := url.URL{
 		Scheme:   "postgres",

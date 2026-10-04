@@ -1,18 +1,6 @@
-// Package kafkaconsumer runs reservation-worker's consumer group on
-// RESERVATION_TOPIC. A message's offset is committed only once both the
-// booking transaction (internal/booking) and the RESULT_TOPIC publish
-// (internal/producer) have succeeded. Since booking.Process is idempotent on
-// reservation_id, an uncommitted message being redelivered after a partial
-// failure (e.g. the process crashes after the DB commit but before the
-// offset commit) is safe -- it re-derives the same result and republishes
-// rather than claiming a seat twice. This is the same "commit only on
-// verified completion" philosophy as
-// src/notification-worker/internal/kafkaconsumer, adapted for two side
-// effects (DB write, Kafka publish) instead of one.
-//
-// A malformed/structurally invalid message can never succeed on retry, so
-// it's logged and its offset committed immediately (skip, don't block the
-// partition on a poison pill) rather than retried.
+// Package kafkaconsumer consumes RESERVATION_TOPIC. Offsets are committed only after both the
+// booking and the result publish succeeded; redelivery is safe because booking is idempotent.
+// Invalid messages are logged and committed (poison pills never block a partition).
 package kafkaconsumer
 
 import (
@@ -165,8 +153,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg kafka.Message) {
 
 	c.logger.Error("all booking attempts exhausted, message will be redelivered",
 		"reservationId", req.ReservationID, "attempts", c.maxRetries+1, "error", lastErr)
-	// Deliberately no commit: redelivered on restart/rebalance, which is safe
-	// because booking.Process is idempotent on reservation_id -- see package doc.
+	// No commit: redelivered later, safe because booking is idempotent.
 }
 
 func (c *Consumer) commit(ctx context.Context, msg kafka.Message) {

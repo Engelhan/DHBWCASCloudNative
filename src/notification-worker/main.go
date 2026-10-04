@@ -1,7 +1,4 @@
-// Command notification-worker is TicketFlow's second, independent Kafka
-// consumer group. See src/notification-worker/README.md for the config
-// contract and internal/kafkaconsumer for the retry/dead-letter/commit
-// semantics.
+// Command notification-worker sends notifications for reservation results (second consumer group).
 package main
 
 import (

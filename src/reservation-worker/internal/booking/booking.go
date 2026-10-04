@@ -1,6 +1,4 @@
-// Package booking contains reservation-worker's actual booking logic: the
-// transactional, race-safe seat claim described in
-// src/reservation-worker/README.md ## Zweck.
+// Package booking implements the race-safe seat claim.
 package booking
 
 import (
@@ -17,18 +15,9 @@ import (
 
 const reasonSeatUnavailable = "SEAT_UNAVAILABLE"
 
-// Process claims req.SeatID for req.ReservationID and returns the result
-// event to publish to RESULT_TOPIC. It never locks pessimistically
-// (no SELECT ... FOR UPDATE): the seat claim is an optimistic
-// compare-and-swap on seats.status ("UPDATE ... WHERE status = 'free'") --
-// exactly one concurrent claim for the same seat can ever affect a row,
-// which is what actually prevents overselling under a flash-sale load.
-//
-// Process is idempotent on req.ReservationID: if this reservation was
-// already recorded (e.g. the Kafka message is redelivered after a crash
-// between the DB commit and the RESERVATION_TOPIC offset commit -- see
-// internal/kafkaconsumer), it re-derives the result from the existing row
-// instead of claiming the seat a second time.
+// Process claims the seat via optimistic compare-and-swap (UPDATE ... WHERE status = 'free'),
+// so only one concurrent claim can win. It is idempotent on ReservationID: a redelivered message
+// re-derives the existing result instead of claiming again.
 func Process(ctx context.Context, pool *pgxpool.Pool, req event.Requested) (event.Result, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -42,7 +31,6 @@ func Process(ctx context.Context, pool *pgxpool.Pool, req event.Requested) (even
 	case err == nil:
 		return resultFor(req, existingStatus), nil
 	case errors.Is(err, pgx.ErrNoRows):
-		// First time we see this reservation_id -- proceed below.
 	default:
 		return event.Result{}, fmt.Errorf("check existing reservation: %w", err)
 	}

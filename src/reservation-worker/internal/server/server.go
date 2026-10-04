@@ -19,11 +19,7 @@ type Server struct {
 	httpServer *http.Server
 }
 
-// New builds the server. /readyz actively checks DB, Kafka and both schema-registry artifacts'
-// reachability on every request (mirrors catalog-api's readyz, see
-// src/catalog-api/internal/api ## handleReadyz) -- there's no cheap
-// always-true default here since, unlike notification-worker, this service
-// has no long stretches where "no traffic yet" is expected/normal.
+// New builds the server; /readyz actively checks DB, Kafka and the registry.
 func New(addr string, db, kafka, reqSchema, resultSchema Pinger) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())

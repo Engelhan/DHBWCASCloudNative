@@ -7,9 +7,7 @@ import (
 	"ticketflow/notification-worker/internal/event"
 )
 
-// LogNotifier writes a structured log line instead of sending a real
-// notification. It is the always-available, demo-safe default channel and
-// practically never fails.
+// LogNotifier logs instead of sending; the demo-safe default.
 type LogNotifier struct {
 	Logger *slog.Logger
 }

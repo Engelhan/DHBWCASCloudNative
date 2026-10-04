@@ -1,5 +1,4 @@
-// Package event defines the JSON contracts reservation-worker consumes from
-// RESERVATION_TOPIC and publishes to RESULT_TOPIC.
+// Package event defines the consumed and published JSON contracts.
 package event
 
 import (
@@ -8,9 +7,7 @@ import (
 	"time"
 )
 
-// Requested mirrors src/catalog-api/internal/reservation.Requested exactly
-// (same JSON keys) -- catalog-api is the only producer of this contract, see
-// src/catalog-api/README.md ## Kafka-Event-Schema.
+// Requested mirrors catalog-api's reservation.Requested (same JSON keys).
 type Requested struct {
 	ReservationID string    `json:"reservation_id"`
 	EventID       string    `json:"event_id"`
@@ -30,9 +27,7 @@ func UnmarshalRequested(data []byte) (Requested, error) {
 	return r, nil
 }
 
-// Validate checks structural requirements. A message failing this can never
-// succeed on retry -- callers should treat it as a poison pill (log, skip,
-// commit the offset regardless).
+// Validate checks required fields; a failing message is a poison pill (skip and commit).
 func (r Requested) Validate() error {
 	if r.ReservationID == "" {
 		return fmt.Errorf("reservation_id is required")

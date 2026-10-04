@@ -88,8 +88,7 @@ func TestUnwrapToleratesGlobalIDMismatch(t *testing.T) {
 	c := newResolvedClient(t, 7)
 
 	payload := validResultPayload()
-	// framed with a different globalId than resolved (7) - should still validate successfully,
-	// only logged as a warning (see package doc).
+	// Different globalId than resolved: still valid, only logged.
 	framed := append([]byte{magicByte, 0, 0, 0, 9}, payload...)
 
 	if _, err := c.Unwrap(framed); err != nil {

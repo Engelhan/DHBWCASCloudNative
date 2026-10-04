@@ -1,7 +1,5 @@
-// Package event defines the JSON contract notification-worker consumes
-// from RESULT_TOPIC. No producer for this contract exists yet in the repo
-// (reservation-worker isn't built) -- this is the first definition of it;
-// reservation-worker must match this shape when it's implemented.
+// Package event defines the JSON contract consumed from RESULT_TOPIC (produced by
+// reservation-worker).
 package event
 
 import (
@@ -21,10 +19,7 @@ type Event struct {
 	EventType       Type      `json:"eventType"`
 	ReservationID   string    `json:"reservationId"`
 	EventOccurredAt time.Time `json:"eventOccurredAt"`
-	// CustomerEmail is the recipient for the optional SMTP channel. Required
-	// only when SMTP is actually active (see Validate) -- the log-only
-	// default path must keep working even before reservation-worker
-	// reliably populates this field.
+	// CustomerEmail is only required when SMTP is active.
 	CustomerEmail string `json:"customerEmail"`
 	EventName     string `json:"eventName,omitempty"`
 	SeatID        string `json:"seatId,omitempty"`
@@ -40,9 +35,7 @@ func Unmarshal(data []byte) (Event, error) {
 	return e, nil
 }
 
-// Validate checks structural requirements. requireEmail should be true only
-// when the active notifier actually needs CustomerEmail (i.e. SMTP is
-// enabled).
+// Validate checks required fields; requireEmail only when SMTP is enabled.
 func (e Event) Validate(requireEmail bool) error {
 	switch e.EventType {
 	case TypeReservationConfirmed, TypeReservationRejected:
@@ -58,8 +51,7 @@ func (e Event) Validate(requireEmail bool) error {
 	return nil
 }
 
-// Result returns the lowercase result label used for the
-// notifications_sent_total metric.
+// Result returns the label for notifications_sent_total.
 func (e Event) Result() string {
 	if e.EventType == TypeReservationConfirmed {
 		return "confirmed"

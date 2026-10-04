@@ -1,5 +1,4 @@
-// Package kafkasasl builds the SCRAM-SHA-512 SASL mechanism shared by the
-// Kafka consumer and result producer.
+// Package kafkasasl builds the SCRAM-SHA-512 mechanism for consumer and producer.
 package kafkasasl
 
 import (
@@ -9,12 +8,7 @@ import (
 	"ticketflow/reservation-worker/internal/config"
 )
 
-// Build returns a SCRAM-SHA-512 mechanism authenticating as the
-// Strimzi-managed KafkaUser "reservation-worker" (see charts/kafka-cluster
-// templates/messaging/kafka-users.yaml), or (nil, nil) when
-// KAFKA_SASL_ENABLED is false -- kafka-go treats a nil sasl.Mechanism as "no
-// auth", the current default for local docker-compose (no Strimzi
-// listener/ACLs there).
+// Build returns the mechanism, or nil when KAFKA_SASL_ENABLED is false.
 func Build(cfg config.Config) (sasl.Mechanism, error) {
 	if !cfg.KafkaSASLEnabled {
 		return nil, nil

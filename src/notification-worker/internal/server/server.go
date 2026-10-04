@@ -19,11 +19,7 @@ type Server struct {
 	httpServer *http.Server
 }
 
-// New builds the server. ready reflects Kafka broker reachability (see
-// internal/kafkaconsumer); schema additionally reflects the schema-registry client's resolved
-// state (see internal/schemareg) -- both must be ready for /readyz to report ready. /healthz is a
-// plain liveness check independent of either, since there may legitimately be no Kafka traffic
-// for long stretches until reservation-worker exists.
+// New builds the server; /readyz needs Kafka and the registry, /healthz is plain liveness.
 func New(addr string, ready *atomic.Bool, schema Pinger) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())

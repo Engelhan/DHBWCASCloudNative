@@ -1,7 +1,5 @@
-// Package notify implements the notification channels (log, SMTP) and a
-// thin Dispatcher that records metrics for a single delivery attempt.
-// Retries and dead-letter handling live one layer up, in kafkaconsumer,
-// since they need to coordinate with Kafka offset commits.
+// Package notify implements the channels (log, SMTP) and a Dispatcher recording metrics per
+// attempt. Retries and DLT handling live in kafkaconsumer.
 package notify
 
 import (
@@ -16,9 +14,7 @@ const (
 	ChannelSMTP = "smtp"
 )
 
-// Notifier delivers a single notification attempt for an event.
-// Implementations should treat ctx's deadline as a hard timeout for the
-// underlying I/O.
+// Notifier performs one delivery attempt; ctx's deadline is a hard timeout.
 type Notifier interface {
 	Notify(ctx context.Context, e event.Event) error
 }
@@ -26,9 +22,7 @@ type Notifier interface {
 // Dispatcher wraps the active Notifier with metrics recording.
 type Dispatcher struct {
 	Notifier Notifier
-	// Channel labels the notification_dispatch_errors_total metric and
-	// tells callers whether CustomerEmail is required (see
-	// kafkaconsumer.handleMessage).
+	// Channel labels the error metric and tells whether CustomerEmail is required.
 	Channel string
 }
 

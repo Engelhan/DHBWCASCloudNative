@@ -1,4 +1,4 @@
-// Package api enthaelt die HTTP-Handler von catalog-api.
+// Package api contains the catalog-api HTTP handlers.
 package api
 
 import (
@@ -18,10 +18,8 @@ import (
 	"ticketflow/catalog-api/internal/schemareg"
 )
 
-// pendingEntry haelt die von catalog-api selbst noch bekannten Angaben zu einer Reservierung,
-// solange der (separate) reservation-worker noch keine Zeile in Postgres geschrieben hat.
-// catalog-api schreibt bewusst nicht synchron in die DB - dieser Cache ist rein In-Memory,
-// go bei Neustart verloren, das ist fuer eine "in Bearbeitung"-Anzeige ausreichend.
+// pendingEntry remembers a reservation until reservation-worker has written its row
+// (in-memory only, lost on restart).
 type pendingEntry struct {
 	EventID   string
 	SeatID    string
@@ -200,10 +198,7 @@ func (a *API) handleCreateReservation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("seat_not_found"))
 		return
 	}
-	// Nur ein Best-Effort-Vorabcheck fuer UX - die eigentliche, race-sichere Sitzplatzsperre
-	// passiert transaktional im reservation-worker. Bei einem Flash-Sale kann sich der Status
-	// zwischen diesem Read und der Verarbeitung der Kafka-Message aendern; das ist erwartet
-	// und wird dort als "rejected" behandelt, nicht hier verhindert.
+	// Best-effort UX check only; the race-safe seat lock happens in reservation-worker.
 	if seat.Status != "free" {
 		metrics.ReservationRequestsTotal.WithLabelValues("seat_unavailable").Inc()
 		writeJSON(w, http.StatusConflict, errorBody("seat_unavailable"))
@@ -262,8 +257,7 @@ func (a *API) handleGetReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// reservation-worker hat noch keine Zeile geschrieben: solange wir die Anfrage noch aus
-	// dem lokalen Cache kennen, gilt sie als "pending"; sonst kennen wir die ID nicht.
+	// No row yet: pending if we still know the request, otherwise unknown.
 	a.pendingMu.Lock()
 	entry, ok := a.pending[id]
 	a.pendingMu.Unlock()

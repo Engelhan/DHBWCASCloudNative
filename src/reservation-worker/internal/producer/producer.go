@@ -1,5 +1,4 @@
-// Package producer publishes reservation-worker's booking results to
-// RESULT_TOPIC.
+// Package producer publishes booking results to RESULT_TOPIC.
 package producer
 
 import (
@@ -20,30 +19,19 @@ type Producer struct {
 	schema      *schemareg.Client
 }
 
-// New wires up the producer. saslMechanism is nil when SASL auth is disabled -- see
-// internal/kafkasasl package doc.
+// New creates the producer; a nil saslMechanism means no auth.
 func New(brokers []string, topic string, schema *schemareg.Client, saslMechanism sasl.Mechanism) *Producer {
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:  kafka.TCP(brokers...),
 			Topic: topic,
-			// Key = reservation_id: jede Reservierung erzeugt genau ein
-			// Result-Event, eine Ordering-Garantie zwischen verschiedenen
-			// Reservierungen ist nicht erforderlich.
+			// One result per reservation; no cross-reservation ordering needed.
 			Balancer: &kafka.Hash{},
-			// Der Consumer verarbeitet streng eine Nachricht nach der anderen
-			// und wartet synchron auf dieses Publish, bevor er den Offset
-			// committet - hier liegt also nie mehr als eine Nachricht an.
-			// Mit kafka-go-Defaults (BatchSize 100, BatchTimeout 1s) wartete
-			// jedes Publish die volle Sekunde auf einen Batch, der nie voll
-			// wird: ~1 Reservierung/s pro Pod, egal wie viele KEDA startet.
+			// One message at a time: the 1s default batch timeout would cap each pod at ~1 msg/s.
 			BatchSize: 1,
-			// kafka-go-Default ist RequireNone (acks=0): ein verlorenes
-			// Result-Event fiele nie auf, weil der Offset danach trotzdem
-			// committet wird. acks=all passt zu replicationFactor 3 /
-			// min.insync.replicas 2 (P5, charts/kafka-cluster).
+			// acks=all (default is acks=0), matching RF 3 / min.insync 2 (P5).
 			RequiredAcks:           kafka.RequireAll,
-			AllowAutoTopicCreation: true, // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
+			AllowAutoTopicCreation: true, // local only; Strimzi manages topics in the cluster
 			Transport:              &kafka.Transport{SASL: saslMechanism},
 		},
 		dialer:      &kafka.Dialer{Timeout: 10 * time.Second, SASLMechanism: saslMechanism},

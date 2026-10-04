@@ -3,9 +3,8 @@ package schemareg
 import _ "embed"
 
 // RequestedSchemaJSON is a copy of
-// charts/kafka-cluster/files/schemas/reservation-requested.schema.json, duplicated here (not shared
-// via a Go module) -- same convention as reservation-worker/notification-worker's internal/event
-// packages. Keep in sync by hand when the canonical schema changes.
+// charts/kafka-cluster/files/schemas/reservation-requested.schema.json;
+// keep in sync by hand.
 
 //go:embed schemas/reservation-requested.schema.json
 var RequestedSchemaJSON []byte

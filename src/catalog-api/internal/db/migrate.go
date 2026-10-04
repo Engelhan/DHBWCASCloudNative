@@ -2,15 +2,8 @@ package db
 
 import "context"
 
-// Migrate legt Schema + Demo-Event beim Programmstart an (idempotent, IF NOT EXISTS/ON CONFLICT
-// DO NOTHING). Im echten CNPG-Cluster gibt es kein docker-entrypoint-initdb.d-Aequivalent (das
-// funktioniert nur beim lokalen postgres-Image, siehe local/postgres/init.sql) - ein frisch
-// bereitgestellter CNPG-Cluster hat also nur eine leere Datenbank, keine Tabellen.
-//
-// Das ist bewusst kein Widerspruch zu "catalog-api schreibt nie in reservations": diese Migration
-// legt nur Struktur + Demo-Stammdaten beim Start an, nie eine Reservierungszeile zur Laufzeit -
-// reservations bleibt dauerhaft nur vom (noch nicht implementierten) reservation-worker
-// beschrieben.
+// Migrate creates the schema and demo events at startup (idempotent); CNPG starts with an
+// empty database. It never writes reservations.
 func (d *DB) Migrate(ctx context.Context) error {
 	_, err := d.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS events (
@@ -31,7 +24,7 @@ func (d *DB) Migrate(ctx context.Context) error {
 			UNIQUE (event_id, row_number, seat_number)
 		);
 
-		-- Wird ausschliesslich vom (noch nicht implementierten) reservation-worker beschrieben.
+		-- Written by reservation-worker only.
 		CREATE TABLE IF NOT EXISTS reservations (
 			id         UUID PRIMARY KEY,
 			event_id   TEXT NOT NULL REFERENCES events (id),
@@ -45,21 +38,16 @@ func (d *DB) Migrate(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
 
-		-- Drei Veranstaltungen in drei Hallen, je 1000 Plaetze. Reihenfolge nach starts_at: catalog-api
-		-- liefert GET /events so sortiert und das Frontend zeigt aktuell events[0] - "demo-konzert"
-		-- bleibt dadurch das voreingestellte Event.
+		-- Three events with 1000 seats each. GET /events sorts by starts_at and the frontend shows
+		-- events[0], so demo-konzert stays the default.
 		INSERT INTO events (id, name, venue, starts_at) VALUES
 		    ('demo-konzert',  'TicketFlow Demo-Konzert',  'Halle 1',          '2026-11-20T20:00:00+01:00'),
 		    ('rock-festival', 'TicketFlow Rock-Festival', 'Arena Nord',       '2026-12-05T19:30:00+01:00'),
 		    ('klassik-abend', 'TicketFlow Klassik-Abend', 'Konzerthaus Sued', '2027-01-17T19:00:00+01:00')
 		ON CONFLICT (id) DO NOTHING;
 
-		-- 1000 Plaetze je Halle: 40 Reihen a 25 Plaetze, drei Kategorien (Reihe 1-8 premium,
-		-- 9-24 parkett, 25-40 balkon), Preise je Veranstaltung leicht unterschiedlich.
-		--
-		-- ALLE Plaetze starten auf "free" - kein vorbelegter Sitz mehr. Der Flash-Sale-Lastpfad soll die
-		-- Halle selbst leerkaufen; vorbelegte Plaetze haetten nur den Sitzplan im Screencast gefuellt und
-		-- dabei die Ausgangslage jedes Lasttests verfaelscht.
+		-- 40 rows x 25 seats: rows 1-8 premium, 9-24 parkett, 25-40 balkon. All seats start free so
+		-- every load test starts from the same state.
 		INSERT INTO seats (id, event_id, row_number, seat_number, category, price_cents, status)
 		SELECT
 		    e.id || '-seat-' || r || '-' || s,

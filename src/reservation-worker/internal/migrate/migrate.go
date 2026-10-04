@@ -1,8 +1,4 @@
-// Package migrate applies reservation-worker's embedded SQL schema
-// migrations on startup. This is the "DB Schema aufbauen und ueber
-// Applikation versionieren" piece of the service's scope: the schema lives
-// versioned in sql/*.sql inside this repo/binary rather than being applied
-// by hand against the cluster.
+// Package migrate applies the embedded, versioned SQL migrations at startup.
 package migrate
 
 import (
@@ -19,9 +15,7 @@ import (
 //go:embed sql/*.sql
 var files embed.FS
 
-// Run applies every embedded migration not yet recorded in
-// schema_migrations, in filename order, one transaction per file so a
-// failing migration never leaves partial DDL applied.
+// Run applies each unrecorded migration in filename order, one transaction per file.
 func Run(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (

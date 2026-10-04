@@ -1,15 +1,6 @@
-// Package schemareg is a minimal client for Apicurio Registry (charts/apicurio). It resolves the
-// current globalId of one registry artifact once at startup, and validates incoming message
-// payloads (after stripping the Confluent-compatible framing header: 0x0 magic byte + 4-byte
-// big-endian globalId) against a JSON Schema embedded in the binary at build time (embedded.go)
-// -- Unwrap never makes a network call per message, only Resolve/Ping do, and only against the
-// registry's "latest version" metadata endpoint. This keeps message throughput independent of
-// registry availability once a Client has successfully resolved once.
-//
-// Not a general-purpose Apicurio client: it only implements the two calls this repo's services
-// need (create-or-update is done by the charts/kafka-cluster schema-registrar Job, not from app
-// code -- see that Job's comment for why). Duplicated per service rather than shared via a Go
-// module, same convention as this service's own internal/event package.
+// Package schemareg is a minimal Apicurio client: it resolves an artifact's globalId at startup,
+// strips the Confluent-style header (magic byte + 4-byte globalId) and validates payloads against
+// an embedded JSON schema. No network call per message.
 package schemareg
 
 import (
@@ -33,13 +24,12 @@ const (
 )
 
 type Config struct {
-	// BaseURL is the registry's v3 REST API root, e.g.
-	// "http://apicurio.kafka.svc:8080/apis/registry/v3" (no trailing slash).
+	// BaseURL is the v3 REST root, e.g. http://apicurio.kafka.svc:8080/apis/registry/v3.
 	BaseURL    string
 	GroupID    string
 	ArtifactID string
 
-	// Logger is optional; nil disables logging (e.g. in tests).
+	// Logger is optional.
 	Logger *slog.Logger
 }
 
@@ -47,12 +37,10 @@ type Client struct {
 	cfg      Config
 	http     *http.Client
 	schema   *jsonschema.Schema
-	globalID atomic.Int64 // 0 until Resolve/Ping succeeds at least once
+	globalID atomic.Int64 // 0 until resolved
 }
 
-// New compiles schemaJSON (ResultSchemaJSON) for local validation. It performs no network call --
-// call Resolve before the client is used to Unwrap, or rely on Ping (wired into /readyz) to
-// resolve it lazily.
+// New compiles the schema for local validation; no network call.
 func New(cfg Config, schemaJSON []byte) (*Client, error) {
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaJSON))
 	if err != nil {
@@ -73,8 +61,7 @@ func New(cfg Config, schemaJSON []byte) (*Client, error) {
 	}, nil
 }
 
-// Resolve blocks until the artifact's current globalId has been fetched from the registry,
-// retrying indefinitely until ctx is done. Call it once at startup before serving traffic.
+// Resolve fetches the current globalId, retrying until ctx is done.
 func (c *Client) Resolve(ctx context.Context) error {
 	for {
 		gid, err := c.fetchGlobalID(ctx)
@@ -91,9 +78,7 @@ func (c *Client) Resolve(ctx context.Context) error {
 	}
 }
 
-// Ping satisfies the Pinger interface used for /readyz. It re-resolves lazily if Resolve was
-// never called or the registry was unreachable at startup, so /readyz recovers once the registry
-// becomes reachable.
+// Ping re-resolves lazily so /readyz recovers once the registry is reachable.
 func (c *Client) Ping(ctx context.Context) error {
 	if c.globalID.Load() != 0 {
 		return nil
@@ -123,8 +108,6 @@ func (c *Client) fetchGlobalID(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("unexpected status %d fetching %s: %s", resp.StatusCode, url, body)
 	}
 
-	// globalId's exact JSON field name/casing is not yet verified against a live registry -- see
-	// charts/README.md ## apicurio. Adjust here if a real response differs.
 	var meta struct {
 		GlobalID int64 `json:"globalId"`
 	}
@@ -137,11 +120,8 @@ func (c *Client) fetchGlobalID(ctx context.Context) (int64, error) {
 	return meta.GlobalID, nil
 }
 
-// Unwrap strips the registry header and validates the remaining payload against the embedded
-// schema. Validation always runs against the schema embedded in this binary, never a per-message
-// registry fetch -- see package doc. A globalId in msg that doesn't match this client's own
-// resolved globalId (the schema evolved since this consumer started) is logged as a warning, not
-// treated as an error.
+// Unwrap strips the header and validates against the embedded schema. A different globalId
+// (schema evolved) is only logged.
 func (c *Client) Unwrap(msg []byte) ([]byte, error) {
 	if len(msg) < frameHeaderSz {
 		return nil, fmt.Errorf("schemareg: message too short for framing header (%d bytes)", len(msg))

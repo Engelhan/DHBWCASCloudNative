@@ -1,10 +1,4 @@
--- Schema fuer die TicketFlow-Kernentitaeten. Muss mit dem lokalen Dev-Seed
--- local/postgres/init.sql (docker-compose) uebereinstimmen, das denselben
--- Stand direkt per Postgres-Init-Script anlegt statt ueber diese Migration.
--- IF NOT EXISTS deshalb bewusst: macht diese Migration sicher idempotent
--- sowohl gegen eine leere CNPG-Datenbank (echter Cluster-Pfad, siehe
--- charts/postgres-cluster) als auch gegen eine von init.sql bereits
--- vorbefuellte lokale DB.
+-- Core schema. IF NOT EXISTS keeps it idempotent.
 CREATE TABLE IF NOT EXISTS events (
     id        TEXT PRIMARY KEY,
     name      TEXT NOT NULL,
@@ -23,10 +17,7 @@ CREATE TABLE IF NOT EXISTS seats (
     UNIQUE (event_id, row_number, seat_number)
 );
 
--- status startet nie bei 'pending' hier: reservation-worker schreibt diese
--- Zeile erst, nachdem es das Ergebnis (confirmed/rejected) kennt. "pending"
--- wird nur von catalog-api synthetisiert, solange noch keine Zeile existiert
--- (siehe src/catalog-api/internal/api ## handleGetReservation).
+-- Rows are written with the final status; "pending" is only synthesized by catalog-api.
 CREATE TABLE IF NOT EXISTS reservations (
     id         UUID PRIMARY KEY,
     event_id   TEXT NOT NULL REFERENCES events (id),

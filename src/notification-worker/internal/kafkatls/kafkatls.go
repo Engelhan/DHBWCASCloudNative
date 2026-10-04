@@ -1,5 +1,4 @@
-// Package kafkatls builds the mutual-TLS configuration shared by the Kafka
-// consumer and the dead-letter-topic producer.
+// Package kafkatls builds the mTLS config for consumer and DLT producer.
 package kafkatls
 
 import (
@@ -10,12 +9,7 @@ import (
 	"ticketflow/notification-worker/internal/config"
 )
 
-// Build constructs a *tls.Config for mTLS to the Kafka brokers from
-// PEM-encoded CA/client-cert/client-key values. Returns (nil, nil) when
-// KAFKA_TLS_ENABLED is false, so callers can pass the result straight to
-// kafka.Dialer{TLS: ...}/kafka.Transport{TLS: ...} either way -- a nil
-// *tls.Config there means "plaintext", which is the current default (no
-// Strimzi listener/SASL config exists yet in this repo).
+// Build returns a *tls.Config from PEM values, or nil (plaintext) when KAFKA_TLS_ENABLED is false.
 func Build(cfg config.Config) (*tls.Config, error) {
 	if !cfg.KafkaTLSEnabled {
 		return nil, nil

@@ -27,8 +27,7 @@ func (d *DB) Ping(ctx context.Context) error {
 	return d.pool.Ping(ctx)
 }
 
-// Pool exposes the underlying pool for internal/migrate and internal/booking,
-// which need transactional access beyond simple typed queries.
+// Pool exposes the pool for transactional access (migrate, booking).
 func (d *DB) Pool() *pgxpool.Pool {
 	return d.pool
 }

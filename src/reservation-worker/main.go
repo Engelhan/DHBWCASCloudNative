@@ -1,13 +1,4 @@
-// Command reservation-worker is TicketFlow's Kafka consumer that performs
-// the actual, transactional seat booking. See
-// src/reservation-worker/README.md for the config contract and
-// internal/booking for the seat-claim/idempotency semantics.
-//
-// This comment-only touch exists to re-trigger .github/workflows/build-images.yml
-// (path-filtered to src/**): the deployed image was still ghcr.io/.../a0acfac6,
-// built before the DB_HOST/DB_USER config refactor (commit 69f035f) and the
-// SASL wiring (commit 1d6f1f2) landed, because no src/ change accompanied
-// either commit's own build - the image for 1d6f1f2 never got pushed.
+// Command reservation-worker consumes reservation requests and books seats transactionally.
 package main
 
 import (

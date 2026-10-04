@@ -1,5 +1,5 @@
-// Package db kapselt den (rein lesenden) Zugriff von catalog-api auf Postgres.
-// catalog-api schreibt bewusst nie in reservations - das uebernimmt der reservation-worker.
+// Package db provides catalog-api's read-only Postgres access (reservations are written by
+// reservation-worker).
 package db
 
 import (
@@ -125,8 +125,7 @@ func (d *DB) GetSeat(ctx context.Context, eventID, seatID string) (*Seat, error)
 	return &s, nil
 }
 
-// GetReservation liefert nil, wenn der reservation-worker noch keine Zeile geschrieben hat -
-// das ist der Normalfall solange die Anfrage noch in Kafka unterwegs/in Bearbeitung ist.
+// GetReservation returns nil while reservation-worker has not written the row yet.
 func (d *DB) GetReservation(ctx context.Context, id string) (*Reservation, error) {
 	var r Reservation
 	err := d.pool.QueryRow(ctx,

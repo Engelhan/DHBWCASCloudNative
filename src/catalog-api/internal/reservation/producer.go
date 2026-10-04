@@ -1,5 +1,4 @@
-// Package reservation enthaelt das (noch mit Carlos abzustimmende) Event-Schema fuer
-// ReservationRequested sowie den Kafka-Producer, der es veroeffentlicht.
+// Package reservation defines the ReservationRequested event and its Kafka producer.
 package reservation
 
 import (
@@ -13,8 +12,7 @@ import (
 	"ticketflow/catalog-api/internal/schemareg"
 )
 
-// Requested ist der Entwurf des ReservationRequested-Payloads. Noch NICHT final mit dem
-// reservation-worker (Carlos) abgestimmt - siehe README ## Kafka-Event-Schema (Entwurf).
+// Requested is the ReservationRequested payload.
 type Requested struct {
 	ReservationID string    `json:"reservation_id"`
 	EventID       string    `json:"event_id"`
@@ -33,28 +31,19 @@ type Producer struct {
 	schema      *schemareg.Client
 }
 
-// NewProducer wires up the producer. saslMechanism is nil when
-// KAFKA_SASL_ENABLED=false (the default for local docker-compose, which has
-// no Strimzi listener/ACLs) -- kafka.Writer/Dialer treat a nil
-// sasl.Mechanism as "no auth", same as the notification-worker's TLS config
-// (see its internal/kafkatls package doc).
+// NewProducer creates the producer; a nil saslMechanism means no auth.
 func NewProducer(brokers []string, topic string, schema *schemareg.Client, saslMechanism sasl.Mechanism) *Producer {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, SASLMechanism: saslMechanism}
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:     kafka.TCP(brokers...),
 			Topic:    topic,
-			Balancer: &kafka.Hash{}, // Key = seat_id: Nachrichten zum selben Sitzplatz bleiben geordnet
-			// Jeder POST /reservations wartet synchron auf dieses Publish. kafka-go
-			// fuellt einen Batch per Default bis zu 1s lang - jede Reservierung
-			// antwortete dadurch erst nach ~1s. 5ms fassen gleichzeitige Requests
-			// im Flash Sale weiterhin zu einem Batch zusammen, ohne spuerbare Latenz.
+			Balancer: &kafka.Hash{}, // key = seat_id keeps per-seat ordering
+			// Requests wait for the publish; the 1s default batch timeout would add 1s per request.
 			BatchTimeout: 5 * time.Millisecond,
-			// kafka-go-Default ist RequireNone (acks=0): catalog-api antwortete 202,
-			// auch wenn die Anfrage nie im Topic ankam. acks=all passt zu
-			// replicationFactor 3 / min.insync.replicas 2 (P5, charts/kafka-cluster).
+			// acks=all (default is acks=0), matching RF 3 / min.insync 2 (P5).
 			RequiredAcks:           kafka.RequireAll,
-			AllowAutoTopicCreation: true, // nur lokal relevant, im Cluster legt Strimzi KafkaTopic-CRs an
+			AllowAutoTopicCreation: true, // local only; Strimzi manages topics in the cluster
 			Transport:              &kafka.Transport{SASL: saslMechanism},
 		},
 		dialer:      dialer,
@@ -63,8 +52,7 @@ func NewProducer(brokers []string, topic string, schema *schemareg.Client, saslM
 	}
 }
 
-// Ping prueft fuer /readyz, ob der Kafka-Broker erreichbar ist (inkl. SASL-Handshake, falls
-// aktiv - ein falsches Passwort faellt damit schon hier auf, nicht erst beim ersten Produce).
+// Ping checks broker reachability for /readyz, including the SASL handshake.
 func (p *Producer) Ping(ctx context.Context) error {
 	conn, err := p.dialer.DialContext(ctx, "tcp", p.firstBroker)
 	if err != nil {
