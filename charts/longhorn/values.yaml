@@ -49,6 +49,25 @@ longhorn:
       "longhorn-liveness-probe": {"requests": {"cpu": "5m", "memory": "16Mi"}, "limits": {"cpu": "50m", "memory": "32Mi"}}
       }
 
+  # Longhorn-UI laeuft upstream schon mit 2 Replicas, aber nur weich auf verschiedene Hostnames
+  # verteilt - hier hart auf zwei verschiedene simulierte Regionen (P4). Upstream-Pod-Label
+  # "app: longhorn-ui". Die CSI-Sidecars (je 3 Replicas) legt Longhorn zur Laufzeit selbst an,
+  # ihre Platzierung ist nicht konfigurierbar; longhorn-driver-deployer ist ein Einmal-Deployer
+  # (1 Replica by design) - siehe README.md ## Grenzen.
+  longhornUI:
+    replicas: 2
+    affinity:
+      podAntiAffinity:
+        # Upstream-Default (weich, hostname) entfernen - Helm merged Maps sonst zusammen.
+        preferredDuringSchedulingIgnoredDuringExecution: null
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: topology.ticketflow/region
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - longhorn-ui
   # Longhorn-Manager ist der einzige Chart-Baustein mit einem eigenen resources-Feld.
   # longhornUI/longhornDriver haben keins; die CSI-Pods laufen ueber
   # defaultSettings.systemManagedCSIComponentsResourceLimits (oben). Engine-Image-DaemonSet

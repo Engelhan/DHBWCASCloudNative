@@ -27,3 +27,9 @@ resources:
   limits:
     cpu: "1"
     memory: 256Mi
+
+# Zwei Traefik-Pods in zwei Regionen (P4) - jeder Request (auch jeder Flash-Sale-Request des
+# load-generators) laeuft ueber Traefik; mit nur einem Pod waere ein Worker-Ausfall ein Ausfall
+# aller Ingress-Hosts. ServiceLB (svclb-traefik) laeuft ohnehin auf jedem Node und leitet an
+# beide Pods weiter.
+replicas: 2

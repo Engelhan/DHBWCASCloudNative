@@ -5,6 +5,27 @@
 # kein Override noetig, nur resources (Chart-Default ueberall {}) fehlt. NetworkPolicies: siehe
 # charts/network-policies.
 cert-manager:
+  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
+  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
+  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
+  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
+  # Controller und cainjector waehlen per Leader-Election (Upstream-Default) genau einen aktiven
+  # Pod, der Webhook ist zustandslos - der API-Server erreicht ihn ueber beide Endpoints.
+  replicaCount: 2
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.ticketflow/region
+      whenUnsatisfiable: DoNotSchedule
+      matchLabelKeys:
+        - pod-template-hash
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: cert-manager
+          app.kubernetes.io/instance: cert-manager
+          app.kubernetes.io/component: controller
   crds:
     enabled: true
 
@@ -17,6 +38,21 @@ cert-manager:
       memory: 256Mi
 
   webhook:
+    replicaCount: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: webhook
+            app.kubernetes.io/instance: cert-manager
+            app.kubernetes.io/component: webhook
     resources:
       requests:
         cpu: 25m
@@ -26,6 +62,21 @@ cert-manager:
         memory: 128Mi
 
   cainjector:
+    replicaCount: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: cainjector
+            app.kubernetes.io/instance: cert-manager
+            app.kubernetes.io/component: cainjector
     resources:
       requests:
         cpu: 25m

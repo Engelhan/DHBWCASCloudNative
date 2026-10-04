@@ -5,6 +5,27 @@ ticketflow: {}
 # Muss unter dem Dependency-Alias "external-secrets" verschachtelt sein (siehe Chart.yaml), damit
 # Helm die Werte an den gewrappten Upstream-Chart durchreicht.
 external-secrets:
+  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
+  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
+  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
+  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
+  # leaderElect ist upstream AUS - ohne ihn wuerden zwei Controller-Pods dieselben
+  # ExternalSecrets/PushSecrets parallel reconcilen. Gilt auch fuer den cert-controller.
+  leaderElect: true
+  replicaCount: 2
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.ticketflow/region
+      whenUnsatisfiable: DoNotSchedule
+      matchLabelKeys:
+        - pod-template-hash
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: external-secrets
+          app.kubernetes.io/instance: external-secrets-operator
   installCRDs: true # kein anderer Chart bringt die ExternalSecret/(Cluster)SecretStore-CRDs mit
 
   image:
@@ -19,6 +40,20 @@ external-secrets:
       memory: 128Mi
 
   webhook:
+    replicaCount: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: external-secrets-webhook
+            app.kubernetes.io/instance: external-secrets-operator
     resources:
       requests:
         cpu: 25m
@@ -28,6 +63,20 @@ external-secrets:
         memory: 64Mi
 
   certController:
+    replicaCount: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: external-secrets-cert-controller
+            app.kubernetes.io/instance: external-secrets-operator
     resources:
       requests:
         cpu: 25m

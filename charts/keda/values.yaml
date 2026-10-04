@@ -7,6 +7,54 @@
 # Muss unter dem Dependency-Alias "keda" verschachtelt sein (siehe Chart.yaml), damit Helm die
 # Werte an das gewrappte Upstream-Chart durchreicht.
 keda:
+  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
+  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
+  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
+  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
+  # Operator: Leader-Election (Upstream), ein aktiver Pod. Metrics-API-Server: laut KEDA-Doku
+  # bedient nur eine Instanz die Anfragen - das zweite Replica verkuerzt nur den Ausfall bei
+  # einem Node-Verlust (genau der Fall, gegen den es hier geht). Webhooks zustandslos.
+  operator:
+    replicaCount: 2
+  metricsServer:
+    replicaCount: 2
+  webhooks:
+    replicaCount: 2
+  podDisruptionBudget:
+    operator:
+      minAvailable: 1
+    metricServer:
+      minAvailable: 1
+    webhooks:
+      minAvailable: 1
+  topologySpreadConstraints:
+    operator:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app: keda-operator
+    metricsServer:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app: keda-operator-metrics-apiserver
+    webhooks:
+      - maxSkew: 1
+        topologyKey: topology.ticketflow/region
+        whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys:
+          - pod-template-hash
+        labelSelector:
+          matchLabels:
+            app: keda-admission-webhooks
   # Chart-Default ist bereits cluster-wide (watchNamespace: "" beobachtet ScaledObjects/
   # TriggerAuthentications in allen Namespaces) - kein Override noetig, da das ScaledObject fuer
   # reservation-worker im Namespace "ticketflow" liegt, nicht "keda".
