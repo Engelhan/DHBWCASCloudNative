@@ -2,7 +2,7 @@
 # then every connection explicitly; see charts/README.md ## network-policies.
 ticketflow: {}
 
-# Namespaces hard-wired in gitops/applicationset.yaml; keep in sync.
+# Namespaces hard-wired in gitops/applicationsets/; keep in sync.
 namespaces:
   # monitoring: monitoring - observability stack removed.
   certManager: cert-manager

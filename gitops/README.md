@@ -11,7 +11,9 @@ diesem Ordner — gesteuert über **zwei `ApplicationSet`s, die nacheinander aus
 gitops/
 ├── env/
 │   └── cluster.yaml         # ZENTRALE Konfiguration: Fork-URL, DNS-Zone, ACME, Images, dev/prod
-└── applicationset.yaml      # zwei ApplicationSets (platform, apps) -> zusammen 21 Applications
+└── applicationsets/
+    ├── platform.yaml        # Stufe 1: Addons, Operatoren, OpenBao (13 Applications)
+    └── apps.yaml            # Stufe 2: Datenhaltung, Kafka, Services, NetworkPolicies (8)
 ```
 
 `env/cluster.yaml` ist die einzige git-getrackte Datei, die für ein eigenes Deployment angepasst
@@ -30,8 +32,8 @@ Vorher lag unter `apps/` je eine `Application`-Datei pro Komponente plus eine
 `app-of-apps.yaml` als Root. Die Repo-URL stand damit **19-mal** im Repo (plus einmal in
 `infra/ansible/roles/gitops_secrets/`) — für einen Fork waren das 20 Stellen, von denen eine
 übersehene genügte, damit ArgoCD still auf das Original-Repo zeigte. Jetzt steht sie nur noch in
-den `repoURL`s der beiden git-Generatoren in `applicationset.yaml` (eine je ApplicationSet, in
-derselben Datei). Dass sie dort wörtlich stehen bleiben muss, ist ein Henne-Ei-Problem — der
+den `repoURL`s der beiden git-Generatoren in `applicationsets/platform.yaml` und
+`applicationsets/apps.yaml` (eine je ApplicationSet). Dass sie dort wörtlich stehen bleiben muss, ist ein Henne-Ei-Problem — der
 Generator muss wissen, aus welchem Repo er `env/cluster.yaml` überhaupt lesen soll.
 
 Jedes Listen-Element beschreibt eine Application mit `name`, `chartPath`, `namespace` und
@@ -145,7 +147,7 @@ Workloads mit. Das ApplicationSet übernimmt die verwaisten Applications danach 
 ```bash
 kubectl -n argocd patch app app-of-apps --type=merge -p '{"metadata":{"finalizers":null}}'
 kubectl -n argocd delete app app-of-apps --cascade=orphan
-kubectl apply -f gitops/applicationset.yaml
+kubectl apply -f gitops/applicationsets/
 kubectl -n argocd get applications      # 19 Stueck, keine Duplikate
 ```
 
@@ -208,7 +210,7 @@ Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim
 **Bei einem eigenen Fork** wird die Fork-URL an genau zwei Stellen eingetragen:
 `env/cluster.yaml` → `ticketflow.repoURL` (daraus speisen sich alle erzeugten Applications und
 das Credential aus `infra/ansible/roles/gitops_secrets`) und die `repoURL`s der beiden
-git-Generatoren in `applicationset.yaml` (Henne-Ei, siehe ## Struktur). Ein Suchen-und-Ersetzen-Skript dafür gibt es
+git-Generatoren in `applicationsets/*.yaml` (Henne-Ei, siehe ## Struktur). Ein Suchen-und-Ersetzen-Skript dafür gibt es
 nicht mehr — es wurde zusammen mit `gitops/apps/` entfernt, weil es nichts mehr zu verteilen gibt.
 
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
@@ -267,8 +269,8 @@ deployen.
 
 ```bash
 # normalerweise automatisch und gestuft via infra/ansible/roles/gitops_rollout; von Hand:
-kubectl apply -f gitops/applicationset.yaml -l ticketflow.io/stage=platform
-kubectl apply -f gitops/applicationset.yaml -l ticketflow.io/stage=apps   # erst wenn Stufe 1 gruen
+kubectl apply -f gitops/applicationsets/platform.yaml
+kubectl apply -f gitops/applicationsets/apps.yaml   # erst wenn Stufe 1 gruen
 kubectl -n argocd get applications -L ticketflow.io/stage
 argocd app list
 argocd app get longhorn

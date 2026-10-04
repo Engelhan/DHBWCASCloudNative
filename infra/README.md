@@ -12,6 +12,6 @@ Two tools with clearly separated responsibilities:
 
 Order: `terraform apply` → Terraform writes the Ansible inventory (IPs) →
 `ansible-playbook playbooks/site.yml` → cluster + ArgoCD are up, the ApplicationSets from
-`gitops/applicationset.yaml` are rolled out stage by stage.
+`gitops/applicationsets/` are rolled out stage by stage.
 
 None of these steps is a manual click in the DHBWCloud portal (requirement P2).

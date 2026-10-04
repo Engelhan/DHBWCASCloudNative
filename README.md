@@ -110,7 +110,7 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    Workern), übernimmt die simulierte Region als Kubernetes-Node-Label
    (`topology.ticketflow/region`) und bootstrapt ArgoCD — siehe [`infra/ansible/`](infra/ansible/).
 3. ArgoCD übernimmt ab hier per GitOps den Rest: zwei `ApplicationSet`s
-   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugen zusammen alle 21
+   ([`gitops/applicationsets/`](gitops/applicationsets/)) erzeugen zusammen alle 21
    Applications, gestuft: zuerst die Plattform — Cluster-Addons (Longhorn, cert-manager,
    external-dns), die Operatoren (CNPG, Strimzi, KEDA, External Secrets) und der zentrale
    Secret-Vault OpenBao —, und erst wenn deren Pods alle Health-Checks bestehen, die Anwendung:
@@ -186,8 +186,8 @@ Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
 $EDITOR gitops/env/cluster.yaml
 #    repoURL, dnsZone, acmeEmail, rfc2136.keyName, imageRegistry, namePrefix
 
-# 2. Die Repo-URL in den beiden git-Generatoren der ApplicationSets (Henne-Ei, siehe Kommentar dort)
-$EDITOR gitops/applicationset.yaml
+# 2. Die Repo-URL in den git-Generatoren der beiden ApplicationSets (Henne-Ei, siehe Kommentar dort)
+$EDITOR gitops/applicationsets/platform.yaml gitops/applicationsets/apps.yaml
 
 # 3. Committen UND in den eigenen Fork pushen.
 #    ArgoCD liest ausschliesslich den Remote-Stand von targetRevision - ein lokal geaenderter,
@@ -210,7 +210,7 @@ terraform init
 terraform apply
 
 # 2. VMs konfigurieren, k3s aufbauen, ArgoCD bootstrappen, GitOps-Secrets anlegen.
-#    Der letzte Schritt wendet gitops/applicationset.yaml gestuft an: erst die Plattform, dann -
+#    Der letzte Schritt wendet gitops/applicationsets/ gestuft an: erst die Plattform, dann -
 #    sobald alle Plattform-Applications Synced/Healthy sind - die Anwendung. Das Playbook endet
 #    erst, wenn alles gruen ist (oder bricht nach 30 min je Stufe mit den roten Apps ab).
 cd ../ansible

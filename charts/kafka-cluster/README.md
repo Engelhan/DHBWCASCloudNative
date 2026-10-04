@@ -101,7 +101,7 @@ helm lint charts/kafka-cluster \
   -f gitops/env/cluster.yaml
 ```
 
-Deployment läuft indirekt über ArgoCD (Element `kafka-cluster` in `gitops/applicationset.yaml`),
+Deployment läuft indirekt über ArgoCD (Element `kafka-cluster` in `gitops/applicationsets/`),
 Namespace `kafka`.
 
 ## Namespaces

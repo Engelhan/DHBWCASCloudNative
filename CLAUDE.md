@@ -72,7 +72,9 @@ Four layers, each owning a distinct concern — don't blur them:
 3. **`gitops/`** — everything Kubernetes-level from here on: operators (CNPG, Strimzi, KEDA), the
    observability stack (kube-prometheus-stack, Loki, Tempo), cluster addons (Longhorn,
    cert-manager, external-dns) and the app charts, all as GitOps-synced `Application` resources.
-   **The folder holds exactly two files**: `env/cluster.yaml` and `applicationset.yaml`.
+   **The folder holds exactly three files**: `env/cluster.yaml` and
+   `applicationsets/{platform,apps}.yaml` (one ApplicationSet each; split into two files
+   2026-10-04, stage name = file name).
    - **`gitops/env/cluster.yaml` is the single source of truth** for every deployment-specific
      value (fork `repoURL`, `targetRevision`, `environment` dev/prod, `dnsZone`, `acmeEmail`,
      `acmeServer`, `rfc2136.{server,keyName}`, `imageRegistry`, `imageTag`, `namePrefix`), all
@@ -81,7 +83,7 @@ Four layers, each owning a distinct concern — don't blur them:
      generator + multi-source `$values`), by every chart as `.Values.ticketflow.*`, by Ansible
      (`include_vars` in `gitops_secrets`) and by Terraform (`yamldecode` in `main.tf`). **Never
      reintroduce any of these values as a literal in a chart or role.**
-   - **`gitops/applicationset.yaml` replaced the former 19 `gitops/apps/*.yaml` files** (plus
+   - **`gitops/applicationsets/` replaced the former 19 `gitops/apps/*.yaml` files** (plus
      `app-of-apps.yaml`). Matrix generator: git-files over `env/cluster.yaml` × a list of the 19
      apps. The list field is `chartPath`, **not** `path` — the git-files generator already
      occupies `.path` with file metadata and the two would collide in the cross product.
@@ -90,11 +92,11 @@ Four layers, each owning a distinct concern — don't blur them:
      `spec.templatePatch` at the bottom, which is a real text template. Element names must stay
      byte-identical to the old Application names — that is what lets an ApplicationSet adopt
      existing Applications instead of duplicating them.
-   - **Since 2026-10-04 the file holds TWO ApplicationSets** (two YAML documents, label
-     `ticketflow.io/stage`): `ticketflow-platform` (13 apps: addons, operators, OpenBao incl. its DB
+   - **Since 2026-10-04 there are TWO ApplicationSets**, one per file in `gitops/applicationsets/`
+     (label `ticketflow.io/stage` on the set and on every generated Application): `ticketflow-platform` (13 apps: addons, operators, OpenBao incl. its DB
      and the ClusterSecretStore) and `ticketflow-apps` (8 apps: network-policies, postgres-cluster,
      kafka-cluster, apicurio, akhq, ticketflow-app, both workers). `infra/ansible/roles/gitops_rollout`
-     applies them in order (`kubectl apply -l ticketflow.io/stage=...`) and only applies `apps` once
+     applies `<stage>.yaml` in order and only applies `apps.yaml` once
      every `platform` Application is Synced **and** Healthy (expected count read from the file, so an
      empty list never counts as green; 30 min timeout per stage, failure lists the red apps).
      **ArgoCD sync waves do nothing on ApplicationSet-generated Applications** — the former
@@ -263,11 +265,11 @@ if needed rather than reviving the Ansible role.
   -o wide` shows the real DHBWV6 addresses), and node Ready state all work as designed.
 - `argocd_bootstrap` installs a version-pinned ArgoCD **core** manifest (not HA — single
   control-plane lab cluster). `gitops_rollout` (separate role, after `gitops_secrets`) applies
-  the two ApplicationSets from `gitops/applicationset.yaml` stage by stage (see the gitops layer
+  the two ApplicationSets from `gitops/applicationsets/` stage by stage (see the gitops layer
   above) **only if that file already exists** (checked via `stat`, skips otherwise instead of
   failing). They are the only objects Ansible applies in the GitOps layer — ArgoCD creates the
-  Applications from them. **Nothing syncs the ApplicationSets themselves afterwards:** a change to `gitops/applicationset.yaml` (e.g. adding or
-  removing an element) needs `kubectl apply -f gitops/applicationset.yaml` (or a re-run of
+  Applications from them. **Nothing syncs the ApplicationSets themselves afterwards:** a change to `gitops/applicationsets/` (e.g. adding or
+  removing an element) needs `kubectl apply -f gitops/applicationsets/<stage>.yaml` (or a re-run of
   `playbooks/bootstrap-gitops.yml`) on every running cluster — found 2026-10-03, when the removed
   observability elements kept their Applications alive. Removing an element cascades through
   `resources-finalizer` and deletes the app's resources, but **not** its CRDs, StatefulSet PVCs or
@@ -330,7 +332,7 @@ if needed rather than reviving the Ansible role.
 # Fork personalization (only when deploying under a different DHBW account/repo). There is no
 # script for this any more — scripts/personalize.py and deploy.env.example were deleted, since
 # there is nothing left to spread around: edit gitops/env/cluster.yaml, plus the two literal
-# repoURLs in the git-files generators of gitops/applicationset.yaml (one per ApplicationSet). Secrets stay where they were
+# repoURLs in the git-files generators of gitops/applicationsets/*.yaml (one per file). Secrets stay where they were
 # (terraform.tfvars / secrets.yml). ArgoCD only ever reads the pushed remote state, so commit AND
 # push before expecting anything to roll out.
 
@@ -412,7 +414,7 @@ commands here once these gaps close instead of leaving this section stale.
   scaffold + all folder-level READMEs, root
   `README.md` skeleton with all required sections (many still marked `TODO` pending the pieces
   below).
-- **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/applicationset.yaml`,
+- **Done, verified live on a real (rebuilt, dual-stack) cluster:** `gitops/applicationsets/`,
   `longhorn.yaml`, `cert-manager.yaml`, `cert-manager-issuer.yaml`, `external-dns.yaml`, and
   `argocd-ingress.yaml` — cluster addons ported from k3s-dhbw-cloud-role, deployed via ArgoCD/Helm
   instead of the Ansible roles on branch `ansible-bootstrap` (see Infra layering above), plus a
@@ -447,7 +449,7 @@ commands here once these gaps close instead of leaving this section stale.
 - **Done (2026-09-17), not yet live-verified:** central-config + ApplicationSet refactor. Replaces
   the previous `scripts/personalize.py` + `deploy.env.example` search-and-replace approach (both
   **deleted**) and the 19 `gitops/apps/*.yaml` files (also deleted) with `gitops/env/cluster.yaml`
-  + `gitops/applicationset.yaml` — see the gitops layer above for the mechanics. What changed
+  + `gitops/applicationsets/` — see the gitops layer above for the mechanics. What changed
   beyond that, and is worth knowing before touching any of it:
   - `charts/cert-manager-config`, `charts/argocd-ingress`, `charts/traefik-config`,
     `charts/ticketflow-app`, `charts/reservation-worker`, `charts/notification-worker` read their
@@ -475,7 +477,7 @@ commands here once these gaps close instead of leaving this section stale.
     `resources-finalizer`, so deleting it normally cascades into every Application and its
     workloads. `kubectl -n argocd patch app app-of-apps --type=merge -p
     '{"metadata":{"finalizers":null}}'` → `kubectl -n argocd delete app app-of-apps
-    --cascade=orphan` → `kubectl apply -f gitops/applicationset.yaml`, which then adopts the
+    --cascade=orphan` → `kubectl apply -f gitops/applicationsets/`, which then adopts the
     orphans by name. Documented in `gitops/README.md`.
   - Verified locally: all 19 charts `helm template`/`lint` clean against the central file,
     `tofu validate`, both Ansible playbooks `--syntax-check`, and an Ansible `include_vars` run
@@ -488,7 +490,7 @@ commands here once these gaps close instead of leaving this section stale.
   Tempo anywhere in this deployment any more. **The three ApplicationSet elements that pointed at
   them were left dangling** (pointing at chart paths that no longer exist, which would fail
   ArgoCD's sync) until fixed here on 2026-10-02 by removing those three `elements:` entries from
-  `gitops/applicationset.yaml` — if you see this file referencing `kube-prometheus-stack`/`loki`/
+  `gitops/applicationsets/` — if you see this file referencing `kube-prometheus-stack`/`loki`/
   `tempo` again, that's a regression, not a revert worth keeping. Every `ServiceMonitor`/
   `PodMonitor`/`release: kube-prometheus-stack` label left in app charts (catalog-api, frontend,
   reservation-worker, notification-worker) is now scraped by nothing — harmless (no-op), not

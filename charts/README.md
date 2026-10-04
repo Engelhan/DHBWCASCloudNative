@@ -40,7 +40,7 @@ Regeln:
   das volle `app.kubernetes.io/`-Set; Charts mit mehreren Komponenten zusätzlich
   `app.kubernetes.io/component`.
 - **Kein `namespace:` in Templates und keines in `values.yaml`** — den Namespace bestimmt die
-  ArgoCD-Application (`destination.namespace` in `gitops/applicationset.yaml`).
+  ArgoCD-Application (`destination.namespace` in `gitops/applicationsets/`).
 - **`securityContext` kommt aus `values.yaml`**, nie fest aus dem Template.
 - **Probes `/healthz` (liveness) und `/readyz` (readiness)**; `/metrics` wird gescrapt.
 - **Kein `:latest`** — Registry und Tag kommen zentral (siehe nächster Abschnitt), das Schema
@@ -87,7 +87,7 @@ Upstream-Charts, und AKHQ läuft ohnehin im selben Namespace wie der Cluster.
 Image-Registry, Image-Tag, DNS-Zone, ACME-Kontakt und TSIG-Key-Name stehen in **keinem** Chart,
 sondern einmalig in [`../gitops/env/cluster.yaml`](../gitops/env/cluster.yaml). ArgoCD reicht die
 Datei jedem Chart per Multi-Source `$values` als zusätzliche Values-Datei durch (siehe
-`../gitops/applicationset.yaml`); die Charts lesen sie als `.Values.ticketflow.*`.
+`../gitops/applicationsets/`); die Charts lesen sie als `.Values.ticketflow.*`.
 
 Jeder betroffene Chart deklariert dafür ein leeres `ticketflow: {}` in seiner `values.yaml` —
 nur damit ein Rendern ohne die zentrale Datei eine verständliche `required`-Meldung liefert statt
@@ -117,7 +117,7 @@ einem gemeinsamen Chart — anders als `notification-worker`/`reservation-worker
 pro Chart), weil `frontend` ausschließlich mit `catalog-api` spricht und sich mit ihm eine
 Ingress-Route/Origin teilt. Team-Entscheidung: bewusst nicht Teil von `charts/kafka-cluster`
 (Kafka) — zwei getrennte ArgoCD-`Application`s (die Elemente `kafka-cluster` und `ticketflow-app`
-in `../gitops/applicationset.yaml`), damit ein Sync/Rollback des einen den
+in `../gitops/applicationsets/`), damit ein Sync/Rollback des einen den
 anderen nicht anfasst. Beide laufen im selben Kubernetes-Namespace (`ticketflow`), damit
 `catalog-api` den Kafka-Bootstrap-Service per kurzem In-Namespace-DNS-Namen erreicht.
 
@@ -173,7 +173,7 @@ bleiben als Override leer.
 Alle Cluster-weiten Operatoren/Addons (Longhorn, cert-manager, external-dns, CNPG-Operator,
 Strimzi-Operator, kube-prometheus-stack, Loki, Tempo, AKHQ; künftig KEDA) liegen als **eigene,
 kleine Wrapper-Charts** hier im Ordner, jeweils mit einer eigenen ArgoCD-`Application` in
-[`../gitops/applicationset.yaml`](../gitops/applicationset.yaml), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
+[`../gitops/applicationsets/`](../gitops/applicationsets/), die auf `charts/<name>` in diesem Repo zeigt (nicht direkt
 auf den Upstream-Helm-Repo) – ein einheitliches Muster für alle Charts in diesem Repo statt zwei
 verschiedener (Application-inline-Values vs. lokaler Chart), und alle Werte landen sichtbar
 versioniert in einer eigenen `values.yaml` statt in der Application eingebettet.

@@ -37,7 +37,7 @@ ticketflow-app/
 
 Objektnamen und Labels kommen ausschließlich aus `_helpers.tpl`; jede Ressource trägt zusätzlich
 `app.kubernetes.io/component: catalog-api|frontend`. Einen `namespace:`-Wert gibt es nicht mehr —
-den bestimmt die ArgoCD-Application (`destination.namespace` in `gitops/applicationset.yaml`).
+den bestimmt die ArgoCD-Application (`destination.namespace` in `gitops/applicationsets/`).
 
 ## Zentrale Werte
 
@@ -81,7 +81,7 @@ gepflegten Kopie der Zugangsdaten erzwang.
 | `podDisruptionBudget.minAvailable` | 1 | 2 | prod: toleriert einen Node-Drain/Rollout-Schritt, ohne unter zwei laufende Replicas zu fallen |
 
 Welche der beiden Dateien greift, steuert `ticketflow.environment` in `gitops/env/cluster.yaml` —
-nicht die Application, siehe `gitops/applicationset.yaml`.
+nicht die Application, siehe `gitops/applicationsets/`.
 
 ## Verwendung
 
@@ -100,6 +100,6 @@ helm template ticketflow-app charts/ticketflow-app \
   -f gitops/env/cluster.yaml
 ```
 
-Deployment läuft indirekt über ArgoCD (`gitops/applicationset.yaml`, Element `ticketflow-app`,
+Deployment läuft indirekt über ArgoCD (`gitops/applicationsets/`, Element `ticketflow-app`,
 Namespace `ticketflow` — Kafka liegt getrennt davon in `kafka`, siehe `charts/README.md`
 ## Namespace-Aufteilung).
