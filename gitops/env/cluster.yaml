@@ -1,122 +1,69 @@
-# Zentrale Konfiguration dieses Deployments - die EINZIGE Datei, die fuer einen eigenen Fork
-# angepasst werden muss (plus die eine repoURL-Zeile im git-files-Generator in
-# ../applicationset.yaml, siehe dort). Gelesen von:
-#
-#   - ArgoCD   : ../applicationset.yaml zieht sie per git-files-Generator (steuert Repo, Revision,
-#                Environment) UND reicht sie jedem Chart per Multi-Source "$values" als
-#                zusaetzliche Values-Datei durch.
-#   - Helm     : alle Charts lesen ihre uebergreifenden Werte aus .Values.ticketflow.* - lokal
-#                deshalb immer mit "-f gitops/env/cluster.yaml" rendern (siehe charts/README.md).
-#   - Ansible  : infra/ansible/roles/gitops_secrets liest repoURL fuer die ArgoCD-Repo-Credential.
-#   - Terraform: infra/terraform/main.tf liest namePrefix per yamldecode().
-#
-# Bewusst EIN Top-Level-Key "ticketflow" und nicht "global": Helm reicht "global" automatisch an
-# alle Sub-Charts durch, und die Upstream-Charts hier (Longhorn, Loki, Grafana, ...) belegen dort
-# eigene Bedeutungen (global.imageRegistry, global.storageClass, global.clusterDomain). Ein
-# eigener Key kann mit keinem davon kollidieren.
-#
-# NICHT hier hinein gehoeren Geheimnisse - die bleiben in den gitignorierten Dateien
-# infra/terraform/terraform.tfvars (OpenStack-Credentials) und infra/ansible/secrets.yml
-# (RFC2136-TSIG-Wert). Diese Datei ist git-getrackt, weil ArgoCD sie aus dem Repo liest.
+# Single source of deployment-specific values, read by ArgoCD (git generator + $values), every
+# chart (.Values.ticketflow), Ansible (gitops_secrets) and Terraform (namePrefix).
+# Own top-level key instead of "global", which Helm passes into upstream subcharts.
+# No secrets here: they live in terraform.tfvars and infra/ansible/secrets.yml.
 ticketflow:
-  # --- Fork-Identitaet -------------------------------------------------------------------
-  # Muss auf das eigene (private) Repo zeigen. ArgoCD liest ausschliesslich den Remote-Stand
-  # dieser Revision - lokale, ungepushte Aenderungen sieht es nicht.
+  # --- Fork identity ---
+  # ArgoCD only reads the pushed state of this revision.
   repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
   targetRevision: main
 
-  # --- Umgebung --------------------------------------------------------------------------
-  # Waehlt fuer jeden Chart mit values-dev.yaml/values-prod.yaml die passende Datei aus
-  # (siehe ../applicationset.yaml). Ein Umschalten hier zieht den kompletten Stack um.
-  environment: dev # dev | prod
+  # --- Environment ---
+  # Selects values-<env>.yaml for every chart.
+  environment: dev  # dev | prod
 
-  # --- DNS / ACME ------------------------------------------------------------------------
-  # Eigene DHBW-Zone aus self-service.dhbw.cloud inkl. RFC2136-Freigabe. Alle Hostnamen leiten
-  # sich daraus ab: argocd.<dnsZone>, traefik.<dnsZone>, akhq.<dnsZone>, ticketflow.<dnsZone>.
+  # --- DNS / ACME ---
+  # All hostnames derive from dnsZone (argocd., traefik., akhq., ticketflow., openbao.).
   dnsZone: cas438007-at-cas-dhbw-de.users.dhbw.site
   acmeEmail: cas438007@cas.dhbw.de
-  # DHBW-internes ACME-Verzeichnis - nur aus dem DHBW-Netz/VPN erreichbar.
+  # Reachable from the DHBW network only.
   acmeServer: https://certificates.dhbw.cloud
   rfc2136:
-    # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud) - kein Geheimnis, nur die Adresse.
     server: "141.72.5.244"
-    # Nur der Key-NAME/Bezeichner. Der geheime Wert steht in infra/ansible/secrets.yml und wird
-    # von dort als Kubernetes-Secret angelegt, nie im Repo.
+    # Key name only; the secret value is in infra/ansible/secrets.yml.
     keyName: user-key-f28a14246f3de83a8ef98b0e727abd6b96a1f124
 
-  # --- Namespace-Aufteilung --------------------------------------------------------------
-  # Die Kafka-Plattform (Cluster, Nodepools, Topics, Operator, AKHQ, Apicurio) laeuft bewusst in
-  # einem eigenen Namespace, getrennt von der Anwendung (catalog-api/frontend, reservation-worker,
-  # notification-worker). Alles, was daraus folgt - Bootstrap-DNS, Schema-Registry-URL, der
-  # Namespace der KafkaUser-CRs - wird aus diesen beiden Werten abgeleitet, statt als
-  # ausgeschriebener DNS-Name in fuenf values.yaml zu stehen.
+  # --- Namespaces ---
+  # Bootstrap DNS, registry URL etc. are derived from these.
   namespaces:
-    # Anwendung UND Datenbank. Der CNPG-Cluster liegt bewusst hier und nicht in einem eigenen
-    # Namespace: catalog-api und reservation-worker koennen sein Credentials-Secret dadurch direkt
-    # per secretKeyRef lesen (Kubernetes erlaubt das nicht ueber Namespace-Grenzen), statt die
-    # Zugangsdaten in jedem Chart ein zweites Mal zu hinterlegen.
+    # App and its database (secretKeyRef can't cross namespaces).
     app: ticketflow
     kafka: kafka
-    # OpenBao (Secret-Vault, B1) + seine eigene CNPG-Postgres-Instanz - eigener Namespace, getrennt
-    # von app/kafka, analog zur Kafka-Plattform. Mehrere Charts (openbao, openbao-postgres,
-    # openbao-secretstore, jedes migrierte ExternalSecret) leiten die OpenBao-Service-DNS daraus
-    # ab, deshalb hier zentralisiert statt ausgeschrieben.
+    # OpenBao and its own database.
     openbao: openbao
-    # External Secrets Operator - eigener Namespace, referenziert vom ClusterSecretStore
-    # (charts/openbao-secretstore) fuer den serviceAccountRef.namespace.
     externalSecrets: external-secrets
 
   kafka:
-    # Name der Strimzi-Kafka-CR. Der Bootstrap-Service heisst daraus abgeleitet
-    # "<clusterName>-kafka-bootstrap" - Strimzis eigene Namenskonvention, nicht frei waehlbar.
+    # Strimzi names the bootstrap service <clusterName>-kafka-bootstrap.
     clusterName: ticketflow-kafka
 
   postgres:
-    # Logischer Datenbankname. charts/postgres-cluster leitet daraus die CNPG-Cluster-CR
-    # ("<databaseName>-postgres-cluster"), deren rw-Service und das von CNPG erzeugte
-    # Credentials-Secret ("<databaseName>-postgres-cluster-app", Keys username/password) ab;
-    # catalog-api und reservation-worker greifen genau darauf zu.
+    # Derives <db>-postgres-cluster, its -rw service and CNPG's <db>-postgres-cluster-app secret.
     databaseName: postgres
 
   openbao:
-    # Analog zu postgres.databaseName oben, aber fuer OpenBaos eigene Storage-Backend-DB
-    # (charts/openbao-postgres). Anders als beim App-Postgres gibt es hier KEIN
-    # ticketflow.openbao.password - CNPG generiert das Credential selbst (siehe
-    # charts/openbao-postgres, bootstrap.initdb.secret bewusst weggelassen: OpenBao kann sein
-    # eigenes Storage-Backend-Passwort nicht aus der Vault lesen, bevor die entsiegelt ist).
+    # OpenBao's storage DB; CNPG generates its credential (it can't come from the vault).
     databaseName: openbao-vault
 
-  # --- Netzwerk (charts/network-policies) ------------------------------------------------
-  # Die einzigen Adressen, die NetworkPolicies nicht ueber Labels erreichen koennen, weil dahinter
-  # kein Pod steht: der API-Server (k3s-Prozess auf dem Control-Plane-Host) und die Kubelets.
+  # --- Network (charts/network-policies) ---
+  # Targets without pods behind them: API server and kubelets.
   network:
-    # Subnetze des Projektnetzes DHBWV6, in dem alle VMs haengen (Terraform, network_name). Ziel
-    # fuer Egress zum API-Server (Endpoint "kubernetes" = Node-IP:6443, keine Pod-IP) und fuer
-    # Prometheus/metrics-server zu Kubelet (10250) und node-exporter (9100, hostNetwork).
+    # DHBWV6 subnets: API server (node IP:6443) and kubelets.
     nodeCIDRs:
       - "2001:7c0:1b20:c913::/64"
       - "10.200.0.0/19"
-    # Quelladresse, mit der der Control-Plane-HOST (API-Server: Admission-Webhooks, APIServices,
-    # API-Proxy) Pods auf ANDEREN Nodes erreicht: Flannel routet dorthin ueber flannel(-v6).1 und
-    # nimmt dessen Adresse als Source - nicht die Node-IP (live per `ip route get` geprueft). Das
-    # ist die jeweils erste Adresse von k3s_cluster_cidr / k3s_cluster_cidr_v4
-    # (infra/ansible/inventory/group_vars/all.yml), weil der k3s-Server als erster Node das erste
-    # Pod-Subnetz bekommt - bei einer Aenderung dort hier mitziehen. Pods auf dem Control-Plane-
-    # Node selbst erreicht der Host ohne Policy: kube-router laesst Traffic vom lokalen Node immer
-    # durch (dieselbe Regel deckt die Kubelet-Probes auf allen Nodes ab).
+    # Source address of the control-plane host towards pods on other nodes (flannel tunnel = first
+    # address of k3s_cluster_cidr/_v4 in group_vars/all.yml; keep in sync).
     controlPlaneTunnelIPs:
       - "fd00:42::/128"
       - "10.42.0.0/32"
 
-  # --- Container-Images ------------------------------------------------------------------
-  # ghcr.io verlangt kleingeschriebene Namen - der GitHub-Owner ist hier bewusst lowercase,
-  # anders als in repoURL oben (.github/workflows/build-images.yml macht dasselbe per ${VAR,,}).
+  # --- Images ---
+  # ghcr.io requires lowercase.
   imageRegistry: ghcr.io/engelhan
-  # Git-Short-SHA des zuletzt gebauten Images, gilt fuer alle vier Services. Wird vom
-  # bump-Job in .github/workflows/build-images.yml automatisch fortgeschrieben - hier normalerweise
-  # nicht von Hand editieren. Nie "latest" (P3).
+  # Written by the bump job in .github/workflows/build-images.yml. Never "latest" (P3).
   imageTag: "26fced0f"
 
-  # --- Infrastruktur ---------------------------------------------------------------------
-  # Praefix aller OpenStack-Ressourcennamen (infra/terraform/main.tf liest das per yamldecode).
+  # --- Infrastructure ---
+  # Prefix of all OpenStack resource names.
   namePrefix: niklas-ticketflow
