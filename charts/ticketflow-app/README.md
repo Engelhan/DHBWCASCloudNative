@@ -65,8 +65,10 @@ SASL-`Secret` erreicht catalog-api trotz der Namespace-Grenze, weil `charts/kafk
 `catalogApi.database.{host,port,name,sslMode}` (ConfigMap) + einem Secret (Keys `username`/
 `password`) zusammen — Team-Entscheidung, siehe `src/catalog-api/README.md` ## Konfiguration.
 `charts/postgres-cluster` läuft seit 2026-09-17 im **selben Namespace** wie dieser Chart, deshalb
-wird sein Secret direkt referenziert statt dupliziert: `database.credentialsSecretName` ist leer
-und wird zu `<ticketflow.postgres.databaseName>-postgres-user` aufgelöst, `database.host` zu
+wird das von CNPG selbst erzeugte Secret direkt referenziert statt dupliziert:
+`database.credentialsSecretName` ist leer und wird zu
+`<ticketflow.postgres.databaseName>-postgres-cluster-app` aufgelöst (bewusst nicht über OpenBao —
+die Kopie dort ist nur Audit, siehe `charts/postgres-cluster`), `database.host` zu
 `<...>-postgres-cluster-rw`. Vorher lag die Datenbank in `application`, was `secretKeyRef` über die
 Namespace-Grenze unmöglich machte und ein chart-eigenes Secret mit derselben, von Hand
 gepflegten Kopie der Zugangsdaten erzwang.

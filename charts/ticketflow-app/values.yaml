@@ -110,14 +110,9 @@ catalogApi:
   # zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
   # beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
   # Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
-  # credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
-  # "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
-  # Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
-  # zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
-  # beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
-  # Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
-  # credentialsSecretName zeigt per Default auf das von charts/postgres-cluster erzeugte Secret
-  # "<databaseName>-postgres-user" (Keys username/password) - kein chart-eigenes Duplikat mehr.
+  # credentialsSecretName zeigt per Default auf das von CNPG selbst erzeugte Secret
+  # "<databaseName>-postgres-cluster-app" (Keys username/password) - direkt, nicht ueber OpenBao:
+  # die Datenbank-Zugangsdaten sollen nicht von einem entsiegelten Secret-Vault abhaengen.
   database:
     host: ""
     port: "5432"

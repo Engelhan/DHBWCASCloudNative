@@ -73,9 +73,9 @@ ticketflow:
 
   postgres:
     # Logischer Datenbankname. charts/postgres-cluster leitet daraus die CNPG-Cluster-CR
-    # ("<databaseName>-postgres-cluster"), deren rw-Service und das Credentials-Secret
-    # ("<databaseName>-postgres-user", Keys username/password) ab; catalog-api und
-    # reservation-worker greifen genau darauf zu.
+    # ("<databaseName>-postgres-cluster"), deren rw-Service und das von CNPG erzeugte
+    # Credentials-Secret ("<databaseName>-postgres-cluster-app", Keys username/password) ab;
+    # catalog-api und reservation-worker greifen genau darauf zu.
     databaseName: postgres
 
   openbao:

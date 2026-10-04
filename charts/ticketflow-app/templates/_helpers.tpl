@@ -113,5 +113,5 @@ Von charts/postgres-cluster erzeugtes Secret mit den Keys "username"/"password" 
 die CNPG-Cluster-CR als bootstrap-Secret nutzt. Kein chart-eigenes Duplikat mehr.
 */}}
 {{- define "ticketflow-app.databaseSecretName" -}}
-{{- .Values.catalogApi.database.credentialsSecretName | default (printf "%s-postgres-user" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- .Values.catalogApi.database.credentialsSecretName | default (printf "%s-postgres-cluster-app" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
 {{- end -}}

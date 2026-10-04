@@ -23,10 +23,10 @@ database:
   # (ticketflow.postgres.databaseName) - hier bewusst kein zweiter Wert.
   # Database owner created during bootstrap.
   owner: postgres
-  # KEIN password-Feld mehr hier (bis 2026-09-22 stand hier ein hardcodiertes Lab-Passwort) -
-  # templates/postgres-user-secret.yaml ist jetzt ein ExternalSecret, das den Wert aus OpenBao
-  # synct (Root-README ## Bonus B1). catalog-api/reservation-worker aendert sich dadurch nichts:
-  # sie lesen weiterhin dasselbe Secret "<databaseName>-postgres-user" per secretKeyRef.
+  # KEIN password-Feld hier (bis 2026-09-22 stand hier ein hardcodiertes Lab-Passwort) - CNPG
+  # generiert das Credential selbst ins Secret "<clusterName>-app", das catalog-api/
+  # reservation-worker direkt per secretKeyRef lesen. Eine Kopie geht per PushSecret nach OpenBao
+  # (Audit, Root-README ## Bonus B1).
   primaryUpdateMethod: switchover
   primaryUpdateStrategy: supervised
   postgresql:

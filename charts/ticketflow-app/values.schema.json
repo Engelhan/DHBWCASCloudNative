@@ -222,7 +222,7 @@
             },
             "credentialsSecretName": {
               "type": "string",
-              "description": "Leer = <ticketflow.postgres.databaseName>-postgres-user (von charts/postgres-cluster angelegt)."
+              "description": "Leer = <ticketflow.postgres.databaseName>-postgres-cluster-app (von CNPG selbst erzeugt)."
             }
           }
         },

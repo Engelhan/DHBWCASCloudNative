@@ -80,5 +80,5 @@ Von charts/postgres-cluster erzeugtes Secret mit den Keys "username"/"password" 
 die CNPG-Cluster-CR als bootstrap-Secret nutzt. Kein chart-eigenes Duplikat mehr.
 */}}
 {{- define "reservation-worker.databaseSecretName" -}}
-{{- .Values.database.credentialsSecretName | default (printf "%s-postgres-user" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
+{{- .Values.database.credentialsSecretName | default (printf "%s-postgres-cluster-app" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName)) -}}
 {{- end -}}

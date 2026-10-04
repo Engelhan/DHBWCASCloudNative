@@ -38,8 +38,9 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
 - **KEDA (P6):** `config.keda.*` steuert das `ScaledObject`. `spec.replicas` des Deployments wird
   von ArgoCD bewusst nicht verglichen (`ignoreReplicas` am Element `reservation-worker` in
   `gitops/applicationset.yaml`) — sonst würde `selfHeal` jede Skalierung zurücksetzen.
-- **Postgres-Zugangsdaten:** kommen direkt aus dem von `charts/postgres-cluster` angelegten
-  Secret `<ticketflow.postgres.databaseName>-postgres-user` (Keys `username`/`password`) —
+- **Postgres-Zugangsdaten:** kommen direkt aus dem von CNPG selbst erzeugten Secret
+  `<ticketflow.postgres.databaseName>-postgres-cluster-app` (Keys `username`/`password`; nicht über
+  OpenBao, dort liegt nur eine Audit-Kopie) —
   Datenbank und Anwendung teilen sich seit 2026-09-17 denselben Namespace, ein chart-eigenes
   Duplikat ist nicht mehr nötig. Host und Datenbankname leiten sich aus demselben zentralen Wert
   ab.

@@ -15,25 +15,11 @@ Credentials-Secrets ab. Stuende er nur hier, muessten drei Charts gleichzeitig s
 {{- end -}}
 
 {{/*
-Konventioneller Credentials-Secret-Name (Keys username/password), von catalog-api/
-reservation-worker per secretKeyRef gelesen - beide liegen seit der Namespace-Zusammenlegung im
-selben Namespace wie dieser Chart. Seit B1 (Root-README ## Bonus) NICHT mehr die Cluster-CRs
-eigenes bootstrap-Secret (siehe postgres-cluster.appSecretName unten) - dieses hier wird per
-ExternalSecret aus OpenBao befuellt (templates/postgres-user-secret.yaml), damit sich am
-Consumer-seitigen Namen nichts aendert, obwohl CNPG das eigentliche Credential jetzt selbst
-generiert.
-*/}}
-{{- define "postgres-cluster.userSecretName" -}}
-{{- printf "%s-postgres-user" (include "postgres-cluster.databaseName" .) -}}
-{{- end -}}
-
-{{/*
-Das von CNPG SELBST generierte App-User-Secret (seit bootstrap.initdb kein eigenes secret-Feld
-mehr vorgibt, siehe postgres-cluster.yaml) - Keys username/password/host/port/dbname/uri/
-jdbc-uri, CNPG-Namenskonvention "<clusterName>-app". templates/postgres-user-pushsecret.yaml
-liest dieses Secret und spiegelt es nach OpenBao; von dort synct
-templates/postgres-user-secret.yaml es unter dem konventionellen Namen
-(postgres-cluster.userSecretName) zurueck, den catalog-api/reservation-worker erwarten.
+Das von CNPG SELBST generierte App-User-Secret (bootstrap.initdb gibt bewusst kein eigenes
+secret-Feld vor, siehe postgres-cluster.yaml) - Keys username/password/host/port/dbname/uri/
+jdbc-uri, CNPG-Namenskonvention "<clusterName>-app". catalog-api/reservation-worker lesen es
+direkt per secretKeyRef (selber Namespace); templates/postgres-user-pushsecret.yaml spiegelt es
+zusaetzlich nach OpenBao - nur als Audit-Kopie, kein Konsument liest von dort zurueck.
 */}}
 {{- define "postgres-cluster.appSecretName" -}}
 {{- printf "%s-app" (include "postgres-cluster.clusterName" .) -}}
