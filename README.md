@@ -89,35 +89,14 @@ nicht nur vorgeführt.
 
 ## Architektur
 
-```mermaid
-flowchart TB
-    USER["🧑 Browser"] --> FRONTEND
-    LOADGEN["🌐 load-generator (k6)<br/>künstliche Lastspitze"] --> CATALOG_API
+![TicketFlow-Architektur](docs/architecture/architecture.drawio.svg)
 
-    subgraph FEPLANE["Frontend-Plane"]
-        FRONTEND["⬡ frontend<br/>(nginx, 2-3 Pods)"]
-        CATALOG_API["⬡ catalog-api<br/>(Go REST, 2-3 Pods)"]
-    end
-
-    FRONTEND -->|"REST, same-origin Ingress"| CATALOG_API
-
-    subgraph BUSPLANE["Event-Bus-Plane"]
-        KAFKA[("📨 Kafka - Strimzi<br/>Event Bus, 3 Broker<br/>Topology-Spread: region-a/b/c")]
-    end
-
-    subgraph BEPLANE["Backend-Plane"]
-        RESERVATION["⬡ reservation-worker<br/>(Pods, KEDA-scaled)"]
-        NOTIFY["⬡ notification-worker<br/>(Pods)"]
-        PG[("🗄️ PostgreSQL - CNPG<br/>Persistence Layer<br/>Primary + 2 Replicas<br/>Topology-Spread: region-a/b/c")]
-    end
-
-    CATALOG_API -->|"produce ReservationRequested"| KAFKA
-    CATALOG_API -->|"read Sitzplatzverfügbarkeit"| PG
-    KAFKA -->|"consume"| RESERVATION
-    RESERVATION -->|"seat lock / commit"| PG
-    RESERVATION -->|"produce Confirmed/Rejected"| KAFKA
-    KAFKA -->|"consume"| NOTIFY
-```
+Fachlicher Lastpfad (durchgezogene Pfeile): `catalog-api` nimmt die Reservierung an und
+veröffentlicht sie nur (①), `reservation-worker` sperrt den Platz in Postgres (②) und meldet das
+Ergebnis zurück auf Kafka (③), das `notification-worker` als zweite, unabhängige Consumer-Group
+liest. Gestrichelt: Steuerung und Plattform (GitOps, Secrets, Autoscaling, DNS/TLS). Die Datei ist
+ein draw.io-SVG mit eingebettetem Diagramm — direkt in [draw.io](https://app.diagrams.net) oder
+der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub rendert sie als Bild.
 
 **Datenfluss von der VM bis zum Pod:**
 
@@ -147,8 +126,8 @@ flowchart TB
    `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
    kein Grafana-Dashboard, siehe `## Grenzen`).
 
-Detailskizze und Screenshots des tatsächlichen Deployments folgen in
-[`docs/architecture/`](docs/architecture/) (`TODO`, sobald der Cluster steht).
+Screenshots des tatsächlichen Deployments folgen in [`docs/architecture/`](docs/architecture/)
+(`TODO`, sobald der Cluster steht).
 
 ## Betrieb
 
