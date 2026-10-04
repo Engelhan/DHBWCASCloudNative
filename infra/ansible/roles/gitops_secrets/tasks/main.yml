@@ -1,20 +1,7 @@
 ---
-# Creates secrets that GitOps structurally cannot provide itself (ArgoCD is git-driven, and per
-# CLAUDE.md ## Infra layering these values must explicitly NOT end up in the git repo): the ArgoCD
-# repository credential for the private GitHub repo itself, and the RFC2136 TSIG secrets that
-# charts/cert-manager-config and charts/external-dns reference via secretKeyRef (see
-# gitops/README.md ## DNS/ACME). This is NOT a repeat of the reverted addon installation on the
-# ansible-bootstrap branch: this role installs no Helm charts/operators (that stays entirely
-# GitOps-owned), only Secret objects - the usual "secrets are bootstrapped outside of GitOps"
-# pattern.
-#
-# Runs entirely locally (delegate_to: localhost) against the freshly fetched kubeconfig - the
-# secrets therefore never travel to the control plane via SSH and never show up in its process
-# list.
-# The repo URL is no longer written here but centrally in gitops/env/cluster.yaml - the same file
-# ArgoCD and all charts read their values from. It used to be a literal here and was therefore the
-# one place a fork reliably missed: the credential was then registered for the ORIGINAL repo, and
-# all Applications stayed "Unknown" forever without the error message pointing at the cause.
+# Secrets that must not live in git: the ArgoCD repo credential and the RFC2136 TSIG secrets.
+# Only Secret objects, no Helm releases. Runs locally against the fetched kubeconfig. The repo URL
+# comes from gitops/env/cluster.yaml.
 - name: Read the central configuration (gitops/env/cluster.yaml)
   include_vars:
     file: "{{ playbook_dir }}/../../../gitops/env/cluster.yaml"
@@ -28,9 +15,7 @@
   become: false
   register: gitops_secrets_deploy_key_file
 
-# The repo is private (see gitops/README.md) - without this credential ArgoCD's repo-server cannot
-# even clone gitops/applicationset.yaml and everything below it. Skips itself as long as no deploy
-# key exists locally (see infra/ansible/README.md ## GitOps secrets for how to create it).
+# Private repo: ArgoCD can't clone without it. Skipped without a local deploy key.
 - name: Create/update the ArgoCD repository credential (SSH deploy key)
   when: gitops_secrets_deploy_key_file.stat.exists
   delegate_to: localhost
@@ -39,9 +24,7 @@
     KUBECONFIG: "{{ playbook_dir }}/../kubeconfig"
   no_log: true
   block:
-    # --from-file instead of --from-literal: the private key is read from the file without ever
-    # appearing as a CLI argument itself (and thereby in the local process list) - only the file
-    # path is an argument.
+    # --from-file keeps the key out of the process list.
     - name: Create/update the repository secret
       shell: |
         set -o pipefail
@@ -55,8 +38,7 @@
       register: gitops_secrets_repo_apply
       changed_when: "'unchanged' not in gitops_secrets_repo_apply.stdout"
 
-    # Only this label turns an ordinary secret into a repository credential recognized by ArgoCD -
-    # "kubectl create secret" has no --labels option.
+    # The label makes ArgoCD treat the secret as a repo credential.
     - name: Label the repository secret as an ArgoCD repository credential
       command: >-
         kubectl label secret repo-ticketflow -n argocd
@@ -75,9 +57,7 @@
     file: "{{ playbook_dir }}/../secrets.yml"
   when: gitops_secrets_file.stat.exists
 
-# As long as secrets.yml is missing or still contains the placeholder from secrets.yml.example
-# (DNS zone not activated yet), this block skips itself instead of failing - same as the
-# ApplicationSet stat check in gitops_rollout.
+# Skipped while secrets.yml is missing or still a placeholder.
 - name: Create/update the RFC2136 TSIG secrets
   when:
     - rfc2136_tsig_secret_value is defined
@@ -101,9 +81,7 @@
       failed_when: gitops_secrets_edns_ns.rc != 0 and 'AlreadyExists' not in gitops_secrets_edns_ns.stderr
       changed_when: gitops_secrets_edns_ns.rc == 0
 
-    # --dry-run=client -o yaml | apply instead of create so that the task is idempotent (a changed
-    # value in secrets.yml is picked up on a repeated playbook run, instead of "create" failing
-    # with AlreadyExists the second time).
+    # create --dry-run | apply keeps it idempotent.
     - name: Create/update the cert-manager-rfc2136-tsig secret
       shell: |
         set -o pipefail

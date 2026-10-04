@@ -1,5 +1,5 @@
 ---
-# Loads the Longhorn exclusion from /etc/multipath/conf.d/longhorn.conf (see tasks/main.yml).
+# Loads the Longhorn exclusion.
 - name: Restart multipathd
   systemd:
     name: multipathd

@@ -4,11 +4,8 @@
     path: /usr/local/bin/k3s
   register: k3s_bin
 
-# DHBWV6 is dual-stack: --node-ip/--cluster-cidr/--service-cidr each get an IPv6 value (primary,
-# see inventory/group_vars/all.yml) AND an IPv4 value (additionally, so that pods can reach
-# IPv4-only targets such as github.com - see CLAUDE.md ## Infra layering). --flannel-ipv6-masq is
-# still needed for IPv6 pod egress (the ULA range fd00::/8 is not globally routable); k3s/Flannel
-# masquerade IPv4 pod egress by default.
+# Dual-stack, IPv6 first; IPv4 only for egress to IPv4-only hosts. IPv6 pod egress needs
+# --flannel-ipv6-masq (ULA).
 - name: Install the k3s server
   shell: |
     set -o pipefail
@@ -49,12 +46,7 @@
     dest: "{{ playbook_dir }}/../kubeconfig"
     flat: true
 
-# By default the k3s kubeconfig points at a loopback address (for local use on the control plane
-# itself) - since --node-ip lists IPv6 first (IPv6 stays primary, see above), k3s writes "[::1]"
-# rather than the "127.0.0.1" familiar from IPv4 setups (both forms are covered here, since this
-# can differ depending on k3s/OS behavior and a non-matching regex would otherwise silently turn
-# the replace task into a no-op). Rewrite it to the actual IPv6 address for access from outside -
-# bracket syntax, because otherwise the colon before the port collides with the address colons.
+# Replace the loopback server URL (127.0.0.1 or [::1]) with the node's IPv6 in brackets.
 - name: Point the server URL in the fetched kubeconfig at the real address
   delegate_to: localhost
   become: false

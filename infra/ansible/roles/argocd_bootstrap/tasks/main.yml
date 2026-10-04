@@ -5,15 +5,8 @@
   failed_when: ns_create.rc != 0 and 'AlreadyExists' not in ns_create.stderr
   changed_when: ns_create.rc == 0
 
-# Non-HA install (not the ha/install.yaml manifest): sufficient for a single control-plane node in
-# the lab and simpler to operate. Version pinned instead of the "stable" tag so that a repeated
-# playbook run reproducibly installs the same ArgoCD version.
-# --server-side instead of a plain "apply": plain (client-side) apply attaches the complete
-# previous configuration to the object as a last-applied-configuration annotation - with ArgoCD's
-# huge applicationsets.argoproj.io CRD this exceeds the Kubernetes API's hard 262144-byte
-# annotation limit ("Too long"). Server-side apply does not write that annotation at all.
-# --force-conflicts so that a repeated playbook run does not fail on field-manager conflicts in
-# case ArgoCD itself (a different field manager) has meanwhile reconciled the same fields.
+# Non-HA, pinned version. Server-side apply: the ApplicationSet CRD exceeds the annotation limit of
+# client-side apply. --force-conflicts for re-runs after ArgoCD touched the same fields.
 - name: Apply the ArgoCD manifest (pinned version)
   command: >
     k3s kubectl apply -n argocd --server-side --force-conflicts
@@ -36,6 +29,4 @@
   debug:
     msg: "ArgoCD admin login: user=admin password={{ argocd_admin_password_b64.stdout | b64decode }}"
 
-# This role deliberately does NOT apply the ApplicationSets - gitops_rollout does, after
-# gitops_secrets: without the repo credential ArgoCD cannot read the private repo, and the staged
-# wait for "everything green" would run into nothing.
+# ApplicationSets are applied by gitops_rollout, after gitops_secrets.

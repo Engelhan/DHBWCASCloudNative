@@ -1,6 +1,4 @@
-; Normally generated automatically by Terraform (infra/terraform/main.tf,
-; resource "local_file" "ansible_inventory") and then stored, gitignored, as hosts.ini.
-; This file only serves as an example/fallback for the manual case.
+; Example only; Terraform generates hosts.ini.
 
 [control_plane]
 ticketflow-cp ansible_host=CHANGE_ME node_ip_v4=CHANGE_ME

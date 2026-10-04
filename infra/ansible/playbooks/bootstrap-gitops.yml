@@ -1,8 +1,5 @@
 ---
-# Only the ArgoCD/GitOps part, callable separately - e.g. to apply a changed
-# gitops/applicationset.yaml or secrets.yml after the first "site.yml" run without touching k3s
-# again. Nothing syncs the ApplicationSets themselves - a change to gitops/applicationset.yaml
-# needs exactly this run.
+# GitOps part only. Re-run after changing gitops/applicationset.yaml or secrets.yml.
 
 - name: (Re-)bootstrap ArgoCD
   hosts: control_plane

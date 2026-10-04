@@ -1,9 +1,5 @@
 ---
-# Full run: base configuration -> k3s server -> k3s agents -> node labels -> ArgoCD -> GitOps
-# secrets -> staged GitOps rollout. The order is deliberate so that every role builds on the
-# result of the previous one (agents need the server's node token, labels need registered worker
-# nodes, gitops_secrets needs the kubeconfig fetched locally by k3s_server, gitops_rollout needs
-# the repo credential from gitops_secrets, etc.).
+# Full run; each role builds on the previous one.
 
 - name: Base configuration on all nodes
   hosts: k3s_cluster

@@ -1,8 +1,5 @@
 ---
-# Runs on the control plane (see playbooks/site.yml) and labels every worker with its virtually
-# simulated region from the Terraform inventory (var "region" per worker host). Basis of the
-# placement decision P4: the charts spread across this label (topology.ticketflow/region), see
-# root README ## Entscheidungen.
+# Region label per worker from the inventory (P4).
 - name: Set the region label on every worker
   command: >
     k3s kubectl label node {{ item }}
@@ -11,14 +8,8 @@
   loop: "{{ groups['workers'] }}"
   changed_when: true
 
-# The control plane only carries k3s itself (API server, etcd/kine, controllers). Without a taint
-# the scheduler places regular workloads there too - live, among others, the primary of the
-# OpenBao Postgres DB landed there, so a control-plane outage would have hit the vault storage as
-# well. Exactly this taint is already tolerated by k3s' own components (CoreDNS, Traefik,
-# metrics-server, local-path, svclb-traefik) - they keep running there, everything else only runs
-# on the workers. Runs before argocd_bootstrap, so it is in effect before the first chart.
-# NoSchedule does not evict pods that are already running - on an existing cluster they have to be
-# moved once.
+# Keep regular workloads off the control plane. k3s' own components tolerate this taint.
+# NoSchedule evicts nothing: move existing pods once by hand.
 - name: Taint the control plane against regular workloads
   command: >
     k3s kubectl taint node {{ inventory_hostname }}

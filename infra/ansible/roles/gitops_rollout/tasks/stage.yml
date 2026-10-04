@@ -1,10 +1,7 @@
 ---
-# One stage (gitops_stage): apply the ApplicationSet labeled ticketflow.io/stage=<stage> and wait
-# until all of its Applications exist and are Synced and Healthy.
+# Apply one stage's ApplicationSet and wait until all its Applications are Synced and Healthy.
 
-# Expected count taken directly from the file (elements of the list generator) - otherwise "all
-# green" would already be true while the ApplicationSet controller has not created a single
-# Application yet.
+# Expected count from the file, so an empty list never counts as green.
 - name: "Stage {{ gitops_stage }}: determine the expected number of Applications"
   set_fact:
     gitops_stage_expected: >-
@@ -22,7 +19,6 @@
     fail_msg: "No ApplicationSet with ticketflow.io/stage={{ gitops_stage }} in gitops/applicationset.yaml"
     quiet: true
 
-# -l selects exactly this stage's document from the file.
 - name: "Stage {{ gitops_stage }}: apply the ApplicationSet"
   command: >
     k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
@@ -30,9 +26,7 @@
   register: gitops_stage_apply
   changed_when: "'unchanged' not in gitops_stage_apply.stdout"
 
-# One line per Application: "<name> <sync> <health>". The stage is only green once there are
-# exactly as many lines as expected and every one reads "Synced Healthy". If the time runs out,
-# the error message shows the last output - i.e. exactly which Application is not green yet.
+# Green = expected number of lines, all "Synced Healthy". On timeout the output shows the red apps.
 - name: "Stage {{ gitops_stage }}: wait until all {{ gitops_stage_expected }} Applications are Synced and Healthy"
   command:
     argv:

@@ -1,5 +1,4 @@
-# Auth via application credentials instead of username/password: the credential is already scoped
-# to a project, so tenant_id/user_name/domain are deliberately not set here.
+# Application credential (already project-scoped).
 provider "openstack" {
   auth_url                      = var.os_auth_url
   region                        = var.os_region

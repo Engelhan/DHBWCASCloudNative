@@ -1,11 +1,6 @@
 ---
-# Applies the ApplicationSets from gitops/applicationset.yaml in stages: stage by stage, and the
-# next one only once every Application of the previous one is Synced AND Healthy - for
-# Deployments/StatefulSets, Healthy means all pods of the current revision pass their readiness
-# probe; for operator CRs, their Ready condition (rationale in the header of
-# gitops/applicationset.yaml). These are the only objects Ansible applies in the GitOps layer -
-# ArgoCD creates the Applications and their resources from them. The stat check stays as a safety
-# net so that a run on an older branch/tag without this file skips the step instead of failing.
+# Applies the ApplicationSets stage by stage (see gitops/applicationset.yaml). Skipped if the
+# file doesn't exist.
 - name: Check whether the ApplicationSet manifest exists in the repo
   stat:
     path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"

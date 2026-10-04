@@ -11,10 +11,7 @@
       - ca-certificates
     state: present
 
-# k3s registers the node under its OS hostname. We set it explicitly to the Terraform resource
-# name (e.g. ticketflow-worker-1) so that it deterministically matches inventory_hostname -
-# node_labels and the agent join check rely on this instead of depending on the cloud image's
-# default behavior.
+# k3s uses the OS hostname as node name; node_labels relies on it matching inventory_hostname.
 - name: Set the hostname to the Terraform resource name
   hostname:
     name: "{{ inventory_hostname }}"
@@ -26,16 +23,11 @@
     line: "127.0.1.1 {{ inventory_hostname }}"
     state: present
 
-# Longhorn attaches every volume as an iSCSI device (/dev/sdX). The Ubuntu cloud image ships
-# multipathd, which builds a multipath map from such devices at boot - the device is then busy and
-# the mount fails with "already mounted or mount point busy". Happened live on 2026-10-02 after a
-# reboot of the control-plane node (the OpenBao DB did not come up). The root disk is virtio
-# (vda), so the exclusion only affects Longhorn's devices. Recommendation from Longhorn's own
-# troubleshooting guide for multipathd.
+# Keep multipathd away from Longhorn's iSCSI devices (/dev/sd*), otherwise mounts fail with
+# "already mounted or mount point busy". The root disk is vda.
 - name: Gather services (is multipathd present?)
   service_facts:
 
-# Default config_dir of multipath-tools; does not necessarily exist on the cloud image.
 - name: Create the directory for multipath drop-ins
   file:
     path: /etc/multipath/conf.d

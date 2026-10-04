@@ -4,9 +4,7 @@
     path: /usr/local/bin/k3s
   register: k3s_bin
 
-# --node-ip dual-stack (IPv6 primary + IPv4), same as roles/k3s_server - see the comment there and
-# CLAUDE.md ## Infra layering for the reason (pods need IPv4 egress to IPv4-only targets such as
-# github.com).
+# Dual-stack --node-ip, see k3s_server.
 - name: Install the k3s agent and join it to the control plane
   shell: |
     set -o pipefail
@@ -21,9 +19,7 @@
   when: not k3s_bin.stat.exists
 
 - name: Wait until the control plane reports the node as Ready
-  # A command given as a string would be shlex-parsed by Ansible, which swallows the quotes around
-  # "Ready" (=="Ready" becomes ==Ready) and breaks the jsonpath expression - hence argv (no shlex
-  # processing, every element is passed to the process as-is).
+  # argv: a command string is shlex-parsed and loses the quotes around "Ready".
   command:
     argv:
       - k3s
