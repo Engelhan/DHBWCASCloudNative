@@ -293,7 +293,7 @@ if needed rather than reviving the Ansible role.
   (gitignored, generated with `ssh-keygen`, public half added as a GitHub read-only deploy key).
   Runs entirely `delegate_to: localhost` against the locally-fetched kubeconfig (never touches
   the remote VM's shell/process list), and self-skips (doesn't fail) each part whose input file
-  is missing/still a placeholder. See `infra/ansible/README.md` ## GitOps-Secrets and
+  is missing/still a placeholder. See `infra/ansible/README.md` ## GitOps secrets and
   `gitops/README.md` ## Privates Repo / ## DNS/ACME.
 - The ArgoCD install task uses `kubectl apply --server-side --force-conflicts`, not plain
   `apply`: plain (client-side) apply stores the whole previous config in a
@@ -311,18 +311,18 @@ if needed rather than reviving the Ansible role.
   has no system `pip`/`venv` and no passwordless sudo to install them via apt, so a venv (bootstrap
   via `get-pip.py` if needed) is the path of least friction. Pinned in
   `infra/ansible/requirements.txt` (`ansible==14.2.0`, `ansible-lint==26.6.0`), same
-  no-latest-tags principle as k3s/ArgoCD. See `infra/ansible/README.md` ## Voraussetzungen.
+  no-latest-tags principle as k3s/ArgoCD. See `infra/ansible/README.md` ## Prerequisites.
 - `ansible-playbook --syntax-check` on both playbooks, `ansible-lint`, `yamllint`, and a debug-task
   render check of every Jinja expression (install commands, join URL, node-label loop, kubeconfig
   regex) against the example inventory all pass. Two real bugs found and fixed this way: (1)
   `group_vars/all.yml` lived directly under `infra/ansible/`, a location Ansible never auto-loads
   (see above — moved to `inventory/group_vars/`), so every pinned version/CIDR silently resolved to
-  undefined and the `k3s-Server installieren` task would have failed immediately on a real run; (2)
+  undefined and the `k3s-Server installieren` task (now "Install the k3s server") would have failed immediately on a real run; (2)
   the `curl | sh` k3s install in `k3s_server`/`k3s_agent` had no `pipefail`, so a failed download
   could report success (`sh` exits 0 on empty stdin) — added `set -o pipefail`. What's still
   unverified: actual apt/hostname/k3s/ArgoCD behavior against real VMs (needs `terraform apply`
   first), and the passwordless-sudo/cloud-image assumptions in `infra/ansible/README.md`
-  ## Offene Punkte.
+  ## Open points.
 
 ## Commands
 
@@ -342,7 +342,7 @@ terraform plan
 terraform apply        # also generates ../ansible/inventory/hosts.ini
 
 # Ansible (infra/ansible/) — must run from WSL/Linux, not native Windows
-source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Voraussetzungen
+source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Prerequisites
 cd infra/ansible
 ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/bootstrap-gitops.yml   # re-run ArgoCD + secrets + staged ApplicationSet rollout
@@ -394,6 +394,13 @@ commands here once these gaps close instead of leaving this section stale.
 
 ## Current implementation status (update this section as work lands)
 
+- **2026-10-04: everything under `infra/` (Terraform + Ansible, incl. their READMEs, task/handler
+  names and variable descriptions) is in English now.** Identifiers (resource, variable, role,
+  register names) are unchanged, so Terraform state and Ansible behavior are unaffected; the only
+  rendered-output change is the comment header of the generated `hosts.ini` (one `local_file`
+  update on the next `terraform apply`). Keep new code there in English. Charts, gitops/ and the
+  graded root README stay German.
+
 - **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, verified both
   statically and against real DHBWCloud VMs — k3s server/agent join and IPv6 node registration
   confirmed working; three real bugs found+fixed along the way, see Ansible specifics above), repo
@@ -426,7 +433,7 @@ commands here once these gaps close instead of leaving this section stale.
   secret itself is deliberately **not** in the repo — `infra/ansible/roles/gitops_secrets`
   creates the K8s `Secret`s it needs from a gitignored local `infra/ansible/secrets.yml`
   (template: `secrets.yml.example`), run automatically at the end of `playbooks/site.yml` (see
-  Ansible specifics above and `infra/ansible/README.md` ## GitOps-Secrets). The former
+  Ansible specifics above and `infra/ansible/README.md` ## GitOps secrets). The former
   `app-of-apps.yaml` had to exclude itself from its own directory source
   (`source.directory.exclude`) — without it, self-tracking + `prune: true` risked ArgoCD deleting
   its own root Application (and cascading through the `resources-finalizer` to every child app).

@@ -199,7 +199,7 @@ alle Applications blieben dauerhaft in `Unknown`/`ErrorSyncStatus` hängen. Desh
 `repoURL: git@github.com:...` (SSH), nicht `https://...`, und
 `infra/ansible/roles/gitops_secrets` legt dafür einen ArgoCD-Repository-Credential-Secret
 (`repo-ticketflow`, Namespace `argocd`) aus einem lokalen, git-ignorierten SSH-Deploy-Key an —
-siehe `infra/ansible/README.md` ## GitOps-Secrets für die Erzeugung/Aktivierung. Die
+siehe `infra/ansible/README.md` ## GitOps secrets für die Erzeugung/Aktivierung. Die
 Upstream-Helm-Repos selbst (`charts.longhorn.io`, `charts.jetstack.io`,
 `kubernetes-sigs.github.io`) sind weiterhin öffentlich — dafür braucht nur der jeweilige
 Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim Sync per
