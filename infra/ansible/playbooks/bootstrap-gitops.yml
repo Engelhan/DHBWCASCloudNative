@@ -1,5 +1,5 @@
 ---
-# GitOps part only. Re-run after changing gitops/applicationset.yaml or secrets.yml.
+# GitOps part only. Re-run after changing gitops/applicationsets/ or secrets.yml.
 
 - name: (Re-)bootstrap ArgoCD
   hosts: control_plane

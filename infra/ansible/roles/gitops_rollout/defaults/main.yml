@@ -1,5 +1,6 @@
 ---
-# Stage order; each waits for the previous one to be Synced and Healthy.
+# Stage order = file names in gitops/applicationsets/; each waits for the previous one to be Synced
+# and Healthy.
 gitops_rollout_stages:
   - platform
   - apps

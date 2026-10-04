@@ -1,13 +1,19 @@
 ---
 # Apply one stage's ApplicationSet and wait until all its Applications are Synced and Healthy.
 
+- name: "Stage {{ gitops_stage }}: copy the ApplicationSet manifest to the control plane"
+  copy:
+    src: "{{ playbook_dir }}/../../../gitops/applicationsets/{{ gitops_stage }}.yaml"
+    dest: "/tmp/ticketflow-applicationset-{{ gitops_stage }}.yaml"
+    mode: "0644"
+
 # Expected count from the file, so an empty list never counts as green.
 - name: "Stage {{ gitops_stage }}: determine the expected number of Applications"
   set_fact:
     gitops_stage_expected: >-
       {%- set ns = namespace(n=0) -%}
-      {%- for doc in lookup('file', playbook_dir ~ '/../../../gitops/applicationset.yaml') | from_yaml_all -%}
-      {%- if doc and doc.metadata.labels['ticketflow.io/stage'] | default('') == gitops_stage -%}
+      {%- for doc in lookup('file', playbook_dir ~ '/../../../gitops/applicationsets/' ~ gitops_stage ~ '.yaml') | from_yaml_all -%}
+      {%- if doc -%}
       {%- set ns.n = ns.n + (doc.spec.generators[0].matrix.generators[1].list.elements | length) -%}
       {%- endif -%}
       {%- endfor -%}
@@ -16,13 +22,11 @@
 - name: "Stage {{ gitops_stage }}: ApplicationSet present in the manifest"
   assert:
     that: gitops_stage_expected | int > 0
-    fail_msg: "No ApplicationSet with ticketflow.io/stage={{ gitops_stage }} in gitops/applicationset.yaml"
+    fail_msg: "No Applications in gitops/applicationsets/{{ gitops_stage }}.yaml"
     quiet: true
 
 - name: "Stage {{ gitops_stage }}: apply the ApplicationSet"
-  command: >
-    k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
-    -l ticketflow.io/stage={{ gitops_stage }}
+  command: k3s kubectl apply -f /tmp/ticketflow-applicationset-{{ gitops_stage }}.yaml
   register: gitops_stage_apply
   changed_when: "'unchanged' not in gitops_stage_apply.stdout"
 

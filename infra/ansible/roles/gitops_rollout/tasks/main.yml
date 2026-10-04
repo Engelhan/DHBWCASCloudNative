@@ -1,24 +1,15 @@
 ---
-# Applies the ApplicationSets stage by stage (see gitops/applicationset.yaml). Skipped if the
-# file doesn't exist.
-- name: Check whether the ApplicationSet manifest exists in the repo
+# Applies gitops/applicationsets/<stage>.yaml stage by stage. Skipped if the directory doesn't exist.
+- name: Check whether the ApplicationSet manifests exist in the repo
   stat:
-    path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
+    path: "{{ playbook_dir }}/../../../gitops/applicationsets"
   delegate_to: localhost
   become: false
-  register: applicationset_file
+  register: applicationsets_dir
 
-- name: Apply the ApplicationSets stage by stage
-  when: applicationset_file.stat.exists
-  block:
-    - name: Copy the ApplicationSet manifest to the control plane
-      copy:
-        src: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
-        dest: /tmp/ticketflow-applicationset.yaml
-        mode: "0644"
-
-    - name: Apply the stage and wait for "everything green"
-      include_tasks: stage.yml
-      loop: "{{ gitops_rollout_stages }}"
-      loop_control:
-        loop_var: gitops_stage
+- name: Apply the stage and wait for "everything green"
+  include_tasks: stage.yml
+  loop: "{{ gitops_rollout_stages }}"
+  loop_control:
+    loop_var: gitops_stage
+  when: applicationsets_dir.stat.exists
