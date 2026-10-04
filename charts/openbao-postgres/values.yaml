@@ -68,6 +68,10 @@ import:
 
 affinity:
   podAntiAffinityType: required
+  # Primary und Replica muessen in verschiedenen simulierten Regionen liegen (P4), nicht nur auf
+  # verschiedenen Nodes - gleiche Ausfalldomaene wie Kafka/OpenBao. Ohne diesen Wert faellt das
+  # Template auf kubernetes.io/hostname zurueck.
+  topologyKey: topology.ticketflow/region
 
 storage:
   storageClass: longhorn
