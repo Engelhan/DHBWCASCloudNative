@@ -300,6 +300,10 @@ spec:
               # Bootstrap-Job wuerde sonst gegen die echten, operator-generierten Werte
               # gegenschreiben.
               seed_if_missing secret/akhq/basic-auth password="$(genpass)"
+              # JWT-Signaturschluessel der AKHQ-Login-Sessions: muss bei 2 Replicas auf beiden
+              # identisch sein, sonst ist ein auf Pod A ausgestelltes Session-Cookie auf Pod B
+              # ungueltig. 64 Zeichen > die 256 Bit, die Micronaut fuer HS256 verlangt.
+              seed_if_missing secret/akhq/jwt secret="$(genpass)$(genpass)"
               seed_if_missing secret/notification-worker/smtp username="" password=""
               seed_if_missing secret/notification-worker/kafka-tls ca-cert="" client-cert="" client-key=""
 

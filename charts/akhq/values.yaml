@@ -34,27 +34,27 @@ akhq:
       cpu: 500m
       memory: 512Mi
 
-  # Weiche Verteilung ueber die drei simulierten Regionen (P4). AKHQs Upstream-Chart hat
-  # (anders als charts/ticketflow-app/charts/reservation-worker/charts/apicurio) KEIN natives
+  # Zwei Replicas in zwei Regionen (P4). AKHQs Upstream-Chart hat (anders als
+  # charts/ticketflow-app/charts/reservation-worker/charts/apicurio) KEIN natives
   # topologySpreadConstraints-Feld - gegen templates/deployment.yaml im Upstream-Chart-Tarball
   # geprueft (nur affinity/nodeSelector/tolerations werden dort templated, reiner
-  # toYaml-Passthrough). Deshalb aequivalent ueber eine weiche podAntiAffinity ausgedrueckt.
-  # labelSelector ist hier (anders als bei den volleigenen Charts) auf die tatsaechlich vom
-  # Upstream-Chart gerenderten Pod-Labels haendisch hartkodiert (app.kubernetes.io/name=akhq,
+  # toYaml-Passthrough). Deshalb als harte (required) podAntiAffinity auf das Regions-Label
+  # ausgedrueckt: zwei AKHQ-Pods duerfen nie in derselben Region liegen. Bei 2 Replicas und 3
+  # Regionen bleibt fuer den Rolling-Update-Surge-Pod immer eine Region frei. labelSelector ist
+  # hier (anders als bei den volleigenen Charts) auf die tatsaechlich vom Upstream-Chart
+  # gerenderten Pod-Labels haendisch hartkodiert (app.kubernetes.io/name=akhq,
   # app.kubernetes.io/instance=akhq - Release-Name = ArgoCD-Application-Name "akhq"), da
   # values.yaml selbst nicht templated wird und daher keine Helm-Helper wie "akhq.selectorLabels"
-  # referenzieren kann. Bei replicaCount: 1 (Chart-Default) wirkungslos, aber korrekt vorbereitet,
-  # falls replicaCount je erhoeht wird. Gegen `helm template` verifiziert.
+  # referenzieren kann. Gegen `helm template` verifiziert.
+  replicaCount: 2
   affinity:
     podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            topologyKey: topology.ticketflow/region
-            labelSelector:
-              matchLabels:
-                app.kubernetes.io/name: akhq
-                app.kubernetes.io/instance: akhq
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: topology.ticketflow/region
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: akhq
+              app.kubernetes.io/instance: akhq
 
   # Chart-Default fuer beide ist {} (ungehaertet) - wie bei charts/strimzi-operator (siehe
   # dessen values.yaml) explizit gesetzt statt uebernommen. readOnlyRootFilesystem bewusst NICHT
@@ -96,6 +96,13 @@ akhq:
         secretKeyRef:
           name: akhq-basic-auth
           key: password-hash
+    # Gemeinsamer JWT-Signaturschluessel aller Replicas (siehe configuration.micronaut unten und
+    # templates/basic-auth-secret.yaml).
+    - name: AKHQ_JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: akhq-basic-auth
+          key: jwt-secret
 
   # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigene
   # (Upstream-Default an) liess http/management von jeder Quelle zu.
@@ -120,6 +127,15 @@ akhq:
     micronaut:
       security:
         enabled: true
+        # Bei replicaCount: 2 muessen beide Pods Session-Cookies mit demselben Schluessel
+        # signieren/pruefen, sonst fliegt man bei jedem Request, der auf dem anderen Pod landet,
+        # aus dem Login. Wert per Env-Substitution aus OpenBao (extraEnv AKHQ_JWT_SECRET).
+        token:
+          jwt:
+            signatures:
+              secret:
+                generator:
+                  secret: "${AKHQ_JWT_SECRET}"
     akhq:
       security:
         default-group: no-roles
