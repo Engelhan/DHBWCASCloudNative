@@ -1,17 +1,6 @@
-# Chart-Defaults bewusst weitgehend uebernommen (kein Tuning noetig, solange
-# charts/kafka-cluster/templates/database/cnpg-cluster.yaml - die eigentliche Cluster-CR mit
-# Instanzanzahl/Topology-Spread ueber die simulierten Regionen (P4) - noch nicht existiert):
-# crds.create ist bereits Default true, der Operator ist bereits Default cluster-wide (nicht
-# auf einen Namespace beschraenkt). Muss unter dem Dependency-Alias "cloudnative-pg"
-# verschachtelt sein (siehe Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart
-# durchreicht.
+# Upstream values (dependency alias). CRDs and cluster-wide mode are defaults.
 cloudnative-pg:
-  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
-  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
-  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
-  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
-  # Der Operator laeuft mit --leader-elect (fest im Upstream-Template), der eingebaute Webhook-
-  # Server antwortet auf beiden Pods.
+  # P4: two replicas, hard-spread across regions. Runs with --leader-elect; webhooks on both pods.
   replicaCount: 2
   topologySpreadConstraints:
     - maxSkew: 1
@@ -23,14 +12,11 @@ cloudnative-pg:
         matchLabels:
           app.kubernetes.io/name: cloudnative-pg
           app.kubernetes.io/instance: cnpg-operator
-  # Aus: kube-prometheus-stack ist entfernt, die PodMonitor-CRD existiert nicht mehr.
+  # No Prometheus in the cluster.
   monitoring:
     podMonitorEnabled: false
 
-  # podSecurityContext/containerSecurityContext sind bereits Chart-Default gehaertet
-  # (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL, seccompProfile
-  # RuntimeDefault) - kein Override noetig. Kein natives networkPolicy-Feld im Chart
-  # vorhanden.
+  # Security contexts are hardened by default.
   resources:
     requests:
       cpu: 50m

@@ -1,13 +1,5 @@
 apiVersion: v2
 name: kafka-cluster
-description: >-
-  Strimzi-Kafka-Cluster-Instanz (Kafka-CR, KafkaNodePools, KafkaTopics) sowie die
-  Apicurio-Schema-Registrierung (Carlos' Scope). Volleigene Custom Resources, kein Wrapper um
-  einen Upstream-Chart - analog zu charts/cert-manager-config, nur fuer die Kafka-Ebene statt den
-  Addon-Layer. Getrennt von charts/ticketflow-app (catalog-api/frontend, Philipps Scope) - zwei
-  unabhaengige Helm-Releases/ArgoCD-Applications im selben Kubernetes-Namespace "ticketflow"
-  (Team-Entscheidung: nicht gemeinsam deployen). Chart hiess urspruenglich "ticketflow", am
-  2026-09-16 auf "kafka-cluster" umbenannt, um Verwechslungen mit dem App-Layer-Chart
-  charts/ticketflow-app zu vermeiden.
+description: "Strimzi Kafka cluster (Kafka CR, node pools, topics, users) plus Apicurio schema registration."
 type: application
 version: 0.1.0

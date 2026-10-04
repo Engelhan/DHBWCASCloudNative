@@ -1,42 +1,26 @@
-# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Namespace, in dem dieser Chart selbst laeuft (= ticketflow.namespaces.openbao) - wird vom
-# Bootstrap-Job/RBAC gebraucht. Kein Helm-Ausdruck moeglich (siehe unten bei
-# extraSecretEnvironmentVars/openbaoBootstrap): values.yaml wird nicht getemplated, deshalb hier
-# ein bewusst hartkodierter Literal-Wert - muss zu ticketflow.namespaces.openbao (gitops/env/
-# cluster.yaml) passen, falls der sich je aendert.
+# Must match ticketflow.namespaces.openbao (values files aren't templated).
 openbaoNamespace: openbao
 
-# Namespace des External-Secrets-Operator-ServiceAccounts, das der Bootstrap-Job als
-# Kubernetes-Auth-Rolle einrichtet. Gleicher Grund wie oben: kein Helm-Ausdruck moeglich, muss zu
-# ticketflow.namespaces.externalSecrets passen.
+# Must match ticketflow.namespaces.externalSecrets.
 externalSecretsNamespace: external-secrets
 
-# Muss unter dem Dependency-Alias "openbao" verschachtelt sein (siehe Chart.yaml), damit Helm die
-# Werte an den gewrappten Upstream-Chart durchreicht.
+# Upstream values (dependency alias).
 openbao:
   injector:
-    # Kein Vault-Agent-Sidecar-Injector - External Secrets Operator ist der einzige
-    # Secret-Delivery-Mechanismus in diesem Repo (Entscheidung, siehe Root-README ## Bonus B1).
+    # ESO is the only secret delivery mechanism.
     enabled: false
 
   csi:
-    enabled: false # gleiche Begruendung wie injector.enabled oben.
+    enabled: false
 
   server:
     image:
-      # registry ist bereits Chart-Default "quay.io" - repository OHNE Registry-Praefix, sonst
-      # doppelt (der Upstream-Chart setzt beide Felder getrennt zusammen, anders als z.B. bei
-      # notification-worker, wo "image.repository" den vollen Pfad traegt - gegen den real
-      # gerenderten StatefulSet-Output verifiziert, ein erster Versuch mit vollem Pfad hier
-      # rendete faelschlich "quay.io/quay.io/openbao/openbao").
+      # Without registry prefix (set separately).
       repository: openbao/openbao
-      # OHNE "v"-Praefix: Chart.AppVersion ist "v2.6.2", aber die real auf quay.io veroeffentlichten
-      # Image-Tags heissen "2.6.2" (kein "v") - live gegen die quay.io-Registry-API geprueft
-      # (quay.io/api/v1/repository/openbao/openbao/tag/), nachdem "v2.6.2" mit "not found"
-      # fehlschlug. Explizit statt implizitem Default (kein :latest, siehe P3).
+      # No "v" prefix: the quay.io tags differ from Chart.AppVersion.
       tag: "2.6.2"
 
     resources:
@@ -47,8 +31,7 @@ openbao:
         cpu: 500m
         memory: 512Mi
 
-    # Kein lokales file/raft-Storage - das PostgreSQL-Storage-Backend (config-Block unten) haelt
-    # den gesamten Zustand, kein PVC pro Pod noetig.
+    # State lives in PostgreSQL, no PVCs.
     dataStorage:
       enabled: false
 
@@ -56,15 +39,9 @@ openbao:
       enabled: true
       replicas: 3
       raft:
-        # PostgreSQL-Backend statt Raft Integrated Storage - siehe Root-README ## Bonus B1
-        # Begruendung. Beide sind laut openbao.org offiziell HA-faehig; PostgreSQL passt zu P4
-        # (dieselbe simulierte Region-Topologie wie Kafka/CNPG) ohne einen dritten
-        # Storage-Mechanismus im Cluster einzufuehren.
+        # PostgreSQL storage (HA-capable), reusing CNPG instead of a third storage system.
         enabled: false
-      # HCL-Config fuer den Postgres-Storage-Backend. Bewusst KEIN "connection_url" hier - die
-      # Umgebungsvariable BAO_PG_CONNECTION_URL (offiziell dokumentiert, siehe
-      # extraSecretEnvironmentVars unten) ueberschreibt/ergaenzt sie zur Laufzeit, damit das
-      # Postgres-Passwort nirgends im Klartext in dieser Datei steht.
+      # connection_url comes from BAO_PG_CONNECTION_URL (no password in this file).
       config: |
         ui = true
 
@@ -80,31 +57,16 @@ openbao:
           ha_table   = "openbao_ha_locks"
         }
 
-        # Laesst den Chart automatisch die aktive Instanz labeln (openbao-active-Service
-        # selektiert darauf) - macht Failover zwischen bereits entsiegelten Standbys fuer den
-        # External-Secrets-Operator transparent, ohne eigene Retry-Logik dort.
+        # Labels the active pod for the openbao-active service.
         service_registration "kubernetes" {}
 
-    # Postgres-Connection-String von OpenBaos eigener CNPG-Cluster-CR (charts/openbao-postgres).
-    # Secret-Name ist der von CNPG SELBST generierte App-User-Secret-Name
-    # "<clusterName>-app" = "<ticketflow.openbao.databaseName>-postgres-cluster-app" - siehe
-    # charts/openbao-postgres/templates/_helpers.tpl (openbao-postgres.appSecretName) und dessen
-    # postgres-cluster.yaml (bootstrap.initdb OHNE eigenes secret-Feld, CNPG generiert das
-    # Credential also selbst statt es chart-hardcodiert vorzugeben). Hartkodierter String, weil
-    # values.yaml nicht getemplated wird - muss von Hand angepasst werden, falls
-    # ticketflow.openbao.databaseName (aktuell "openbao-vault", siehe gitops/env/cluster.yaml) je
-    # geaendert wird. Key-Name "uri" gegen den real von CNPG erzeugten Secret-Inhalt
-    # verifizieren (`kubectl -n openbao get secret openbao-vault-postgres-cluster-app -o yaml`) -
-    # zur Implementierungszeit nicht live pruefbar.
+    # CNPG-generated secret of charts/openbao-postgres (literal: values aren't templated).
     extraSecretEnvironmentVars:
       - envName: BAO_PG_CONNECTION_URL
         secretName: openbao-vault-postgres-cluster-app
         secretKey: uri
 
-    # P4: Region-Spread. OpenBao haelt jedes Service-Credential - ein Regionsausfall darf nicht
-    # alle drei Replicas gleichzeitig treffen. Natives Feld im Upstream-Chart (anders als AKHQ,
-    # kein Affinity-Workaround noetig - gegen templates/_helpers.tpl im Upstream-Chart-Tarball
-    # verifiziert).
+    # P4: one replica per region.
     topologySpreadConstraints: |
       - maxSkew: 1
         topologyKey: topology.ticketflow/region
@@ -115,11 +77,7 @@ openbao:
             app.kubernetes.io/instance: openbao
             component: server
 
-    # Auto-Unseal-Sidecar (Root-README ## Bonus B1 / Nutzer-Entscheidung): pollt lokal "bao
-    # status" und entsiegelt bei Bedarf automatisch mit dem aus dem unten gemounteten Secret
-    # gelesenen Key - macht einen von Kubernetes neu gestarteten/ersetzten Pod ohne manuellen
-    # Eingriff wieder zum entsiegelten Standby. Gleiches Image wie der Server-Container (enthaelt
-    # die "bao"-CLI bereits), kein zusaetzliches Image noetig.
+    # Auto-unseal sidecar: unseals a restarted pod with the key from the mounted secret.
     extraContainers:
       - name: auto-unseal
         image: "quay.io/openbao/openbao:2.6.2"
@@ -130,9 +88,7 @@ openbao:
             export BAO_ADDR="http://127.0.0.1:8200"
             while true; do
               STATUS=$(bao status -format=json 2>/dev/null || true)
-              # `bao status -format=json` schreibt "sealed": true - mit Leerzeichen nach dem
-              # Doppelpunkt. Ohne ' *' im Muster blieb SEALED leer und der Sidecar entsiegelte
-              # nie (live gefunden 2026-10-02: openbao-1 blieb nach einem Neustart versiegelt).
+              # Status JSON has a space after the colon.
               SEALED=$(echo "$STATUS" | grep -o '"sealed": *[a-z]*' | tr -d ' ' | cut -d: -f2)
               if [ "$SEALED" = "true" ] && [ -f /openbao/unseal-keys/key1 ]; then
                 bao operator unseal "$(cat /openbao/unseal-keys/key1)" || true
@@ -159,53 +115,30 @@ openbao:
     volumes:
       - name: unseal-keys
         secret:
-          # Von templates/bootstrap-job.yaml angelegt/aktualisiert (Secret existiert erst nach dem
-          # ersten erfolgreichen Bootstrap-Lauf) - optional, damit der allererste Pod-Start (vor
-          # dem allerersten Hook-Job) nicht am fehlenden Secret scheitert.
+          # Optional: created by the bootstrap job after the first run.
           secretName: openbao-unseal-keys
           optional: true
 
     serviceAccount:
-      # Noetig fuer service_registration "kubernetes" oben (Chart legt die dafuer noetige
-      # Role/RoleBinding automatisch an, siehe Upstream-Doku).
+      # Needed for service_registration.
       create: true
 
-    # Live gefundener Deadlock (2026-09-23, endgueltige Entscheidung nach kurzem Hin-und-Her - kein
-    # Ansible, reiner Helm-Hook): der Chart-Default-Readiness-Check ist "exec: bao status", nur
-    # erfolgreich wenn entsiegelt. ArgoCD fuehrt den post-install/post-upgrade-Bootstrap-Hook-Job
-    # aber erst aus, NACHDEM alle regulaeren Sync-Ressourcen "Healthy" sind (Standard-ArgoCD-Hook-
-    # Semantik) - eine frisch installierte, noch versiegelte Instanz kann also nie "Ready" werden,
-    # der Bootstrap-Job (der genau das entsiegeln wuerde) startet nie: klassischer Deadlock, live
-    # beobachtet als ArgoCD-Sync, der dauerhaft bei "waiting for healthy state of
-    # apps/StatefulSet/openbao" haengen blieb. Aufloesung: HTTP-Health-Endpoint statt exec, mit
-    # sealedcode/uninitcode=200 - macht Kubernetes/ArgoCDs Sicht auf "Ready" unabhaengig vom
-    # Siegel-/Init-Status. Das ist sicher, weil das tatsaechliche Traffic-Routing
-    # (openbao/-active/-standby-Services) laut deren `publishNotReadyAddresses: true` ohnehin NIE
-    # von der K8s-Readiness abhaengt, sondern ausschliesslich vom "openbao-active"-Label, das
-    # service_registration "kubernetes" unabhaengig von der Kubelet-Probe pflegt - ein
-    # "Ready"-Status hier ist also rein kosmetisch/fuer ArgoCDs Health-Gate relevant, nie fuer
-    # echtes Secret-Routing. (Zwischenzeitlich auf den Standard-Check zurueckgesetzt und wieder
-    # hierher zurueckgerollt, als die Alternative - Init/Unseal-Secret per Ansible, Bootstrap-Rest
-    # als gewoehnliche, nicht-Hook-Ressource - zugunsten von "kein Ansible" verworfen wurde; siehe
-    # Git-Historie fuer den Zwischenstand.)
+    # HTTP health with sealed/uninit = 200: a sealed pod must turn Ready, or ArgoCD never runs the
+    # unseal hook. Routing uses the openbao-active label, not readiness.
     readinessProbe:
       path: "/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200"
 
-    # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
+    # NetworkPolicies come from charts/network-policies.
     networkPolicy:
       enabled: false
 
-# Einstellungen fuer den chart-eigenen Ingress (templates/ingress.yaml). Der Hostname selbst steht
-# hier NICHT - er ist immer "openbao.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml, gleiches
-# Muster wie bei charts/akhq.
+# Own Ingress; host is always openbao.<dnsZone>.
 ingress:
   className: traefik
   clusterIssuerName: certificate-cluster-issuer
   tlsSecretName: openbao-tls
 
-# Bootstrap-Job (templates/bootstrap-job.yaml) - Init/Unseal/KV-Seeding, siehe eigener Abschnitt
-# im Plan. Eigener Werte-Block ausserhalb des "openbao:"-Dependency-Alias, weil dies UNSER
-# eigenes Template ist, nicht Teil des gewrappten Upstream-Charts.
+# Bootstrap job (our template, outside the upstream alias).
 bootstrapJob:
   image: "quay.io/openbao/openbao:2.6.2"
   resources:

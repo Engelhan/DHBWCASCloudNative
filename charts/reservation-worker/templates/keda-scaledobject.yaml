@@ -1,16 +1,6 @@
-# P6 (Root-README ## Entscheidungen): KEDA skaliert dieses Deployment auf Basis des
-# Kafka-Consumer-Group-Lags von .Values.config.consumerGroup auf .Values.config.reservationTopic.
-# Braucht den KEDA-Operator (gitops/apps/keda.yaml, charts/keda) fuer die ScaledObject/
-# TriggerAuthentication-CRDs - dieselbe CRD-Bootstrap-Reihenfolge-Annahme wie bei jeder anderen
-# Custom Resource in diesem Repo, die von einem separat deployten Operator abhaengt (z.B. Kafka/
-# KafkaTopic/KafkaUser vs. Strimzi), kein Sonderfall.
-#
-# KEDAs Kafka-Scaler akzeptiert "username"/"password" fuer TriggerAuthentication NUR ueber
-# secretTargetRef, nie als Klartext-Metadata-Feld (siehe keda.sh/docs/latest/scalers/apache-kafka).
-# Das Strimzi-generierte Secret (.Values.config.kafkaSasl.secretName) hat aber nur die Keys
-# "password"/"sasl.jaas.config", keinen separaten "username"-Key - deshalb dieses kleine,
-# chart-eigene Secret nur fuer den (nicht-geheimen) Benutzernamen; das eigentliche Passwort kommt
-# weiterhin direkt aus dem Strimzi-Secret, keine Kopie davon hier.
+# P6: scale on consumer-group lag. KEDA takes username/password only via secretTargetRef and the
+# Strimzi secret has no username key, hence this small secret; the password comes straight from
+# Strimzi's secret.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -49,8 +39,7 @@ spec:
   maxReplicaCount: {{ .Values.config.keda.maxReplicaCount }}
   pollingInterval: {{ .Values.config.keda.pollingInterval }}
   cooldownPeriod: {{ .Values.config.keda.cooldownPeriod }}
-  # cooldownPeriod wirkt nur beim Skalieren auf 0 - bei minReplicaCount >= 1 bestimmt allein das
-  # vom KEDA erzeugte HPA das Rueckskalieren, und dessen Default-Stabilisierungsfenster ist 300s.
+  # cooldownPeriod only applies to scale-to-zero; above that the HPA window governs (default 300s).
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
@@ -65,10 +54,8 @@ spec:
         consumerGroup: {{ .Values.config.consumerGroup | quote }}
         topic: {{ .Values.config.reservationTopic | quote }}
         lagThreshold: {{ .Values.config.keda.lagThreshold | quote }}
-        # Muss zum Consumer passen: kafka-go startet eine Partition ohne committeten Offset bei
-        # FirstOffset (= earliest). Mit "latest" zaehlte KEDA jede solche Partition pauschal als
-        # Lag 1 - nach frischem Cluster oder neu angelegten Partitionen sah KEDA also hoechstens
-        # "Lag = Partitionszahl", egal wie gross der echte Rueckstand war.
+        # Must match the consumer (kafka-go starts at FirstOffset); with "latest" KEDA counts every
+        # uncommitted partition as lag 1.
         offsetResetPolicy: earliest
         sasl: {{ .Values.config.kafkaSasl.enabled | ternary "scram_sha512" "none" | quote }}
         tls: disable

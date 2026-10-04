@@ -1,33 +1,10 @@
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Gemeinsame Basiswerte fuer alle Umgebungen. dev/prod-spezifische Overrides in
-# values-dev.yaml/values-prod.yaml.
-#
-# catalog-api + frontend (Philipps Scope) - bewusst eigener Chart, getrennt von
-# charts/kafka-cluster (Kafka + Schema-Registry, Carlos' Scope), siehe Chart.yaml-Beschreibung und
-# charts/README.md.
-#
-# Beide Komponenten folgen derselben Key-Reihenfolge wie charts/reservation-worker und
-# charts/notification-worker (image, replicaCount, resources, podSecurityContext, securityContext,
-# config, database/secret, service, ingress, serviceMonitor, podDisruptionBudget,
-# topologySpreadConstraint) - siehe charts/README.md ## Muster fuer Applikations-Charts.
-#
-# Der Namespace steht bewusst nicht mehr hier: ihn bestimmt die ArgoCD-Application
-# (destination.namespace in gitops/applicationset.yaml), wie bei allen anderen Charts im Repo.
-# Es bleibt derselbe Namespace wie charts/kafka-cluster, damit catalog-api den Kafka-Bootstrap-
-# Service per kurzem In-Namespace-DNS-Namen erreicht (siehe catalogApi.config.kafkaBrokers).
+# catalog-api + frontend; separate from charts/kafka-cluster on purpose.
 
 catalogApi:
-  # Registry und Tag kommen zentral aus gitops/env/cluster.yaml (ticketflow.imageRegistry /
-  # .imageTag; das Repository wird daraus als "<registry>/ticketflow-catalog-api" gebildet).
-  # Die Felder hier sind nur ein bewusster Einzelfall-Override und bleiben normalerweise leer.
-  # Nie :latest (P3) - das verbietet auch values.schema.json.
+  # Empty: <registry>/ticketflow-catalog-api with the central tag. Never :latest (P3).
   image:
     repository: ""
     tag: ""
@@ -35,14 +12,7 @@ catalogApi:
 
   replicaCount: 2
 
-  # 50m Request: catalog-api ist pro Anfrage I/O-gebunden (Postgres-Read, Kafka-Produce), nicht
-  # CPU-gebunden - ein Go-Binary im Leerlauf zwischen Requests braucht kaum CPU. 300m Limit gibt
-  # Kopfraum fuer den einzigen wirklich CPU-teuren Schritt (JSON-Schema-Validierung vor jedem
-  # Kafka-Publish, siehe internal/schemareg) waehrend eines Flash-Sale-Bursts, ohne im Normalbetrieb
-  # ungenutzte CPU zu reservieren. 64Mi/128Mi Memory: kleines Go-Binary (distroless) + DB-/
-  # Kafka-Connection-Pools + kompiliertes Schema im Speicher - grosszuegig genug, ohne Puffer fuer
-  # tatsaechlich grosse Datenmengen zu verschwenden (catalog-api haelt selbst keine Sitzplatzliste
-  # im Speicher, jede Anfrage liest frisch aus Postgres).
+  # I/O-bound Go binary; the limit leaves headroom for schema validation during bursts.
   resources:
     requests:
       cpu: 50m
@@ -51,11 +21,7 @@ catalogApi:
       cpu: 300m
       memory: 128Mi
 
-  # runAsUser/runAsGroup explizit als Zahl noetig: das Image (distroless/static-debian12:nonroot)
-  # setzt den Container-User nur als NAMEN ("nonroot"), Kubernetes kann Namen aber nicht aufloesen
-  # und verweigert mit runAsNonRoot: true sonst den Start ("cannot verify user is non-root").
-  # 65532 ist Distroless' Standard-nonroot-UID/GID, siehe src/catalog-api/Dockerfile. Identisch zu
-  # charts/reservation-worker/values.yaml - fsGroup/seccompProfile fehlten hier frueher.
+  # Numeric UID needed: distroless sets the user by name, which runAsNonRoot can't verify.
   podSecurityContext:
     runAsNonRoot: true
     runAsUser: 65532
@@ -70,49 +36,26 @@ catalogApi:
     capabilities:
       drop: ["ALL"]
 
-  # -> ConfigMap (templates/catalog-api/configmap.yaml), siehe src/catalog-api/README.md
-  # ## Konfiguration fuer die Bedeutung jeder Variable.
+  # ConfigMap, see src/catalog-api/README.md.
   config:
     logLevel: info
     port: "8080"
     reservationTopic: reservation-requested
-    # Bootstrap-Service des Kafka-Clusters aus charts/kafka-cluster (kafka.metadata.name dort),
-    # Port 9092 ist Strimzi's "plain"-Listener - seit B2 SASL_PLAINTEXT (SCRAM-Auth, siehe
-    # kafkaSasl unten), Transport bleibt unverschluesselt.
-    # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
-    # abgeleitet - Kafka laeuft in einem eigenen Namespace (siehe gitops/env/cluster.yaml).
+    # Empty = derived (SASL listener 9092).
     kafkaBrokers: ""
-    # Nur fuer Requests ausserhalb des Ingress-Pfads relevant (z.B. direkter Aufruf durch
-    # load-generator) - das Frontend selbst braucht dank Same-Origin-Ingress (siehe
-    # templates/frontend/ingress.yaml) kein CORS.
+    # Only for calls outside the same-origin Ingress (e.g. load generator).
     corsAllowedOrigin: ""
-    # Apicurio Registry (charts/apicurio, Namespace "kafka", ueber
-    # charts/kafka-cluster/templates/schema-registry/ mit den kanonischen Schemas befuellt).
-    # Gleiche Schluesselnamen wie in charts/reservation-worker/values.yaml config.registry*.
-    # Leer lassen: wird aus ticketflow.namespaces.kafka abgeleitet.
+    # Empty = derived from ticketflow.namespaces.kafka.
     registryUrl: ""
     registryGroupId: "ticketflow"
-    # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
-    # Operator verwaltete KafkaUser "catalog-api" (siehe charts/kafka-cluster values.yaml
-    # kafka.users) statt eines anonymen/geteilten Kafka-Zugriffs. secretName referenziert das vom
-    # User Operator AUTOMATISCH angelegte Secret (Keys "password"/"sasl.jaas.config") direkt per
-    # secretKeyRef - kein eigenes Secret noetig wie bei Postgres, weil catalog-api und der
-    # Kafka-Cluster denselben Namespace teilen.
+    # B2: SCRAM as KafkaUser catalog-api; secret created by Strimzi.
     kafkaSasl:
       enabled: true
       username: catalog-api
       secretName: catalog-api
 
-  # Team-Entscheidung: die Anwendung baut sich den Connection-String selbst aus Einzelteilen
-  # zusammen (siehe src/catalog-api/main.go buildDatabaseURL), statt ein fertiges DATABASE_URL-
-  # Secret zu erwarten - charts/postgres-cluster liefert ohnehin nur username/password getrennt.
-  # Die Anwendung baut ihren Connection-String selbst aus diesen Einzelteilen + dem Secret
-  # zusammen (Team-Entscheidung, siehe src/*/README.md ## Konfiguration). host/name leer lassen:
-  # beide werden aus ticketflow.postgres.databaseName abgeleitet, weil die Datenbank im selben
-  # Namespace laeuft (gitops/env/cluster.yaml -> ticketflow.namespaces.app).
-  # credentialsSecretName zeigt per Default auf das von CNPG selbst erzeugte Secret
-  # "<databaseName>-postgres-cluster-app" (Keys username/password) - direkt, nicht ueber OpenBao:
-  # die Datenbank-Zugangsdaten sollen nicht von einem entsiegelten Secret-Vault abhaengen.
+  # The app builds its DSN from these parts + the secret. Empty host/name/secret = derived from
+  # ticketflow.postgres.databaseName (CNPG's <db>-postgres-cluster-app, not via OpenBao).
   database:
     host: ""
     port: "5432"
@@ -123,7 +66,7 @@ catalogApi:
   service:
     port: 8080
 
-  # Aus: kube-prometheus-stack ist entfernt, die ServiceMonitor-CRD existiert nicht mehr.
+  # Off: no Prometheus in the cluster.
   serviceMonitor:
     enabled: false
     interval: 30s
@@ -134,17 +77,13 @@ catalogApi:
     enabled: true
     minAvailable: 1
 
-  # Harte Verteilung ueber die drei simulierten Regionen (P4, whenUnsatisfiable: DoNotSchedule im
-  # Template) - catalog-api ist stateless und horizontal skaliert, ein Ausfall einer Region
-  # waehrend eines Flash Sales darf nie alle Replicas gleichzeitig treffen. Setzt mindestens zwei
-  # Nodes mit Regions-Label voraus, deshalb auch im dev-Profil >= 2 Replicas auf 3 Workern.
+  # P4: hard spread across regions (needs >= 2 labeled nodes).
   topologySpreadConstraint:
     enabled: true
     maxSkew: 1
 
 frontend:
-  # Siehe catalogApi.image - Registry/Tag kommen zentral, Repository wird als
-  # "<registry>/ticketflow-frontend" gebildet.
+  # Empty: <registry>/ticketflow-frontend with the central tag.
   image:
     repository: ""
     tag: ""
@@ -152,12 +91,7 @@ frontend:
 
   replicaCount: 2
 
-  # 10m/16Mi Request: nginx liefert nur wenige KB an statischen HTML/CSS/JS-Dateien aus, keine
-  # eigene Verarbeitung - der geringste Wert aller App-Pods in diesem Repo. 100m/64Mi Limit deckt
-  # trotzdem viele gleichzeitige Verbindungen ab (beim Vorverkaufsstart laden potenziell hunderte
-  # Browser gleichzeitig dieselbe Seite, bevor sie ueberhaupt buchen), ohne fuer eine reine
-  # Static-File-Auslieferung CPU-/Memory-Kontingent zu verschwenden, das anderswo (z. B.
-  # reservation-worker unter KEDA) mehr gebraucht wird.
+  # Static files only; the limit covers many parallel page loads at sale start.
   resources:
     requests:
       cpu: 10m
@@ -166,14 +100,10 @@ frontend:
       cpu: 100m
       memory: 64Mi
 
-  # Bewusst leer: nginx:1.27-alpine startet als root (bindet Port 80, schreibt PID-File) und
-  # delegiert die Worker-Prozesse intern an den nginx-User. runAsNonRoot waere hier also nicht
-  # erfuellbar - dieselbe Art dokumentierter, begruendeter Ausnahme wie Longhorn, siehe
-  # charts/README.md ## Resource-Limits, Security-Context, NetworkPolicy.
+  # Empty: nginx starts as root (port 80, PID file), so runAsNonRoot is impossible.
   podSecurityContext: {}
 
-  # Aus demselben Grund kein readOnlyRootFilesystem/capabilities-drop - nginx schreibt zur
-  # Laufzeit in /var/cache/nginx und /var/run.
+  # nginx writes to /var/cache/nginx and /var/run.
   securityContext:
     allowPrivilegeEscalation: false
 
@@ -182,8 +112,7 @@ frontend:
 
   ingress:
     enabled: true
-    # Leer lassen: der Host wird als "ticketflow.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml
-    # abgeleitet und liegt damit automatisch innerhalb der aktivierten RFC2136-Zone.
+    # Empty = ticketflow.<dnsZone>.
     host: ""
     className: traefik
     clusterIssuerName: certificate-cluster-issuer

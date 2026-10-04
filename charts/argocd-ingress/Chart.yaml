@@ -1,12 +1,5 @@
 apiVersion: v2
 name: argocd-ingress
-description: >-
-  Oeffentlicher Zugriff auf die ArgoCD-UI/-API ueber die echte DHBW-DNS-Zone: ein von
-  cert-manager ausgestelltes Zertifikat (secretName argocd-server-tls, das ArgoCDs eigener
-  API-Server automatisch fuer sein TLS verwendet, siehe
-  https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/) plus eine Traefik
-  IngressRouteTCP mit TLS-Passthrough, damit argocd-server sein eigenes (gueltiges) Zertifikat
-  End-zu-End praesentiert statt an Traefik zu terminieren - vermeidet dadurch auch das sonst
-  noetige "--insecure"-Flag + ConfigMap-Patch + Restart von argocd-server.
+description: "Public ArgoCD UI/API - cert-manager certificate (argocd-server-tls) plus a Traefik IngressRouteTCP with TLS passthrough."
 type: application
 version: 0.1.0

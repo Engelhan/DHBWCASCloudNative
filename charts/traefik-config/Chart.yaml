@@ -1,7 +1,5 @@
 apiVersion: v2
 name: traefik-config
-description: >-
-  HelmChartConfig-Override fuers gebuendelte k3s-Traefik (kein eigener Operator-Wrapper - k3s
-  installiert/verwaltet Traefik selbst ueber seinen eigenen helm-controller, siehe values.yaml)
+description: "HelmChartConfig override for k3s' bundled Traefik."
 type: application
 version: 0.1.0

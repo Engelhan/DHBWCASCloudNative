@@ -1,9 +1,5 @@
 apiVersion: v2
 name: cert-manager-config
-description: >-
-  ClusterIssuer + optionales Wildcard-Zertifikat fuer cert-manager. Kein Operator-Wrapper
-  (der cert-manager-Operator selbst kommt direkt aus dem Upstream-Chart, siehe
-  gitops/apps/cert-manager.yaml) - dieser Chart haelt nur unsere eigene Custom-Resource-
-  Konfiguration, analog zur CNPG-Cluster-CR in charts/kafka-cluster.
+description: "ClusterIssuer and optional wildcard certificate for cert-manager."
 type: application
 version: 0.1.0

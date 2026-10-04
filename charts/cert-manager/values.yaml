@@ -1,16 +1,7 @@
-# Muss unter dem Dependency-Alias "cert-manager" verschachtelt sein (siehe Chart.yaml), damit
-# Helm die Werte an das gewrappte Upstream-Chart durchreicht. securityContext/
-# containerSecurityContext sind fuer alle drei Komponenten bereits Chart-Default gehaertet
-# (runAsNonRoot, readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault) -
-# kein Override noetig, nur resources (Chart-Default ueberall {}) fehlt. NetworkPolicies: siehe
-# charts/network-policies.
+# Upstream values (dependency alias). Security contexts are hardened by default.
 cert-manager:
-  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
-  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
-  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
-  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
-  # Controller und cainjector waehlen per Leader-Election (Upstream-Default) genau einen aktiven
-  # Pod, der Webhook ist zustandslos - der API-Server erreicht ihn ueber beide Endpoints.
+  # P4: two replicas per component, hard-spread across regions (labels = upstream pod labels).
+  # Controller and cainjector use leader election; the webhook is stateless.
   replicaCount: 2
   podDisruptionBudget:
     enabled: true
@@ -94,8 +85,6 @@ cert-manager:
         cpu: 100m
         memory: 128Mi
 
-  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigenen
-  # deckten nur den Controller ab (Webhook/cainjector blieben ungeregelt) und erlaubten Egress auf
-  # 80/443/53/6443 zu beliebigen Zielen.
+  # NetworkPolicies come from charts/network-policies.
   networkPolicy:
     enabled: false

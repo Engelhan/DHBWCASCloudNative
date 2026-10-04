@@ -1,3 +1,1 @@
-# HA-Profil. Mindestens zwei Pods auch ohne Last gelten inzwischen schon in values.yaml (dev und
-# prod gleich), maxReplicaCount (10) und das PodDisruptionBudget (maxUnavailable: 1) ebenso -
-# diese Datei bleibt fuer kuenftige prod-Abweichungen bestehen.
+# Same as values.yaml for now; kept for future prod overrides.

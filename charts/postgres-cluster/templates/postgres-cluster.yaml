@@ -49,13 +49,7 @@ spec:
     initdb:
       database: {{ include "postgres-cluster.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
-      # Bewusst KEIN "secret:"-Feld (seit B1, Root-README ## Bonus - vorher stand hier ein
-      # chart-eigenes, per ExternalSecret aus OpenBao befuelltes Secret): CNPG generiert das
-      # App-User-Credential jetzt selbst (Secret "<clusterName>-app", siehe _helpers.tpl
-      # postgres-cluster.appSecretName), das catalog-api/reservation-worker direkt per
-      # secretKeyRef lesen. Ein PushSecret spiegelt es zusaetzlich als Audit-Kopie nach OpenBao
-      # (templates/postgres-user-pushsecret.yaml) - gleiche Begruendung wie bei
-      # charts/openbao-postgres, hier zusaetzlich fuer die zentrale Audit-Flaeche in OpenBao.
+      # No secret: CNPG generates the credential; apps read it directly.
       encoding: UTF-8
       localeCollate: en_US.UTF-8
       localeCType: en_US.UTF-8

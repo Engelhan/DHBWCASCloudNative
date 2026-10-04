@@ -1,9 +1,6 @@
 apiVersion: v2
 name: notification-worker
-description: >-
-  Volleigener, eigenstaendiger Chart fuer notification-worker (zweite, unabhaengige
-  Kafka-Consumer-Group auf dem Reservierungs-Ergebnis-Topic). Bewusst NICHT Teil des noch nicht
-  begonnenen charts/kafka-cluster-Umbrella-Charts - siehe charts/README.md.
+description: "notification-worker - second, independent Kafka consumer group on the reservation result topic."
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

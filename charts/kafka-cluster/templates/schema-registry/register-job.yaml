@@ -1,9 +1,4 @@
-# Registriert die beiden kanonischen Schemas (configmap.yaml) idempotent in Apicurio Registry
-# (charts/apicurio) bei jedem Helm-Sync - "Infra deklariert Schemas deklarativ" analog zu den
-# KafkaTopic-CRs in messaging/kafka-topics.yaml, statt eine der drei App-Services das zur Laufzeit
-# machen zu lassen. Wartet auf die echte REST-API selbst (GET .../groups) statt auf einen
-# geratenen Health-Endpoint - siehe charts/README.md ## apicurio fuer die Begruendung (kein fuer
-# 3.x bestaetigter Health-Pfad gefunden).
+# Registers the schemas in Apicurio on every sync (idempotent). Waits on the REST API itself.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -22,13 +17,7 @@ spec:
         app: ticketflow-schema-registrar
     spec:
       restartPolicy: Never
-      # Kein runAsNonRoot/runAsUser hier (anders als sonst im Repo ueblich) - `apk add` unten
-      # braucht Schreibzugriff auf /lib/apk/db, das im alpine-Image root gehoert; als UID 100
-      # schlug das live mit "Unable to lock database: Permission denied" fehl (das genau
-      # deswegen dauerhaft fehlschlagende Backoff-Limit blockierte wiederum einen ArgoCD-Sync,
-      # der auf den Hook wartete - siehe Git-Historie). Schadensbegrenzung bleibt trotzdem
-      # bestehen: kurzlebiger, restartPolicy: Never Ein-Schuss-Job, container-level Haertung
-      # (allowPrivilegeEscalation: false, capabilities drop ALL) unveraendert.
+      # Runs as root: apk add needs to write /lib/apk/db. Container is still hardened below.
       securityContext:
         seccompProfile:
           type: RuntimeDefault

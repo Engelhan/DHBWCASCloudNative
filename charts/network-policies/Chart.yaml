@@ -1,6 +1,6 @@
 apiVersion: v2
 name: network-policies
-description: Projektweites Deny-by-default-NetworkPolicy-Set fuer alle Namespaces (B1) - siehe charts/README.md ## network-policies
+description: "Deny-by-default NetworkPolicies for all namespaces (B1)."
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

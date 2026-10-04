@@ -1,6 +1,4 @@
-# Broker-Pool, getrennt vom Controller-Pool (kafka-controller-nodepool.yaml) - anders als unser
-# erster Entwurf (Combined-Role), orientiert an einer realen Strimzi-Referenz aus dem
-# Arbeitsumfeld des Nutzers.
+# Broker pool (separate from the controller pool).
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
@@ -21,12 +19,11 @@ spec:
         size: {{ .Values.kafka.broker.storage.size }}
         deleteClaim: false
 
-  # Zahlen + Herleitung in values.yaml (kafka.broker.resources/.jvmOptions).
+  # Sizing rationale in values.yaml.
   resources:
     {{- toYaml .Values.kafka.broker.resources | nindent 4 }}
 
-  # Heap explizit statt von Strimzi aus dem Limit abgeleitet - nur so ist die Rechnung
-  # "Heap + Off-Heap + Page-Cache <= Limit" in values.yaml tatsaechlich die, die laeuft.
+  # Explicit heap so the memory budget in values.yaml is what actually runs.
   jvmOptions:
     -Xms: {{ .Values.kafka.broker.jvmOptions.heap | quote }}
     -Xmx: {{ .Values.kafka.broker.jvmOptions.heap | quote }}
@@ -35,9 +32,7 @@ spec:
     pod:
       affinity:
         podAntiAffinity:
-          # Weich: verteilt Broker-Pods bevorzugt auf verschiedene Nodes (aus der Referenz
-          # uebernommen). Fuer die harte P4-Anforderung ("nie auf demselben simulierten
-          # Standort") sorgt der topologySpreadConstraint unten zusaetzlich.
+          # Soft: prefer different nodes.
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               podAffinityTerm:
@@ -49,14 +44,9 @@ spec:
                         - {{ include "kafka-cluster.clusterName" . }}-kafka
                 topologyKey: kubernetes.io/hostname
       {{- if gt (int .Values.kafka.broker.replicas) 1 }}
-      # P4: HARTE Verteilung ueber die drei simulierten Regionen (topology.ticketflow/region,
-      # von infra/ansible/roles/node_labels gesetzt). Domaenengrund: der Broker-Log IST der
-      # Puffer der Flash-Sale-Anfragen - liegen zwei der drei Replicas einer Partition in derselben
-      # Region, nimmt deren Ausfall bei min.insync.replicas=2 das Schreiben auf dieses Topic mit,
-      # catalog-api kann keine Reservierung mehr annehmen. DoNotSchedule statt ScheduleAnyway:
-      # lieber bleibt ein Broker Pending (sichtbar, alarmierbar), als dass er still in eine schon
-      # belegte Region rutscht. Guard nur, damit ein bewusst auf 1 Broker reduziertes Setup
-      # ueberhaupt rendert - dev UND prod fahren 3 Broker (siehe values-dev.yaml).
+      # P4: hard spread, one broker per region. Two replicas in one region would break
+      # min.insync.replicas=2 on that region's loss; a Pending broker is better than a silent
+      # overlap.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.ticketflow/region

@@ -33,12 +33,7 @@ app.kubernetes.io/name: {{ include "apicurio.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{/*
-Bootstrap-Adresse fuer den kafkasql-Storage. Port 9093 ist der "unauth"-Listener (siehe
-values.yaml) - Apicurio 3.3.3 kann kein SCRAM/PLAIN-SASL. Name und Namespace kommen aus
-gitops/env/cluster.yaml; Apicurio laeuft ohnehin im selben Namespace wie der Kafka-Cluster, der
-Eintrag bleibt dadurch auch bei einer Namespace-Umbenennung korrekt.
-*/}}
+{{/* kafkasql bootstrap via the unauthenticated listener on 9093 (Apicurio can't do SCRAM). */}}
 {{- define "apicurio.kafkaBootstrap" -}}
-{{- .Values.config.kafkaBootstrapServers | default (printf "%s-kafka-bootstrap.%s.svc:9093" (required "ticketflow.kafka.clusterName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName) (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
+{{- .Values.config.kafkaBootstrapServers | default (printf "%s-kafka-bootstrap.%s.svc:9093" (required "ticketflow.kafka.clusterName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName) (required "ticketflow.namespaces.kafka is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}

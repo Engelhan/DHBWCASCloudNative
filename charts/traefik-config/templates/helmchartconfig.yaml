@@ -1,10 +1,5 @@
-# k3s installiert Traefik selbst ueber seinen eigenen helm-controller (HelmChart-CR
-# "traefik" im Namespace kube-system, aus dem k3s-Release gebuendelt) - eine HelmChartConfig
-# mit demselben Namen/Namespace ist der offiziell dokumentierte Weg, zusaetzliche Werte
-# hineinzumergen, OHNE mit k3s' eigener Verwaltung dieses HelmChart zu konkurrieren (ArgoCD
-# besitzt/verwaltet nur dieses HelmChartConfig-Objekt, nicht das HelmChart/den Helm-Release
-# selbst - kein Ownership-Konflikt). service.annotations ist eine reine Metadata-Aenderung am
-# bereits bestehenden Traefik-Service, kein Neuanlegen (VIPs bleiben stabil).
+# Merges values into k3s' bundled Traefik HelmChart (the documented way; ArgoCD owns only this
+# object).
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -19,8 +14,7 @@ spec:
     podDisruptionBudget:
       enabled: true
       minAvailable: 1
-    # Harte Verteilung auf zwei simulierte Regionen (P4), siehe values.yaml. Die Control-Plane hat
-    # kein Regions-Label und faellt damit heraus, obwohl k3s' Traefik ihren Taint toleriert.
+    # P4: hard spread; the control plane has no region label.
     topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: topology.ticketflow/region
@@ -33,4 +27,4 @@ spec:
             app.kubernetes.io/instance: traefik-kube-system
     service:
       annotations:
-        external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname | default (printf "traefik.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) }}
+        external-dns.alpha.kubernetes.io/hostname: {{ .Values.traefikHostname | default (printf "traefik.%s" (required "ticketflow.dnsZone is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone)) }}

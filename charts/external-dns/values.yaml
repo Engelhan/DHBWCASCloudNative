@@ -1,29 +1,13 @@
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Nutzt die echte DHBW-DNS-Zone aus gitops/env/cluster.yaml (ticketflow.dnsZone/.rfc2136.*) -
-# dieselbe Quelle, aus der sich auch ../cert-manager-config speist. Da Helm Values-Dateien nicht
-# templatet, kommen die Werte NICHT direkt hier hinein, sondern per "$(VAR)" aus der ConfigMap
-# external-dns-zone (siehe templates/zone-configmap.yaml). Alles unter dem Dependency-Alias
-# "external-dns" wird an das gewrappte Upstream-Chart durchgereicht (siehe Chart.yaml).
-#
-# Voraussetzung (VOR dem ersten Sync, bewusst nicht im Repo): das TSIG-Secret. Wird von
-# infra/ansible/roles/gitops_secrets angelegt, manuell waere es:
-#   kubectl create namespace external-dns
-#   kubectl -n external-dns create secret generic external-dns-rfc2136-tsig \
-#     --from-literal=secret=<TSIG-Wert>
+# Upstream values (dependency alias). Zone settings come in as $(VAR) from the external-dns-zone
+# ConfigMap. The TSIG secret is created by infra/ansible/roles/gitops_secrets.
 external-dns:
   image:
     tag: v0.21.0
   logLevel: debug
-  # podSecurityContext/securityContext sind bereits Chart-Default gehaertet (runAsNonRoot,
-  # readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault) - kein
-  # Override noetig. Kein natives networkPolicy-Feld im Chart vorhanden.
+  # Security contexts are hardened by default.
   resources:
     requests:
       cpu: 25m
@@ -39,16 +23,14 @@ external-dns:
     - traefik-proxy
   policy: sync
   registry: txt
-  # Projekteindeutig (nicht der generische Upstream-Default), damit sich mehrere Cluster in
-  # derselben Zone nicht um dieselben TXT-Records streiten.
+  # Unique owner ID so several clusters can share the zone.
   txtOwnerId: ticketflow-dns
   txtPrefix: ticketflow-dns-
   managedRecordTypes:
     - A
     - AAAA
     - CNAME
-  # Wird vom Chart als --domain-filter=<Wert> gerendert; Kubernetes expandiert $(DNS_ZONE)
-  # daraus aus dem Container-Env (siehe env: unten).
+  # Expanded by Kubernetes from the container env.
   domainFilters:
     - $(DNS_ZONE)
   env:
@@ -57,7 +39,7 @@ external-dns:
         secretKeyRef:
           name: external-dns-rfc2136-tsig
           key: secret
-    # Aus templates/zone-configmap.yaml, gespeist aus gitops/env/cluster.yaml.
+    # From templates/zone-configmap.yaml.
     - name: DNS_ZONE
       valueFrom:
         configMapKeyRef:
@@ -74,8 +56,7 @@ external-dns:
           name: external-dns-zone
           key: RFC2136_KEYNAME
   extraArgs:
-    # Ziel-Netze, die External DNS NIE veroeffentlicht (private/NAT-Adressen aus
-    # Node-/Ingress-Status).
+    # Never publish private/NAT addresses.
     - --exclude-target-net=10.0.0.0/8 # RFC1918
     - --exclude-target-net=172.16.0.0/12 # RFC1918
     - --exclude-target-net=192.168.0.0/16 # RFC1918
@@ -83,18 +64,13 @@ external-dns:
     - --exclude-target-net=169.254.0.0/16 # IPv4 Link-Local
     - --exclude-target-net=fc00::/7 # IPv6 ULA
     - --exclude-target-net=fe80::/10 # IPv6 Link-Local
-    # DHBW-Dynamic-DNS-Server (self-service.dhbw.cloud); auch Nameserver fuer den
-    # cert-manager-dns01-Solver, siehe ../cert-manager-config/values.yaml. Adresse/Zone/Key-Name
-    # kommen aus gitops/env/cluster.yaml ueber die ConfigMap external-dns-zone.
+    # DHBW dynamic DNS server, zone and key name via the external-dns-zone ConfigMap.
     - --rfc2136-host=$(RFC2136_SERVER)
     - --rfc2136-port=53
     - --rfc2136-zone=$(DNS_ZONE)
-    # $(VAR) wird von Kubernetes aus dem Container-Env aufgeloest (siehe env: oben) - das
-    # eigentliche Secret steht NICHT hier im Repo, sondern in einem vorab angelegten K8s-Secret
-    # (external-dns-rfc2136-tsig).
+    # Expanded from the pre-created external-dns-rfc2136-tsig secret.
     - --rfc2136-tsig-secret=$(RFC2136_TSIG_SECRET)
     - --rfc2136-tsig-secret-alg=hmac-sha512
     - --rfc2136-tsig-keyname=$(RFC2136_KEYNAME)
     - --rfc2136-tsig-axfr
-  # Kein rbac.additionalPermissions noetig: der Chart fuegt die traefik.io-RBAC-Regeln
-  # (ingressroutes/-tcps/-udps) automatisch hinzu, sobald "traefik-proxy" in sources steht.
+  # The chart adds the traefik.io RBAC rules for the traefik-proxy source itself.

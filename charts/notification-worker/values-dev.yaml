@@ -1,7 +1,4 @@
-# Kleine Werte fuer Funktionstests auf den Lab-VMs. Zwei Replicas in zwei Regionen (harte
-# Verteilung, P4) - eins weniger als prod, ein Worker-Ausfall laesst trotzdem einen Consumer
-# uebrig. Das PodDisruptionBudget wird auf minAvailable: 1 gesenkt, weil ein Budget von 2 bei
-# zwei Replicas jeden Node-Drain blockieren wuerde.
+# Two replicas in two regions (P4); minAvailable 1 so drains still work.
 replicaCount: 2
 
 podDisruptionBudget:

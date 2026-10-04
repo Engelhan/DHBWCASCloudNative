@@ -1,7 +1,4 @@
-# HA-Werte. Drei Replicas teilen sich die Partitionen von config.resultTopic per
-# Consumer-Group-Rebalancing und geben topologySpreadConstraints (maxSkew: 1) etwas zu verteilen -
-# eine simulierte Region kann ausfallen, ohne den Benachrichtigungspfad ganz zu verlieren
-# (P4/P5).
+# Three replicas share the topic's partitions; one region may fail (P4/P5).
 replicaCount: 3
 
 podDisruptionBudget:

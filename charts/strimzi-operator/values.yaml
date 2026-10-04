@@ -1,11 +1,7 @@
-# Muss unter dem Dependency-Alias "strimzi-kafka-operator" verschachtelt sein (siehe
-# Chart.yaml), damit Helm die Werte an das gewrappte Upstream-Chart durchreicht.
+# Upstream values (dependency alias).
 strimzi-kafka-operator:
-  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
-  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
-  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
-  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
-  # leaderElection.enable ist upstream an - genau ein Pod reconciled, der zweite uebernimmt.
+  # P4: two replicas, hard-spread across regions (labels = upstream pod labels); leader election is
+  # on upstream.
   replicas: 2
   podDisruptionBudget:
     enabled: true
@@ -20,41 +16,20 @@ strimzi-kafka-operator:
         matchLabels:
           name: strimzi-cluster-operator
           strimzi.io/kind: cluster-operator
-  # Chart-Default beobachtet nur den eigenen Install-Namespace (watchAnyNamespace: false) -
-  # cluster-wide statt dessen, analog zum CNPG-Operator (der bereits Default cluster-wide
-  # ist), da der Namespace der eigentlichen Kafka-CR
-  # (charts/kafka-cluster/templates/messaging/kafka-cluster.yaml, noch nicht geschrieben) noch
-  # nicht feststeht.
+  # Watch all namespaces (default: own namespace only).
   watchAnyNamespace: true
 
-  # Ohne dieses Feature-Gate loescht der Cluster-Operator das Entity-Operator-Deployment wieder,
-  # sobald Topic- oder User-Operator ein watchedNamespace != Cluster-Namespace tragen:
-  #   "Entity Operator deployment deleted because Topic Operator and/or User Operator are
-  #    configured with watchedNamespace set to a different namespace but the feature is disabled."
-  # Genau das tut charts/kafka-cluster bewusst (spec.entityOperator.userOperator.watchedNamespace
-  # zeigt auf den App-Namespace, damit das generierte SCRAM-Secret dort landet, wo die Services es
-  # per secretKeyRef lesen koennen - siehe charts/kafka-cluster/templates/_helpers.tpl).
-  # Der Chart hat dafuer keinen eigenen Wert, deshalb ueber extraEnvs (wird in
-  # templates/060-Deployment-strimzi-cluster-operator.yaml gerendert, gegengeprueft). Die RBAC
-  # passt bereits: bei watchAnyNamespace: true erzeugt der Chart fuer die
-  # Entity-Operator-Delegation ein ClusterRoleBinding statt eines namespace-gebundenen
-  # RoleBindings, deckt den App-Namespace also mit ab.
+  # Required for userOperator.watchedNamespace (charts/kafka-cluster); without it the operator
+  # deletes the entity operator again. No chart value exists, hence extraEnvs.
   extraEnvs:
     - name: STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED
       value: "true"
-    # Strimzi erzeugt sonst je Listener eine Ingress-Policy "von allen Namespaces" - damit waeren
-    # 9092 (SCRAM) und vor allem 9093 (anonym, Superuser, nur fuer Apicurio gedacht) fuer jeden
-    # Pod im Cluster offen. Laut Strimzi-Doku ist das der vorgesehene Schalter fuer eigene
-    # Policies; die ersetzenden Regeln stehen in charts/network-policies/templates/kafka.yaml.
-    # Bereits generierte Policies raeumt der Operator dabei NICHT selbst ab (einmalig von Hand,
-    # siehe charts/README.md ## network-policies).
+    # Strimzi's own policies open every listener to all namespaces; ours are in
+    # charts/network-policies. Existing generated policies must be deleted once by hand.
     - name: STRIMZI_NETWORK_POLICY_GENERATION
       value: "false"
 
-  # resources hat der Chart schon sinnvoll vorbelegt (limits 1000m/384Mi, requests 200m/384Mi) -
-  # kein Override noetig. podSecurityContext/securityContext sind dagegen Chart-Default leer
-  # ({}) - anders als alle anderen Operator-Charts hier nicht von Haus aus gehaertet, deshalb
-  # explizit gesetzt. NetworkPolicies: siehe charts/network-policies.
+  # Upstream defaults for resources are fine; security contexts are empty upstream, hence set here.
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:

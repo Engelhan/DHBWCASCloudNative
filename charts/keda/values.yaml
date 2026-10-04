@@ -1,19 +1,8 @@
-# P6 (Root-README ## Entscheidungen): KEDA skaliert reservation-worker auf Basis des
-# Kafka-Consumer-Group-Lags statt CPU. Dieser Chart ist nur der Operator selbst (analog zu
-# charts/cnpg-operator/charts/strimzi-operator) - das eigentliche ScaledObject/
-# TriggerAuthentication fuer reservation-worker liegt in charts/reservation-worker (analog dazu,
-# wie die Postgres-Cluster-CR in charts/postgres-cluster liegt, nicht im cnpg-operator-Chart).
-#
-# Muss unter dem Dependency-Alias "keda" verschachtelt sein (siehe Chart.yaml), damit Helm die
-# Werte an das gewrappte Upstream-Chart durchreicht.
+# P6: KEDA operator only; the ScaledObject lives in charts/reservation-worker.
+# Upstream values (dependency alias).
 keda:
-  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
-  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
-  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
-  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
-  # Operator: Leader-Election (Upstream), ein aktiver Pod. Metrics-API-Server: laut KEDA-Doku
-  # bedient nur eine Instanz die Anfragen - das zweite Replica verkuerzt nur den Ausfall bei
-  # einem Node-Verlust (genau der Fall, gegen den es hier geht). Webhooks zustandslos.
+  # P4: two replicas per component, hard-spread across regions (labels = upstream pod labels).
+  # Only one metrics server serves at a time; the second one shortens failover.
   operator:
     replicaCount: 2
   metricsServer:
@@ -55,21 +44,17 @@ keda:
         labelSelector:
           matchLabels:
             app: keda-admission-webhooks
-  # Chart-Default ist bereits cluster-wide (watchNamespace: "" beobachtet ScaledObjects/
-  # TriggerAuthentications in allen Namespaces) - kein Override noetig, da das ScaledObject fuer
-  # reservation-worker im Namespace "ticketflow" liegt, nicht "keda".
+  # Default: watches all namespaces.
 
   image:
     keda:
-      tag: "2.20.2" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+      tag: "2.20.2"
     metricsApiServer:
       tag: "2.20.2"
     webhooks:
       tag: "2.20.2"
 
-  # podSecurityContext/securityContext sind bereits Chart-Default gehaertet (runAsNonRoot,
-  # readOnlyRootFilesystem, capabilities drop ALL, seccompProfile RuntimeDefault, je Komponente:
-  # operator/metricServer/webhooks) - kein Override noetig.
+  # Security contexts are hardened by default.
 
   resources:
     operator:
@@ -94,33 +79,13 @@ keda:
         cpu: 100m
         memory: 128Mi
 
-  # Natives networkPolicy-Feld vorhanden (anders als CNPG/Strimzi) - "kubernetes"-Flavor statt
-  # "cilium" (kein Cilium im Cluster, siehe infra/ansible - Flannel/k3s-Standard-CNI). Gegen
-  # `helm template` geprueft: jede Komponente (operator/metricsServer/webhooks) bekommt ihre
-  # eigene, korrekt auf die eigenen Pods gescopte Policy, kein "Loki-Bug" mit leerem podSelector
-  # (siehe charts/README.md ## Resource-Limits, Security-Context, NetworkPolicy).
-  #
-  # DOCH deaktiviert (2026-09-16, live auf einem echten Sync gefunden) - anderer Fehlerklasse
-  # als der Loki-Bug: der Chart-eigene egress-Eintrag fuer Port 443/6443 scoped sein `to:` auf
-  # `namespaceSelector: {}`, was NUR Pod-IPs matched. In diesem Cluster (k3s, kein Cilium) ist
-  # der "kubernetes"-API-Server-Endpoint aber keine Pod-IP, sondern direkt die Control-Plane-Node-
-  # IP (`kubectl get endpoints kubernetes -n default` zeigt die Node-IP, nicht eine Pod-IP) -
-  # `namespaceSelector: {}` matched das nie, die eingebaute k3s-NetworkPolicy-Durchsetzung
-  # blockt den Egress also komplett. Folge: keda-operator/keda-admission-webhooks canloopten mit
-  # "dial tcp [::1]:443: connect: connection refused" beim Scale-Client-Init. Zum Vergleich:
-  # charts/cert-manager's aequivalente Egress-Regel fuer Port 6443 hat gar kein `to:`-Feld (=
-  # matched jedes Ziel, Pod oder nicht) - genau dieser Unterschied macht dort denselben
-  # Verbindungsaufbau moeglich. Kein Sub-Toggle im Upstream-Chart, um nur diese eine Regel zu
-  # aendern, daher komplett aus - wie bei Loki gilt: vor einem Re-Enable-Versuch erst pruefen, ob
-  # eine neuere Chart-Version das egress `to:` auf "ohne Selector" oder einen expliziten ipBlock
-  # fuer die API-Server-IP umstellt. Inzwischen ohnehin ersetzt: alle NetworkPolicies kommen
-  # zentral aus charts/network-policies (B1), inklusive korrektem API-Server-Egress per ipBlock.
+  # NetworkPolicies come from charts/network-policies (the chart's own blocked API-server egress on
+  # k3s).
   networkPolicy:
     enabled: false
     flavor: kubernetes
 
-  # Metrik-Endpunkt des Operators bleibt an; der ServiceMonitor ist aus, weil kube-prometheus-stack
-  # entfernt ist und die ServiceMonitor-CRD nicht mehr existiert.
+  # No Prometheus in the cluster.
   prometheus:
     operator:
       enabled: true

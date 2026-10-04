@@ -15,11 +15,7 @@ spec:
       labels:
         {{- include "ticketflow-app.componentLabels" $ctx | nindent 8 }}
     spec:
-      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
-      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
-      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
-      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
-      # Regionen, in die die neuen sollen.
+      # P4: hard spread across regions; matchLabelKeys ignores old pods during rollouts.
       {{- if .Values.catalogApi.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.catalogApi.topologySpreadConstraint.maxSkew }}
@@ -47,9 +43,7 @@ spec:
             - configMapRef:
                 name: {{ include "ticketflow-app.componentName" $ctx }}
           env:
-            # Aus dem von charts/postgres-cluster angelegten Secret (Keys "username"/"password") -
-            # Datenbank und Anwendung teilen sich denselben Namespace, ein chart-eigenes Duplikat
-            # ist deshalb nicht mehr noetig.
+            # From the CNPG secret (same namespace).
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -64,8 +58,7 @@ spec:
             - name: KAFKA_SASL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
-                  # values.yaml-Kommentar bei catalogApi.config.kafkaSasl) - nicht dieser Chart.
+                  # Created by the Strimzi User Operator.
                   name: {{ .Values.catalogApi.config.kafkaSasl.secretName }}
                   key: password
             {{- end }}

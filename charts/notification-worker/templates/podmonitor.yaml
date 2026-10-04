@@ -9,10 +9,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  # PodMonitor statt ServiceMonitor: notification-worker hat keine anderen Konsumenten seiner
-  # HTTP-Endpunkte (reiner Kafka-Consumer, Probes gehen direkt vom Kubelet an den Pod) - eine
-  # eigene Service-Ressource nur fuers Prometheus-Scraping waere unnoetig, PodMonitor selektiert
-  # Pods direkt ueber Labels und referenziert den benannten Container-Port.
+  # PodMonitor: no Service, nothing else calls the HTTP endpoints.
   selector:
     matchLabels:
       {{- include "notification-worker.selectorLabels" . | nindent 6 }}

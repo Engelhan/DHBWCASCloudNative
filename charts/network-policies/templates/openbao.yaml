@@ -1,7 +1,4 @@
-{{- /*
-OpenBao (ticketflow.namespaces.openbao): 3 HA-Server-Pods, Bootstrap-Hook-Job, eigene CNPG-DB
-(charts/openbao-postgres) als Storage-Backend.
-*/ -}}
+{{- /* OpenBao: 3 HA pods, bootstrap job, own CNPG database. */}}
 {{- $ns := include "np.ns.openbao" . -}}
 {{- $pg := include "np.openbaoPgCluster" . -}}
 {{ include "np.baseline" (list $ $ns) }}
@@ -16,7 +13,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # KV-Lesen (ExternalSecret) und -Schreiben (PushSecret) durch den ESO-Controller.
+    # KV reads/writes by the ESO controller.
     - from:
         - {{ include "np.nsSelector" (include "np.ns.externalSecrets" .) | nindent 10 | trim }}
           podSelector:
@@ -25,13 +22,13 @@ spec:
       ports:
         - port: 8200
           protocol: TCP
-    # Oeffentliche UI (Ingress openbao.<dnsZone> -> Service openbao-active).
+    # Public UI via openbao-active.
     - from:
         {{- include "np.peer.traefik" . | nindent 8 }}
       ports:
         - port: 8200
           protocol: TCP
-    # Init/Unseal/Konfiguration durch den Bootstrap-Job, jeden Pod einzeln.
+    # Init/unseal/config by the bootstrap job, per pod.
     - from:
         - podSelector:
             matchLabels:
@@ -39,8 +36,7 @@ spec:
       ports:
         - port: 8200
           protocol: TCP
-    # HA: Standbys leiten Requests an den aktiven Knoten weiter (8201, Cluster-Port) bzw.
-    # verweisen per API-Adresse auf ihn (8200).
+    # HA: standbys forward to the active node (8201) or redirect via API address (8200).
     - from:
         - podSelector:
             matchLabels:
@@ -52,10 +48,9 @@ spec:
         - port: 8201
           protocol: TCP
   egress:
-    # Kubernetes-Auth (TokenReview) und service_registration "kubernetes" (setzt das
-    # openbao-active-Label am eigenen Pod).
+    # Kubernetes auth (TokenReview) and service_registration (openbao-active label).
     {{- include "np.egress.apiServer" . | nindent 4 }}
-    # Storage-Backend + HA-Lock.
+    # Storage backend + HA lock.
     - to:
         - podSelector:
             matchLabels:
@@ -82,7 +77,7 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Liest/schreibt das openbao-unseal-keys-Secret.
+    # Reads/writes the openbao-unseal-keys secret.
     {{- include "np.egress.apiServer" . | nindent 4 }}
     - to:
         - podSelector:

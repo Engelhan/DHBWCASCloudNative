@@ -1,16 +1,10 @@
-# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Muss unter dem Dependency-Alias "external-secrets" verschachtelt sein (siehe Chart.yaml), damit
-# Helm die Werte an den gewrappten Upstream-Chart durchreicht.
+# Upstream values (dependency alias).
 external-secrets:
-  # P4 - zwei Replicas je Komponente, hart auf zwei verschiedene simulierte Regionen verteilt
-  # (DoNotSchedule + maxSkew 1; matchLabelKeys, damit beim Rollout nur Pods derselben Revision
-  # zaehlen). labelSelector = die vom Upstream-Chart tatsaechlich gerenderten Pod-Labels, von Hand
-  # eingetragen, weil Helm values.yaml nicht templatet - gegen `helm template` geprueft.
-  # leaderElect ist upstream AUS - ohne ihn wuerden zwei Controller-Pods dieselben
-  # ExternalSecrets/PushSecrets parallel reconcilen. Gilt auch fuer den cert-controller.
+  # P4: two replicas per component, hard-spread across regions (labels = upstream pod labels).
+  # leaderElect is off upstream; required with more than one controller.
   leaderElect: true
   replicaCount: 2
   podDisruptionBudget:
@@ -26,10 +20,10 @@ external-secrets:
         matchLabels:
           app.kubernetes.io/name: external-secrets
           app.kubernetes.io/instance: external-secrets-operator
-  installCRDs: true # kein anderer Chart bringt die ExternalSecret/(Cluster)SecretStore-CRDs mit
+  installCRDs: true
 
   image:
-    tag: "v2.11.0" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+    tag: "v2.11.0"
 
   resources:
     requests:
@@ -87,14 +81,13 @@ external-secrets:
 
   serviceAccount:
     create: true
-    # Name, den charts/openbao-secretstore's ClusterSecretStore UND der Bootstrap-Job in
-    # charts/openbao (Kubernetes-Auth-Role "external-secrets") referenzieren.
+    # Referenced by the ClusterSecretStore and OpenBao's kubernetes auth role.
     name: external-secrets
 
-  # Aus: kube-prometheus-stack ist entfernt, die ServiceMonitor-CRD existiert nicht mehr.
+  # No Prometheus in the cluster.
   serviceMonitor:
     enabled: false
 
-  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1).
+  # NetworkPolicies come from charts/network-policies.
   networkPolicy:
     enabled: false

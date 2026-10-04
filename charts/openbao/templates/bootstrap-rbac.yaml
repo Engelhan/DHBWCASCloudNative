@@ -1,7 +1,4 @@
-# RBAC fuer den Bootstrap-Hook-Job (bootstrap-job.yaml). Beschraenkt auf das, was das Job-Skript
-# tatsaechlich braucht: das Secret "openbao-unseal-keys" im eigenen Namespace lesen/anlegen/
-# aktualisieren. Kein Zugriff auf andere Namespaces, keine erhoehten Cluster-Rechte, kein
-# "pods/exec" (der Job erreicht OpenBao ueber normales Pod-Netzwerk, siehe bootstrap-job.yaml).
+# Bootstrap job RBAC: only the openbao-unseal-keys secret in this namespace.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

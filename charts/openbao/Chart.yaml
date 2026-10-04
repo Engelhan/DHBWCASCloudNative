@@ -1,8 +1,6 @@
 apiVersion: v2
 name: openbao
-description: >-
-  Wrapper-Chart um den Upstream-OpenBao-Chart (HA-Secret-Vault, PostgreSQL-Storage-Backend, B1)
-  mit unseren Werten (siehe values.yaml)
+description: "Wrapper around the upstream OpenBao chart (HA secret vault, PostgreSQL storage backend, B1)."
 type: application
 version: 0.1.0
 dependencies:

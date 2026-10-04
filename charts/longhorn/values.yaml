@@ -1,43 +1,22 @@
-# Werte entsprechen 1:1 den Defaults, die zuvor ueber infra/ansible/roles/longhorn (Branch
-# ansible-bootstrap, dort per kubernetes.core.helm gesetzt) verwendet wurden. Muessen unter dem
-# Dependency-Alias "longhorn" verschachtelt sein (siehe Chart.yaml), damit Helm sie an das
-# gewrappte Upstream-Chart durchreicht.
+# Upstream values (dependency alias).
 longhorn:
-  # Der Chart selbst empfiehlt das (siehe dessen values.yaml-Kommentar): der pre-upgrade-Hook-Job
-  # mappt unter ArgoCD auf PreSync, das VOR allen regulaeren Chart-Ressourcen laeuft - inklusive
-  # der ServiceAccount, die der Job selbst braucht ("longhorn-service-account" not found). Ein
-  # reiner Versions-Vergleich gegen ein vorheriges Helm-Release ergibt bei einem
-  # GitOps-verwalteten Neuinstall ohnehin keinen Sinn.
+  # The pre-upgrade hook runs as PreSync under ArgoCD, before its own ServiceAccount exists.
   preUpgradeChecker:
     jobEnabled: false
   persistence:
     defaultClass: true
-    # <= Node-Anzahl, sonst bleiben Replicas dauerhaft ungeplant ("Degraded"); 1 haelt den
-    # Plattenverbrauch auf den kleinen Lab-VMs niedrig. Die Ansible-Rolle hat das vor der
-    # Installation per assert gegen die tatsaechliche Cluster-Groesse geprueft - das kann eine
-    # deklarative ArgoCD-Application nicht nachbilden, also von Hand im Blick behalten, wenn
-    # Worker-Anzahl/worker_regions in infra/terraform sich aendert.
+    # Must be <= node count; 1 keeps disk usage low on the lab VMs.
     defaultClassReplicaCount: 1
   defaultSettings:
     defaultReplicaCount: 1
-    # Aus: der Upgrade-Checker fragt regelmaessig upgrade-responder.longhorn.io ab - das waere die
-    # einzige Internet-Verbindung aus longhorn-system (charts/network-policies laesst sie nicht
-    # zu). Die Longhorn-Version pinnt ohnehin Chart.yaml, Updates laufen ueber Git.
+    # Would be longhorn-system's only internet egress; versions are pinned in Chart.yaml.
     upgradeChecker: false
-    # Replicas auf mehrere Nodes verteilen, damit nicht ein Node mehrere "letzte Replicas" haelt
-    # (jede wuerde ein Drain waehrend eines Rolling-Upgrades blockieren).
     replicaAutoBalance: least-effort
-    # Letzte Replica vor einem Drain live migrieren, damit k3s-Upgrades nie an einem
-    # Single-Replica-Volume haengen bleiben.
+    # Migrate the last replica before a drain so node upgrades never block.
     nodeDrainPolicy: block-for-eviction-if-contains-last-replica
-    # Thin-Provisioning - noetig fuer speicherhungrige Workloads auf den kleinen Lab-VMs.
     storageOverProvisioningPercentage: 300
-    # Requests/Limits fuer die CSI-Pods, die Longhorn zur Laufzeit selbst anlegt (nicht Teil des
-    # gerenderten Charts, deshalb nur ueber diese Einstellung erreichbar). Erwartet einen
-    # JSON-String: Komponentenname -> ResourceRequirements. Live gemessen: CSI-Sidecars ~10-13Mi,
-    # longhorn-csi-plugin ~12-19Mi, alle 1-2m CPU. longhorn-csi-plugin bekommt mehr CPU-Luft,
-    # weil es beim Attach Dateisysteme formatiert/mountet. Eine Aenderung startet die CSI-Pods
-    # neu (kurz kein Attach/Detach moeglich).
+    # Resources for the CSI pods Longhorn creates at runtime (measured ~10-20Mi, 1-2m CPU).
+    # Changing this restarts them.
     systemManagedCSIComponentsResourceLimits: >-
       {
       "csi-attacher": {"requests": {"cpu": "10m", "memory": "24Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
@@ -49,16 +28,12 @@ longhorn:
       "longhorn-liveness-probe": {"requests": {"cpu": "5m", "memory": "16Mi"}, "limits": {"cpu": "50m", "memory": "32Mi"}}
       }
 
-  # Longhorn-UI laeuft upstream schon mit 2 Replicas, aber nur weich auf verschiedene Hostnames
-  # verteilt - hier hart auf zwei verschiedene simulierte Regionen (P4). Upstream-Pod-Label
-  # "app: longhorn-ui". Die CSI-Sidecars (je 3 Replicas) legt Longhorn zur Laufzeit selbst an,
-  # ihre Platzierung ist nicht konfigurierbar; longhorn-driver-deployer ist ein Einmal-Deployer
-  # (1 Replica by design) - siehe README.md ## Grenzen.
+  # P4: UI hard-spread across regions. CSI sidecars and the driver deployer are not configurable.
   longhornUI:
     replicas: 2
     affinity:
       podAntiAffinity:
-        # Upstream-Default (weich, hostname) entfernen - Helm merged Maps sonst zusammen.
+        # Drop the upstream soft rule (Helm merges maps).
         preferredDuringSchedulingIgnoredDuringExecution: null
         requiredDuringSchedulingIgnoredDuringExecution:
           - topologyKey: topology.ticketflow/region
@@ -68,11 +43,7 @@ longhorn:
                   operator: In
                   values:
                     - longhorn-ui
-  # Longhorn-Manager ist der einzige Chart-Baustein mit einem eigenen resources-Feld.
-  # longhornUI/longhornDriver haben keins; die CSI-Pods laufen ueber
-  # defaultSettings.systemManagedCSIComponentsResourceLimits (oben). Engine-Image-DaemonSet
-  # und Instance-Manager sind nicht konfigurierbar (Instance-Manager: nur CPU-Request ueber
-  # guaranteedInstanceManagerCPU) - siehe README.md ## Grenzen.
+  # Only the manager has a resources field.
   longhornManager:
     resources:
       requests:
@@ -82,7 +53,4 @@ longhorn:
         cpu: 500m
         memory: 512Mi
 
-  # KEIN securityContext-/networkPolicy-Feld im Chart vorhanden - bewusste Luecke, keine
-  # Unterlassung: Longhorn-Manager/-Driver brauchen privilegierten Host-Zugriff (iSCSI,
-  # Blockgeraete), lassen sich strukturell nicht auf "restricted" haerten. Chart bietet dafuer
-  # auch keine Toggle an.
+  # No securityContext/networkPolicy fields: Longhorn needs privileged host access.

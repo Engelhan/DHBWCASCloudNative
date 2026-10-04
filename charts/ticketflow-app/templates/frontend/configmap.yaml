@@ -1,8 +1,5 @@
 {{- $ctx := dict "root" $ "component" "frontend" }}
-# Ueberschreibt das im Image gebackene config.js (Default: http://localhost:8080, siehe
-# src/frontend/config.js) per Volume-Mount mit einem leeren API_BASE_URL - das Ingress
-# (ingress.yaml) routet /events und /reservations bereits auf derselben Origin an catalog-api,
-# ein leerer Wert macht die fetch()-Aufrufe im Frontend damit zu relativen Same-Origin-Requests.
+# Empty API_BASE_URL makes the frontend call the API same-origin (routed by the Ingress).
 apiVersion: v1
 kind: ConfigMap
 metadata:

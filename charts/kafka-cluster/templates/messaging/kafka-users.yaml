@@ -1,14 +1,11 @@
-# Eine KafkaUser-CR pro Client-Identitaet (SCRAM-SHA-512 + engst moegliche ACLs), siehe B2 in der
-# Root-README ## Entscheidungen und der Kommentar bei .Values.kafka.users. Gegen dieselbe
-# installierte CRD-apiVersion geprueft wie Kafka/KafkaTopic/KafkaNodePool (kafka.strimzi.io/v1,
-# nicht v1beta2 - siehe CLAUDE.md-Memory project-strimzi-branch-tracking).
+# One KafkaUser per client (SCRAM-SHA-512, least-privilege ACLs, B2).
 {{- range .Values.kafka.users }}
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaUser
 metadata:
   name: {{ .name }}
-  # Bewusst der App-Namespace, nicht der des Clusters - siehe _helpers.tpl.
+  # App namespace, see _helpers.tpl.
   namespace: {{ include "kafka-cluster.appNamespace" $ }}
   labels:
     strimzi.io/cluster: {{ include "kafka-cluster.clusterName" $ }}
@@ -16,10 +13,7 @@ spec:
   authentication:
     type: scram-sha-512
     {{- if .passwordSecretName }}
-    # Vorgegebenes statt vom User Operator generiertes Passwort - fuer den Fall, dass ein
-    # kuenftiger Client sein Passwort nicht selbst per Strimzi generieren lassen kann/soll.
-    # Aktuell nutzt keiner der vier User (catalog-api/reservation-worker/notification-worker/
-    # akhq) diesen Zweig mehr - alle vier lassen Strimzi generieren, siehe .Values.kafka.users.
+    # Optional pre-supplied password (currently unused).
     password:
       valueFrom:
         secretKeyRef:

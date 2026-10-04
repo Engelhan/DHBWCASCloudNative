@@ -1,35 +1,5 @@
-# Kafka-CR in KRaft-Modus (kein ZooKeeper - in Strimzi laengst entfernt), Broker-/
-# Controller-Replicas und Storage kommen ausschliesslich aus den beiden KafkaNodePools
-# (kafka-broker-nodepool.yaml/kafka-controller-nodepool.yaml), nicht aus diesem spec.kafka-Block.
-#
-# Struktur (metadataVersion, metricsConfig, kafkaExporter, entityOperator-Resources) orientiert
-# an einer realen Strimzi-Referenz aus dem Arbeitsumfeld des Nutzers - bewusst NICHT uebernommen:
-# externer Listener/TLS (kein externer Zugriff noetig, siehe Root-README ## Entscheidungen),
-# `inter.broker.protocol.version` (ZK-Aera-Feld, in reinem KRaft-Betrieb ohne Wirkung),
-# `message.max.bytes: 200MB` (fuer unsere kleinen JSON-Reservierungs-Events nicht begruendbar -
-# Kafka-Default bleibt).
-#
-# B2 (Root-README ## Entscheidungen): SCRAM-SHA-512-Auth + `authorization: type: simple` sind
-# jetzt aktiv, seit catalog-api/reservation-worker/notification-worker existieren und eigene
-# KafkaUser-CRs bekommen (kafka-users.yaml) - vorher ergab Authorization ohne Client-Identitaeten
-# keinen Sinn. UNVERIFIZIERT (kein Cluster verfuegbar): Strimzi soll den Cluster-/Entity-Operator
-# (Topic-/User-Operator) beim Einschalten von `authorization: type: simple` automatisch als
-# Super-User autorisieren (eigene interne mTLS-Identitaet auf einem von Nutzern nicht
-# konfigurierbaren internen Listener, unabhaengig vom "plain"-Listener unten) - laut Strimzi-Doku
-# so vorgesehen, aber nie gegen einen echten Sync geprueft. Falls KafkaTopic-Reconciliation oder
-# KafkaUser-Provisionierung nach diesem Wechsel fehlschlaegt (Operator-Logs pruefen), ist das der
-# erste Verdacht - Fix waere ein expliziter `spec.kafka.authorization.superUsers`-Eintrag fuer die
-# Operator-Principal-CN.
-#
-# Gegen die echte installierte CRD geprueft (kubectl explain, siehe CLAUDE.md-Memory
-# project-strimzi-branch-tracking): apiVersion war v1 statt v1beta2, alle hier verwendeten Felder
-# existieren unter v1 unveraendert. Kafka-Version war ebenfalls falsch geraten (4.0.0 existiert
-# fuer diesen Operator nicht) - der Operator meldet die tatsaechlich unterstuetzten Versionen im
-# Kafka.status selbst ([4.2.0, 4.2.1, 4.3.0] zum Zeitpunkt der Korrektur), .Values.kafka.version
-# jetzt entsprechend gesetzt. `metadataVersion` bewusst NICHT gesetzt - laut CRD-Beschreibung
-# (`kubectl explain kafka.spec.kafka.metadataVersion`) defaulted Strimzi das selbst passend zur
-# `version`, und nochmal ein KRaft-IV-Suffix zu raten haette dasselbe Risiko wie beim
-# `version`-Fehlgriff eben.
+# KRaft Kafka; replicas and storage come from the KafkaNodePools. metadataVersion is left to
+# Strimzi's default for the version.
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
@@ -42,34 +12,16 @@ spec:
     version: {{ .Values.kafka.version | quote }}
 
     listeners:
-      # Cluster-intern, kein TLS (kein externer Zugriff und keine
-      # Verschluesselungs-Anforderung in P1-P7 dokumentiert, siehe Root-README
-      # ## Entscheidungen) - aber seit B2 mit SCRAM-SHA-512-Auth: SASL_PLAINTEXT statt
-      # PLAINTEXT (Transport bleibt unverschluesselt, nur der Client-Login ist jetzt
-      # authentifiziert). Name "plain" bewusst unveraendert gelassen, um die
-      # Bootstrap-Service-DNS (<cluster>-kafka-bootstrap) fuer alle bestehenden Referenzen
-      # (charts/ticketflow-app, charts/reservation-worker, charts/akhq values.yaml) stabil zu
-      # halten - der Listener-Name selbst hat darauf keinen Einfluss.
+      # Internal, no TLS, SCRAM-SHA-512 (SASL_PLAINTEXT). The name doesn't affect the bootstrap DNS.
       - name: plain
         port: 9092
         type: internal
         tls: false
         authentication:
           type: scram-sha-512
-      # Zweiter, unauthentifizierter interner Listener - ausschliesslich fuer Apicurio
-      # (charts/apicurio). Grund: Apicurios kafkasql-Storage unterstuetzt in Version 3.3.3 kein
-      # SCRAM/PLAIN-SASL mit Username/Passwort - der Quellcode
-      # (KafkaSqlConfiguration.java, gegen den echten 3.3.3-Tag auf GitHub geprueft) baut
-      # sasl.jaas.config nur programmatisch fuer einen OAuth-Client-Credentials-Flow
-      # (client-id/client-secret/token-endpoint); ein GitHub-Issue (Apicurio/apicurio-registry#4893)
-      # bestaetigt, dass SASL/PLAIN am selben, hart auf OAuth verdrahteten Callback-Handler
-      # scheitert. Einen echten OAuth/OIDC-Server nur fuer dieses eine Client-Kafka-Login
-      # aufzusetzen war fuer dieses Uni-Projekt nicht verhaeltnismaessig, daher dieser
-      # pragmatische Zweit-Listener statt SASL. Kein TLS (siehe "plain" oben), keine
-      # Authentifizierung - der Client verbindet als Kafka-Principal "User:ANONYMOUS", der unten
-      # in authorization.superUsers explizit freigegeben ist (siehe dortiger Kommentar). Nur
-      # innerhalb des Clusters erreichbar (type: internal, kein externer Zugriffspunkt), daher
-      # vertretbar.
+      # Unauthenticated internal listener for Apicurio only: its kafkasql storage supports no
+      # SCRAM/PLAIN
+      # (OAuth only). Clients connect as User:ANONYMOUS (see superUsers).
       - name: unauth
         port: 9093
         type: internal
@@ -81,19 +33,16 @@ spec:
       transaction.state.log.min.isr: {{ .Values.kafka.config.transactionStateLogMinIsr }}
       default.replication.factor: {{ .Values.kafka.config.defaultReplicationFactor }}
       min.insync.replicas: {{ .Values.kafka.config.minInsyncReplicas }}
-      # Nur die beiden per KafkaTopic-CR verwalteten Topics sollen existieren - verhindert, dass
-      # ein Tippfehler im Topic-Namen eines Services still ein neues, unverwaltetes Topic anlegt.
+      # Only the two managed topics may exist.
       auto.create.topics.enable: false
       delete.topic.enable: true
 
     template:
-      # P5: sichert Rolling Updates/Node-Drains ab, so dass nie mehr als ein Broker gleichzeitig
-      # nicht verfuegbar ist.
+      # P5: at most one broker unavailable at a time.
       podDisruptionBudget:
         maxUnavailable: 1
 
-    # JMX-Prometheus-Exporter - macht Broker-/Controller-Metriken fuer kube-prometheus-stack
-    # scrapebar (P7), Regeln in der begleitenden ConfigMap (kafka-metrics-configmap.yaml).
+    # JMX exporter, rules in kafka-metrics-configmap.yaml.
     metricsConfig:
       type: jmxPrometheusExporter
       valueFrom:
@@ -101,58 +50,29 @@ spec:
           name: kafka-metrics
           key: kafka-metrics-config.yml
 
-    # B2: engst moegliche ACLs statt eines geteilten Credentials fuer alle Clients - jeder Client
-    # (catalog-api/reservation-worker/notification-worker/akhq) authentifiziert sich als eigene
-    # KafkaUser-Identitaet (kafka-users.yaml) und bekommt nur die Rechte, die er tatsaechlich
-    # braucht. Ohne mindestens eine KafkaUser-ACL fuer eine Identitaet lehnt der Broker jeden
-    # Request dieser Identitaet ab (Default-Deny). Muss unter spec.kafka liegen, nicht auf
-    # spec-Top-Level (anders als kafkaExporter/entityOperator unten) - eine fruehere Version
-    # hatte dies mit 2 statt 4 Leerzeichen eingerueckt, wodurch spec.authorization entstand
-    # (kein gueltiges Feld der Kafka-CRD, von der API beim Apply stillschweigend verworfen) statt
-    # spec.kafka.authorization; Strimzi lehnte danach jede KafkaUser-ACL-Reconciliation mit
-    # "Simple authorization ACL rules are configured but not supported in the Kafka cluster
-    # configuration" ab. Mit `kubectl explain kafka.spec.kafka.authorization` gegengeprueft.
+    # B2: default-deny, per-client ACLs (kafka-users.yaml). Must sit under spec.kafka.
     authorization:
       type: simple
-      # Erlaubt dem "unauth"-Listener oben (Apicurio) trotz Default-Deny alles - ein
-      # unauthentifizierter Client bekommt von Kafka den festen Principal "User:ANONYMOUS"
-      # zugewiesen, es gibt dafuer keine KafkaUser-CR/ACL-Moeglichkeit (KafkaUser setzt immer eine
-      # Authentifizierungsmethode voraus). superUsers gilt zwar clusterweit ueber alle Listener
-      # hinweg (Strimzi/Kafka kennt keine Listener-Scope fuer diese Liste), praktisch nutzbar ist
-      # der anonyme Zugriff aber nur ueber "unauth", da "plain" weiterhin SASL verlangt - kein
-      # externer Zugriffspunkt existiert fuer keinen der beiden Listener (type: internal).
-      # Nur der nackte Name, OHNE "User:"-Praefix - Strimzi haengt das Praefix selbst an jeden
-      # Eintrag an (auch an seine eigenen Operator-Identitaeten). Live im Broker-Log gefunden:
-      # "User:ANONYMOUS" hier wurde sonst zu "User:User:ANONYMOUS" im gerenderten
-      # super.users-String, was nie auf den echten Principal "User:ANONYMOUS" gematcht hat.
+      # Lets the anonymous Apicurio listener through. Name without "User:" - Strimzi adds the
+      # prefix.
       superUsers:
         - ANONYMOUS
 
-  # Consumer-Group-Lag als eigene Metrik (Grundlage fuer das Grafana-Dashboard aus P7 - die
-  # KEDA-Skalierung selbst (P6) fragt den Lag direkt ueber den Kafka-Scaler ab, nicht ueber
-  # dieses Exporter).
+  # Consumer-lag metrics (KEDA queries Kafka directly).
   kafkaExporter:
     topicRegex: ".*"
     groupRegex: ".*"
     resources:
       {{- toYaml .Values.kafka.kafkaExporter.resources | nindent 6 }}
 
-  # Pflicht, damit KafkaTopic-CRs (kafka-topics.yaml) ueberhaupt reconciled werden.
+  # Required to reconcile KafkaTopic CRs.
   entityOperator:
     topicOperator:
       resources:
         {{- toYaml .Values.kafka.entityOperator.topicOperator.resources | nindent 8 }}
     userOperator:
-      # Der User Operator sieht per Default nur KafkaUser-CRs im Namespace des Clusters. Die
-      # liegen hier aber bewusst im App-Namespace, damit das generierte SCRAM-Secret dort landet,
-      # wo die Services es per secretKeyRef lesen koennen (siehe _helpers.tpl appNamespace).
-      # Ohne dieses Feld wuerden die KafkaUser-CRs schlicht nie reconciled - kein Fehler, nur
-      # dauerhaft leerer status und fehlende Secrets.
-      #
-      # GEHOERT ZUSAMMEN MIT charts/strimzi-operator/values.yaml: der Cluster-Operator loescht das
-      # Entity-Operator-Deployment wieder, solange nicht
-      # STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED=true an ihm gesetzt ist (dort via
-      # extraEnvs). Dieses Feld allein reicht nicht.
+      # KafkaUsers live in the app namespace (see _helpers.tpl). Only works together with
+      # STRIMZI_ENTITY_OPERATOR_WATCHED_NAMESPACE_ENABLED in charts/strimzi-operator.
       watchedNamespace: {{ include "kafka-cluster.appNamespace" . }}
       resources:
         {{- toYaml .Values.kafka.entityOperator.userOperator.resources | nindent 8 }}

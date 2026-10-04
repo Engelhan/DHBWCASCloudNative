@@ -1,8 +1,6 @@
 apiVersion: v2
 name: cnpg-operator
-description: >-
-  Wrapper-Chart um den Upstream-CloudNativePG-Operator-Chart mit unseren Werten (siehe
-  values.yaml)
+description: "Wrapper around the upstream CloudNativePG operator chart."
 type: application
 version: 0.1.0
 dependencies:

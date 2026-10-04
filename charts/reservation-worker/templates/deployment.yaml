@@ -14,11 +14,7 @@ spec:
       labels:
         {{- include "reservation-worker.labels" . | nindent 8 }}
     spec:
-      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
-      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
-      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
-      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
-      # Regionen, in die die neuen sollen.
+      # P4: hard spread across regions; matchLabelKeys ignores old pods during rollouts.
       {{- if .Values.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
@@ -46,10 +42,7 @@ spec:
             - configMapRef:
                 name: {{ include "reservation-worker.fullname" . }}
           env:
-            # Aus dem von charts/postgres-cluster angelegten Secret - Keys "username"/"password",
-            # deshalb explizit gemappt statt per envFrom (das wuerde Env-Vars "username"/
-            # "password" statt "DB_USER"/"DB_PASSWORD" erzeugen). Seit Datenbank und Anwendung
-            # denselben Namespace teilen, ist dafuer kein chart-eigenes Duplikat mehr noetig.
+            # Explicit mapping: envFrom would yield env vars named username/password.
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -64,8 +57,7 @@ spec:
             - name: KAFKA_SASL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
-                  # values.yaml-Kommentar bei config.kafkaSasl) - nicht dieser Chart.
+                  # Created by the Strimzi User Operator.
                   name: {{ .Values.config.kafkaSasl.secretName }}
                   key: password
             {{- end }}

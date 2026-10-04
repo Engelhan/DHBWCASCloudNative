@@ -1,20 +1,6 @@
-# Init/Unseal/KV-Seeding bei jedem ArgoCD-Sync, vollstaendig GitOps-nativ (kein Ansible) - Muster:
-# charts/kafka-cluster/templates/schema-registry/register-job.yaml (gleicher Hook-Typ,
-# restartPolicy: Never, Container-Haertung, Wartelogik per Retry-Loop statt geratenem
-# Health-Endpoint).
-#
-# Erreicht jede OpenBao-Instanz DIREKT ueber das Pod-eigene DNS des vom Upstream-Chart
-# erzeugten Headless-Service (StatefulSet-Konvention "<pod>.<headless-service>.<namespace>.svc") -
-# kein kubectl exec, keine erhoehte RBAC noetig, nur normale Pod-zu-Pod-Netzwerkerreichbarkeit auf
-# Port 8200. Service-Name "openbao-internal" folgt der ueblichen Vault/OpenBao-Helm-Konvention
-# "<fullname>-internal" mit Release-Name "openbao" - gegen den real gerenderten Manifest-Output
-# verifizieren, bevor der erste echte Sync erwartet wird (siehe Plan-Datei ## Verifikation). Die
-# Pod-Liste selbst wird aus .Values.openbao.server.ha.replicas generiert, nicht hartkodiert -
-# siehe Kommentar bei PODS= unten.
-#
-# Idempotenz: das Skript liest zuerst ein evtl. bereits vorhandenes "openbao-unseal-keys"-Secret
-# (fruehere Laeufe) und verhaelt sich danach fuer den allerersten Bootstrap UND jeden spaeteren
-# ArgoCD-Sync identisch - kein Sonderfall "frisch initialisiert" vs. "bereits initialisiert".
+# Init/unseal/configure/seed OpenBao on every sync (idempotent: reuses an existing
+# openbao-unseal-keys secret). Reaches each pod via the headless service; pod list from
+# .Values.openbao.server.ha.replicas.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -53,43 +39,19 @@ spec:
             - |
               set -eu
 
-              # Live gefundener Bug (2026-09-23): "apk add --no-cache curl" schlaegt in diesem
-              # Cluster fehl (curl bleibt danach "not found") - vermutlich derselbe Klasse von
-              # Netzwerk-/Proxy-Einschraenkung, die in diesem Repo schon frueher
-              # Paket-Installationen in Containern blockiert hat (siehe CLAUDE.md, docker-compose-
-              # Go-Modul-Downloads/charts/keda). Das Image ist tatsaechlich Alpine (bestaetigt via
-              # /etc/os-release), aber "apk" selbst braucht Netzwerkzugriff auf einen Paketspiegel -
-              # curl NACHZUINSTALLIEREN ist damit der falsche Ansatz. Stattdessen "wget"
-              # verwenden, das im Image bereits vorhanden ist (kein Install noetig) - BusyBox-wget
-              # unterstuetzt zwar nur GET/POST (kein PATCH/PUT), das reicht hier aber: der
-              # POST-Aufruf unten wird nur erreicht, wenn das Secret laut vorherigem GET noch NICHT
-              # existiert (Idempotenz-Guard weiter unten), ein Update-Fall tritt im Normalbetrieb
-              # also nie ein. HTTPS-Zertifikatspruefung braucht kein eigenes wget-Flag (BusyBox-wget
-              # hat keins) - die Umgebungsvariable SSL_CERT_FILE wird von der zugrunde liegenden
-              # TLS-Bibliothek gelesen, live gegen einen echten 403 (statt eines TLS-Fehlers) als
-              # Anfrage-Antwort verifiziert.
+              # BusyBox wget instead of curl: apk can't install packages here. wget only does
+              # GET/POST, which
+              # is enough (the secret is only created, never updated).
               export SSL_CERT_FILE=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
 
               NAMESPACE="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
               TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
               APISERVER=https://kubernetes.default.svc
 
-              # Ausfuehrliches Logging (2026-09-23 nachgeruestet): dieser Job hat an einem einzigen
-              # Tag mehrfach unwiederbringlich Unseal-Keys verloren, ohne dass aus den Logs
-              # ersichtlich war, WARUM ein Schritt fehlschlug - jedes Mal musste der Fehler live per
-              # kubectl-Exec ins Postgres-Backend/den Pod rekonstruiert werden. Ab hier wird jeder
-              # Schritt, der heute mindestens einmal unbemerkt fehlgeschlagen ist, explizit
-              # protokolliert. Bewusst NIE der Wert von UNSEAL_KEY/ROOT_TOKEN selbst (nur Laenge/
-              # vorhanden-ja-nein) - "bao status" hat dagegen keine sicherheitsrelevanten Felder und
-              # wird komplett geloggt.
+              # Logs every step, never key/token values.
               echo "Start: NAMESPACE=$NAMESPACE"
 
-              # Bewusst KEIN "2>/dev/null"/"2>&1" mehr hier: "$(...)"-Kommandosubstitution faengt
-              # ohnehin nur STDOUT ab (die Antwort), wgets Fehlermeldungen auf STDERR laufen also
-              # automatisch direkt in die Pod-Logs durch, OHNE die zurueckgegebene Variable zu
-              # verunreinigen - "-q" unterdrueckt nur die Fortschrittsanzeige, keine Fehlermeldungen
-              # (live verifiziert: "wget: server returned error: HTTP/1.1 403 ..." erscheint auch
-              # mit "-q").
+              # Errors go to stderr (pod log), the response to stdout.
               kubeapi_get() {
                 wget -qO- --header "Authorization: Bearer $TOKEN" "$APISERVER$1"
               }
@@ -101,169 +63,104 @@ spec:
 
               HEADLESS="openbao-internal"
               {{ $replicas := .Values.openbao.server.ha.replicas | int }}
-              # Pod-Liste wird aus .Values.openbao.server.ha.replicas generiert (aktuell {{ $replicas }}),
-              # nicht hartkodiert - eine Aenderung der Replica-Zahl (values.yaml/values-prod.yaml)
-              # ist selbst ein Helm-Upgrade und loest den post-upgrade-Hook mit der NEUEN Pod-Liste
-              # erneut aus. Laufzeit-Discovery ueber die Kubernetes-API waere hier redundant: ein
-              # manuelles "kubectl scale" am ArgoCD-selfHeal vorbei wird ohnehin auf den
-              # deklarierten Wert zurueckgedreht (kein ignoreDifferences auf spec.replicas hier,
-              # anders als bei reservation-worker/KEDA).
+              # Pod list from .Values.openbao.server.ha.replicas; a scale change re-runs this hook.
               PODS="{{ range $i := until $replicas }}openbao-{{ $i }} {{ end }}"
-              echo "Pod-Liste: PODS=[$PODS] (aus .Values.openbao.server.ha.replicas={{ $replicas }})"
+              echo "pod list: PODS=[$PODS] (from .Values.openbao.server.ha.replicas={{ $replicas }})"
 
-              # Live gefundener Bug (2026-09-23): "bao status" gibt Exit-Code 2 zurueck, wenn die
-              # Instanz erreichbar, aber (wie bei jeder frischen Installation) noch versiegelt
-              # ist - nur Exit-Code 1 bedeutet "nicht erreichbar/Fehler", 0 heisst entsiegelt.
-              # "until bao status; do ...; done" wertete JEDEN Nicht-Null-Exit als "noch nicht
-              # bereit" und wartete damit auf einen Zustand (entsiegelt), den erst dieses Skript
-              # selbst weiter unten herbeifuehrt - klassischer Deadlock im Skript selbst, live als
-              # endlos wiederholtes "warte auf openbao-0..." beobachtet. Fix: nur Exit-Code 1
-              # bedeutet "weiter warten", 0 UND 2 bedeuten "Prozess laeuft, antwortet korrekt".
-              #
-              # Zweiter, eng verwandter Bug beim ersten Fixversuch: "bao status; rc=$?" als zwei
-              # getrennte Anweisungen loest unter "set -e" (oben gesetzt) sofortigen Skriptabbruch
-              # aus, SOBALD "bao status" nicht-null zurueckgibt - "rc=$?" wird dann nie erreicht.
-              # "set -e" ignoriert den Exit-Code nur, wenn der Befehl Teil einer Bedingung ist
-              # (if/while/until-Test oder vor "||"/"&&") - ein einzelner Befehl als eigene Zeile
-              # zaehlt nicht dazu. Live beobachtet: Job endete sofort mit Exit-Code 2, ganz ohne
-              # Log-Ausgabe (starb, bevor "rc=$?" oder gar das erste "echo" erreicht wurde). Fix:
-              # "|| rc=$?" haengt den Fehlerfall direkt an denselben Befehl.
+              # bao status: 0 = unsealed, 2 = sealed (reachable), 1 = error. Only 1 means wait.
+              # "|| rc=$?" keeps set -e from aborting.
               wait_for_pod() {
                 pod="$1"
                 while true; do
                   BAO_ADDR="http://$pod.$HEADLESS.$NAMESPACE.svc:8200" bao status >/dev/null 2>&1 && rc=0 || rc=$?
                   [ "$rc" -ne 1 ] && break
-                  echo "warte auf $pod (bao status exit=$rc)..."
+                  echo "waiting for $pod (bao status exit=$rc)..."
                   sleep 3
                 done
-                echo "$pod erreichbar (bao status exit=$rc)"
+                echo "$pod reachable (bao status exit=$rc)"
               }
               for p in $PODS; do wait_for_pod "$p"; done
 
               export BAO_ADDR="http://openbao-0.$HEADLESS.$NAMESPACE.svc:8200"
 
-              # Live gefundener Bug, die eigentliche Ursache hinter mehreren verlorenen
-              # Unseal-Keys an diesem Tag (2026-09-23): "bao"/die Kubernetes-API liefern
-              # eingerueckt formatiertes JSON MIT Leerzeichen nach dem Doppelpunkt
-              # ("initialized": true), nicht das urspruenglich angenommene kompakte JSON ohne
-              # Leerzeichen ("initialized":true). Jedes grep/sed-Muster unten ging von "kein
-              # Leerzeichen" aus und lieferte dadurch IMMER einen leeren String - live bestaetigt:
-              # "INITIALIZED" war dadurch nie "true", das Skript versuchte deshalb JEDES Mal neu zu
-              # initialisieren (unschaedlich beim allerersten Mal, aber "already initialized"-
-              # Fehler bei jedem Retry danach), und selbst ein erfolgreicher Init-Aufruf lieferte
-              # nie einen extrahierbaren Schluessel (Shamir 1-von-1 ohne jede zweite
-              # Wiederherstellungsmoeglichkeit - jedes Mal ein unwiederbringlich verlorener Key).
-              # Fix: "[[:space:]]*" toleriert 0 oder mehr Leerzeichen nach dem Doppelpunkt ueberall
-              # - gegen echte "bao status -format=json"/Kubernetes-API-Antworten UND echte
-              # "bao operator init"-Ausgabe verifiziert, nicht nur angenommen.
+              # JSON has spaces after colons - patterns allow [[:space:]]*.
               EXISTING="$(kubeapi_get "/api/v1/namespaces/$NAMESPACE/secrets/openbao-unseal-keys" || true)"
-              echo "vorhandenes Secret gelesen: $(printf '%s' "$EXISTING" | wc -c) Bytes Antwort"
+              echo "read existing secret: $(printf '%s' "$EXISTING" | wc -c) bytes"
               UNSEAL_KEY="$(echo "$EXISTING" | grep -o '"key1"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"' | { base64 -d 2>/dev/null || true; })"
               ROOT_TOKEN="$(echo "$EXISTING" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"' | { base64 -d 2>/dev/null || true; })"
-              echo "daraus extrahiert: UNSEAL_KEY ${#UNSEAL_KEY} Zeichen, ROOT_TOKEN ${#ROOT_TOKEN} Zeichen (0 = nicht gefunden/leer)"
+              echo "extracted: UNSEAL_KEY ${#UNSEAL_KEY} chars, ROOT_TOKEN ${#ROOT_TOKEN} chars (0 = not found/empty)"
 
               STATUS_RAW="$(bao status -format=json 2>&1 || true)"
               INITIALIZED="$(echo "$STATUS_RAW" | grep -o '"initialized"[[:space:]]*:[[:space:]]*[a-z]*' | grep -o '[a-z]*$' || echo false)"
-              # "bao status" enthaelt kein Schluesselmaterial - komplettes Loggen ist unbedenklich.
-              echo "bao status vor Bootstrap: $(printf '%s' "$STATUS_RAW" | tr '\n' ' ')"
-              echo "daraus interpretiert: INITIALIZED=$INITIALIZED"
+              # Contains no key material.
+              echo "bao status before bootstrap: $(printf '%s' "$STATUS_RAW" | tr '\n' ' ')"
+              echo "parsed: INITIALIZED=$INITIALIZED"
 
               if [ "$INITIALIZED" != "true" ]; then
-                echo "initialisiere OpenBao (Shamir 1-von-1, bewusste Laborvereinfachung)..."
+                echo "initializing OpenBao (Shamir 1-of-1, deliberate lab simplification)..."
                 if INIT_OUTPUT="$(bao operator init -key-shares=1 -key-threshold=1 -format=json 2>&1)"; then
-                  echo "bao operator init erfolgreich, Antwort: $(printf '%s' "$INIT_OUTPUT" | wc -c) Bytes"
+                  echo "bao operator init succeeded, response: $(printf '%s' "$INIT_OUTPUT" | wc -c) bytes"
                 else
-                  echo "FEHLER: bao operator init fehlgeschlagen - Ausgabe: $INIT_OUTPUT" >&2
+                  echo "ERROR: bao operator init failed - output: $INIT_OUTPUT" >&2
                   INIT_OUTPUT=""
                 fi
-                # Live gefundener Bug (2026-09-23, zweite Runde): "grep -o" arbeitet zeilenweise -
-                # "bao operator init -format=json" gibt eingeruecktes Mehrzeilen-JSON aus, in dem
-                # "unseal_keys_b64" ein Array ist, das ueber DREI Zeilen verteilt ist
-                # (Schluessel-Zeile, Wert-Zeile, schliessende Klammer-Zeile). Das urspruengliche
-                # Muster verlangte den kompletten Treffer (Schluessel BIS schliessende Klammer) auf
-                # EINER Zeile und schlug deshalb IMMER fehl - "root_token" extrahierte trotzdem
-                # korrekt, weil dieses Feld als einzelner Skalar auf einer einzigen Zeile steht.
-                # Live beobachtet: "UNSEAL_KEY 0 Zeichen, ROOT_TOKEN 26 Zeichen" nach einem
-                # erfolgreichen Init - der Root-Token wurde also fälschlich OHNE zugehoerigen
-                # Unseal-Key gespeichert. Fix: Antwort zuerst mit "tr '\n' ' '" auf eine Zeile
-                # zusammenfassen (gleicher Trick wie beim Loggen von STATUS_RAW oben), dann erst
-                # die bestehenden Muster anwenden.
+                # init output is multi-line JSON; join lines before matching.
                 INIT_OUTPUT_FLAT="$(printf '%s' "$INIT_OUTPUT" | tr '\n' ' ')"
                 UNSEAL_KEY="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"unseal_keys_b64"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
                 ROOT_TOKEN="$(echo "$INIT_OUTPUT_FLAT" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"' | tail -1 | tr -d '"')"
-                echo "aus Init-Antwort extrahiert: UNSEAL_KEY ${#UNSEAL_KEY} Zeichen, ROOT_TOKEN ${#ROOT_TOKEN} Zeichen"
+                echo "extracted from init response: UNSEAL_KEY ${#UNSEAL_KEY} chars, ROOT_TOKEN ${#ROOT_TOKEN} chars"
 
                 UNSEAL_KEY_B64="$(printf '%s' "$UNSEAL_KEY" | base64 | tr -d '\n')"
                 ROOT_TOKEN_B64="$(printf '%s' "$ROOT_TOKEN" | base64 | tr -d '\n')"
                 SECRET_JSON="{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"name\":\"openbao-unseal-keys\"},\"data\":{\"key1\":\"$UNSEAL_KEY_B64\",\"root_token\":\"$ROOT_TOKEN_B64\"}}"
-                # Nur POST (Create), kein PATCH-Fallback mehr - BusyBox-wget kann keine beliebige
-                # HTTP-Methode setzen (nur GET/POST via --post-data). Reicht hier: dieser Zweig
-                # wird nur erreicht, wenn "bao status" gerade erst "initialized: false" gemeldet
-                # hat, das Secret existiert an dieser Stelle also so gut wie nie schon.
-                #
-                # Live gefundener Vorfall (2026-09-23): direkt nach einem frischen ArgoCD-Sync
-                # (ServiceAccount/RoleBinding gerade erst neu angelegt) schlug genau dieser Aufruf
-                # einmalig mit HTTP 401 fehl, obwohl dieselbe Kombination aus Token/Request
-                # Sekunden spaeter manuell einwandfrei funktionierte - vermutlich kurze
-                # RBAC-/Token-Propagationsverzoegerung direkt nach dem Sync. Besonders teuer hier:
-                # ein fehlgeschlagener Schreibversuch bedeutet einen UNWIEDERBRINGLICH verlorenen
-                # Unseal-Key (Shamir 1-von-1, kein zweiter Weg, ihn zu erhalten) - deshalb mehrere
-                # Versuche mit kurzer Pause, bevor aufgegeben wird.
+                # Create only (wget can't PATCH). Retries: right after a sync RBAC may not be ready
+                # yet, and a
+                # lost write means a lost unseal key.
                 write_ok=0
                 write_attempt=0
                 for _ in 1 2 3 4 5; do
                   write_attempt=$((write_attempt + 1))
                   if WRITE_RESPONSE="$(kubeapi_post "/api/v1/namespaces/$NAMESPACE/secrets" "$SECRET_JSON" 2>&1)"; then
                     write_ok=1
-                    echo "Secret openbao-unseal-keys angelegt (Versuch $write_attempt)"
+                    echo "created secret openbao-unseal-keys (attempt $write_attempt)"
                     break
                   fi
-                  echo "Versuch $write_attempt, Secret openbao-unseal-keys anzulegen fehlgeschlagen: $WRITE_RESPONSE" >&2
+                  echo "attempt $write_attempt to create secret openbao-unseal-keys failed: $WRITE_RESPONSE" >&2
                   sleep 3
                 done
                 [ "$write_ok" -eq 1 ] \
-                  || echo "WARNUNG: Secret openbao-unseal-keys konnte auch nach $write_attempt Versuchen nicht angelegt werden - Auto-Unseal-Sidecar haette nach einem Pod-Neustart keinen Schluessel" >&2
+                  || echo "WARNING: could not create secret openbao-unseal-keys after $write_attempt attempts - the auto-unseal sidecar will have no key after a pod restart" >&2
               fi
 
               if [ -z "$UNSEAL_KEY" ]; then
-                echo "FEHLER: kein Unseal-Key bekannt (weder initialisiert noch im Secret gefunden) - manueller Eingriff noetig" >&2
+                echo "ERROR: no unseal key known (neither initialized nor found in the secret) - manual intervention needed" >&2
                 exit 1
               fi
 
-              echo "entsiegle alle drei Instanzen..."
+              echo "unsealing all instances..."
               for p in $PODS; do
                 if UNSEAL_RESULT="$(BAO_ADDR="http://$p.$HEADLESS.$NAMESPACE.svc:8200" bao operator unseal "$UNSEAL_KEY" 2>&1)"; then
-                  echo "$p entsiegelt"
+                  echo "$p unsealed"
                 else
-                  echo "$p entsiegeln fehlgeschlagen: $UNSEAL_RESULT" >&2
+                  echo "unsealing $p failed: $UNSEAL_RESULT" >&2
                 fi
               done
 
               if [ -z "$ROOT_TOKEN" ]; then
-                echo "kein Root-Token bekannt (Secret vermutlich manuell veraendert) - ueberspringe KV/Auth/Policy-Setup" >&2
+                echo "no root token known (secret probably edited by hand) - skipping KV/auth/policy setup" >&2
                 exit 0
               fi
 
               export BAO_TOKEN="$ROOT_TOKEN"
 
-              echo "aktiviere KV-v2-Engine..."
+              echo "enabling KV v2 engine..."
               bao secrets enable -path=secret kv-v2 2>&1 | grep -v "already in use" || true
-              echo "aktiviere Kubernetes-Auth-Methode..."
+              echo "enabling Kubernetes auth method..."
               bao auth enable kubernetes 2>&1 | grep -v "already enabled" || true
               bao write auth/kubernetes/config kubernetes_host="https://kubernetes.default.svc:443" >/dev/null
 
-              # Kein Heredoc hier: die YAML-Block-Scalar-Einrueckung dieses gesamten Skripts wuerde
-              # jede Heredoc-Terminator-Zeile mit fuehrenden Leerzeichen versehen und den
-              # Terminator damit unbrauchbar machen (<<-, das nur Tabs entfernt, hilft bei
-              # Leerzeichen-Einrueckung nicht) - stattdessen die Policy in eine Datei schreiben.
-              #
-              # create+read+update auf data UND metadata (nicht nur "read"): External Secrets
-              # pusht seit der PushSecret-Erweiterung (Strimzi-/CNPG-generierte Secrets werden
-              # nach OpenBao gespiegelt, siehe charts/kafka-cluster/charts/postgres-cluster) auch
-              # eigene Werte in die Vault - laut externaler-secrets.io-Doku fuer den
-              # Vault-Provider/KV-v2 braucht Push explizit Rechte auf BEIDE Pfade, nicht nur
-              # "secret/data/*". Vorher war dieser Pfad reines "read" - Push war zu dem Zeitpunkt
-              # noch nicht vorgesehen.
+              # No heredoc (block-scalar indentation breaks the terminator).
+              # PushSecret needs create/read/update on data and metadata.
               printf 'path "secret/data/*" {\n  capabilities = ["create", "read", "update"]\n}\npath "secret/metadata/*" {\n  capabilities = ["create", "read", "update", "list"]\n}\n' > /tmp/external-secrets-policy.hcl
               bao policy write external-secrets /tmp/external-secrets-policy.hcl >/dev/null
 
@@ -278,33 +175,17 @@ spec:
               seed_if_missing() {
                 path="$1"; shift
                 if ! bao kv get "$path" >/dev/null 2>&1; then
-                  echo "seede $path..."
+                  echo "seeding $path..."
                   bao kv put "$path" "$@" >/dev/null
                 fi
               }
 
-              # Rein interne Service-zu-Service-Credentials OHNE eigenen Operator, der sie
-              # generieren koennte - vom Job selbst zufaellig generiert, kein Mensch waehlt sie
-              # vorab (siehe Root-README ## Bonus B1). AKHQs Basic-Auth-Login-Passwort ist der
-              # letzte verbleibende Fall: dafuer existiert kein Operator, der es generieren
-              # koennte (es ist kein Kafka-SCRAM-Credential, sondern ein reines UI-Login).
-              #
-              # KEIN "secret/postgres/app-user" und KEIN "secret/kafka/*" mehr hier (bis
-              # 2026-09-23 stand hier noch "secret/kafka/akhq-user"): CNPG generiert das
-              # Postgres-App-User-Credential und Strimzi generiert ALLE vier KafkaUser-Passwoerter
-              # (auch akhqs, seit AKHQ an dieselbe Strimzi-Auto-Generierung angeglichen wurde wie
-              # catalog-api/reservation-worker/notification-worker) jetzt selbst - je ein
-              # PushSecret spiegelt sie hierher (charts/postgres-cluster/
-              # templates/postgres-user-pushsecret.yaml,
-              # charts/kafka-cluster/templates/messaging/kafka-user-pushsecrets.yaml). Der
-              # Bootstrap-Job wuerde sonst gegen die echten, operator-generierten Werte
-              # gegenschreiben.
+              # Credentials no operator generates. Kafka/Postgres credentials are pushed in by
+              # PushSecrets.
               seed_if_missing secret/akhq/basic-auth password="$(genpass)"
-              # JWT-Signaturschluessel der AKHQ-Login-Sessions: muss bei 2 Replicas auf beiden
-              # identisch sein, sonst ist ein auf Pod A ausgestelltes Session-Cookie auf Pod B
-              # ungueltig. 64 Zeichen > die 256 Bit, die Micronaut fuer HS256 verlangt.
+              # Shared AKHQ JWT key; 64 chars > 256 bits required for HS256.
               seed_if_missing secret/akhq/jwt secret="$(genpass)$(genpass)"
               seed_if_missing secret/notification-worker/smtp username="" password=""
               seed_if_missing secret/notification-worker/kafka-tls ca-cert="" client-cert="" client-key=""
 
-              echo "OpenBao-Bootstrap abgeschlossen"
+              echo "OpenBao bootstrap complete"

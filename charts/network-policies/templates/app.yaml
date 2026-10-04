@@ -1,9 +1,7 @@
 {{- /*
-Anwendungs-Namespace (ticketflow.namespaces.app): catalog-api, frontend, reservation-worker,
-notification-worker und die App-Postgres (charts/postgres-cluster).
-Browser -> Traefik -> frontend (statische Seite) bzw. -> catalog-api (/events, /reservations);
-catalog-api -> Kafka -> reservation-worker -> Postgres + Kafka -> notification-worker.
-*/ -}}
+App namespace: Browser -> Traefik -> frontend / catalog-api -> Kafka -> reservation-worker ->
+Postgres + Kafka -> notification-worker.
+*/}}
 {{- $ns := include "np.ns.app" . -}}
 {{- $pg := include "np.pgCluster" . -}}
 {{ include "np.baseline" (list $ $ns) }}
@@ -18,7 +16,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Ingress-Pfade /events und /reservations (charts/ticketflow-app templates/frontend/ingress.yaml).
+    # Ingress paths /events and /reservations.
     - from:
         {{- include "np.peer.traefik" . | nindent 8 }}
       ports:
@@ -26,7 +24,7 @@ spec:
           protocol: TCP
     {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
   egress:
-    # Liest Veranstaltungen/Plaetze, fuehrt beim Start die Seed-Migration aus.
+    # Reads events/seats, runs the seed migration.
     - to:
         - podSelector:
             matchLabels:
@@ -34,13 +32,13 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # Produziert ReservationRequested (SASL/SCRAM-Listener "plain").
+    # Produces ReservationRequested (SASL listener).
     - to:
         {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
       ports:
         - port: 9092
           protocol: TCP
-    # Schema-Aufloesung beim Start + /readyz.
+    # Schema lookup at startup + /readyz.
     - to:
         {{- include "np.peer.apicurio" . | nindent 8 }}
       ports:
@@ -62,7 +60,7 @@ spec:
       ports:
         - port: 80
           protocol: TCP
-  # Kein Egress: nginx liefert nur statische Dateien aus, die API ruft der Browser ueber Traefik.
+  # No egress: static files only.
   egress: []
 ---
 {{ include "np.header" (list $ "allow-reservation-worker" $ns) }}
@@ -76,7 +74,7 @@ spec:
   ingress:
     {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
   egress:
-    # Sitzplatz-Lock + reservations-Tabelle, Schema-Migrationen beim Start.
+    # Seat lock, reservations, migrations.
     - to:
         - podSelector:
             matchLabels:
@@ -84,7 +82,7 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # Konsumiert reservation-requested, produziert reservation-result.
+    # Consumes reservation-requested, produces reservation-result.
     - to:
         {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
       ports:
@@ -107,7 +105,7 @@ spec:
   ingress:
     {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
   egress:
-    # Konsumiert reservation-result, schreibt ggf. ins Dead-Letter-Topic.
+    # Consumes reservation-result, may write to the dead-letter topic.
     - to:
         {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
       ports:
@@ -119,7 +117,7 @@ spec:
         - port: 8080
           protocol: TCP
     {{- if .Values.notificationWorker.smtp.enabled }}
-    # Optionaler SMTP-Versand (SMTP_ENABLED) - Mailserver liegt ausserhalb des Clusters.
+    # Optional SMTP (SMTP_ENABLED).
     - to:
         {{- include "np.peer.internet" . | nindent 8 }}
       ports:

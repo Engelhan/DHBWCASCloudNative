@@ -1,14 +1,8 @@
 {{- /*
-Kafka-Plattform (ticketflow.namespaces.kafka): Strimzi-Operator, Kafka-Broker/-Controller (KRaft),
-Entity-Operator, Kafka-Exporter, Apicurio, AKHQ, Schema-Registrierungs-Job.
-
-Strimzi generiert normalerweise eigene Ingress-Policies (pro Listener "von allen Namespaces"
-offen). Das ist in charts/strimzi-operator per STRIMZI_NETWORK_POLICY_GENERATION=false
-abgeschaltet - der von der Strimzi-Doku (Restricting access to listeners with network policies)
-vorgesehene Weg fuer eigene Policies. Die internen Regeln (9090/9091/8443) unten sind 1:1 die, die
-der Operator zuvor selbst erzeugt hatte (live ausgelesen), die Client-Listener 9092/9093 sind auf
-die tatsaechlichen Clients verengt.
-*/ -}}
+Kafka platform: Strimzi, brokers/controllers, entity operator, exporter, Apicurio, AKHQ, schema job.
+Strimzi's own policy generation is off; the internal rules below match what it generated, the client
+listeners are narrowed to the real clients.
+*/}}
 {{- $ns := include "np.ns.kafka" . -}}
 {{- $app := include "np.ns.app" . -}}
 {{- $cluster := include "np.kafkaCluster" . -}}
@@ -25,7 +19,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # KRaft-Controller-Quorum.
+    # KRaft controller quorum.
     - from:
         - podSelector:
             matchLabels:
@@ -38,7 +32,7 @@ spec:
       ports:
         - port: 9090
           protocol: TCP
-    # Replikation/interner mTLS-Listener: Broker untereinander und Strimzi-Komponenten.
+    # Replication / internal mTLS listener.
     - from:
         - podSelector:
             matchLabels:
@@ -57,7 +51,7 @@ spec:
       ports:
         - port: 9091
           protocol: TCP
-    # Kafka-Agent (Broker-State fuer Rolling Updates).
+    # Kafka agent (broker state for rolling updates).
     - from:
         - podSelector:
             matchLabels:
@@ -65,7 +59,7 @@ spec:
       ports:
         - port: 8443
           protocol: TCP
-    # Listener "plain" (SASL/SCRAM): genau die vier KafkaUser-Clients plus KEDAs Lag-Scaler.
+    # SASL listener: the four KafkaUser clients plus KEDA's lag scaler.
     - from:
         - {{ include "np.nsSelector" $app | nindent 10 | trim }}
           podSelector:
@@ -90,8 +84,7 @@ spec:
       ports:
         - port: 9092
           protocol: TCP
-    # Listener "unauth" (anonym, Superuser) - ausschliesslich Apicurio (kafkasql-Storage kann kein
-    # SCRAM, siehe charts/kafka-cluster). Hier ist die Netzwerkebene die einzige Zugangskontrolle.
+    # Anonymous listener: Apicurio only - the network is the only access control here.
     - from:
         - podSelector:
             matchLabels:
@@ -101,8 +94,7 @@ spec:
           protocol: TCP
     {{- include "np.ingress.prometheus" (list $ 9404) | nindent 4 }}
   egress:
-    # Strimzis Config-Provider (strimzisecrets:...) liest Zertifikate/Credentials zur Laufzeit
-    # ueber die Kubernetes-API, nicht aus gemounteten Dateien.
+    # Strimzi's config provider reads secrets via the API.
     {{- include "np.egress.apiServer" . | nindent 4 }}
     - to:
         - podSelector:
@@ -128,7 +120,7 @@ spec:
     {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
   egress:
     {{- include "np.egress.apiServer" . | nindent 4 }}
-    # Admin-Client (9091), KRaft-Quorum-Abfragen (9090), Kafka-Agent (8443).
+    # Admin client (9091), KRaft quorum (9090), Kafka agent (8443).
     - to:
         - podSelector:
             matchLabels:
@@ -150,12 +142,12 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Topic-/User-Operator-Metriken.
+    # Topic/User operator metrics.
     {{- include "np.ingress.prometheus" (list $ 8080 8081) | nindent 4 }}
   egress:
-    # Liest/schreibt KafkaTopic-/KafkaUser-CRs (auch im App-Namespace, watchedNamespace).
+    # KafkaTopic/KafkaUser CRs (also in the app namespace).
     {{- include "np.egress.apiServer" . | nindent 4 }}
-    # Legt Topics/SCRAM-Credentials/ACLs per Admin-Client an.
+    # Topics, SCRAM credentials, ACLs via the admin client.
     - to:
         - podSelector:
             matchLabels:
@@ -176,7 +168,7 @@ spec:
   ingress:
     {{- include "np.ingress.prometheus" (list $ 9404) | nindent 4 }}
   egress:
-    # Consumer-Lag/Offsets ueber den internen Listener.
+    # Consumer lag/offsets via the internal listener.
     - to:
         - podSelector:
             matchLabels:
@@ -195,7 +187,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Schema-Aufloesung der drei Services + Registrierung durch den Hook-Job.
+    # Schema lookups by the services + registration by the hook job.
     - from:
         - {{ include "np.nsSelector" $app | nindent 10 | trim }}
           podSelector:
@@ -217,7 +209,7 @@ spec:
         - port: 8080
           protocol: TCP
   egress:
-    # kafkasql-Storage: Registry-Inhalt liegt in einem Kafka-Topic (Listener "unauth").
+    # kafkasql storage (anonymous listener).
     - to:
         - podSelector:
             matchLabels:
@@ -237,7 +229,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Oeffentliche UI (Ingress akhq.<dnsZone>).
+    # Public UI.
     - from:
         {{- include "np.peer.traefik" . | nindent 8 }}
       ports:
@@ -270,7 +262,7 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    # Der Job installiert curl/jq zur Laufzeit per `apk add` (alpine:3.20) - Alpine-Paketspiegel.
+    # apk add at runtime - Alpine mirrors.
     - to:
         {{- include "np.peer.internet" . | nindent 8 }}
       ports:

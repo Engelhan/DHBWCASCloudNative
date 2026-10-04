@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "apicurio",
-  "description": "Apicurio Registry (Schema-Registry fuer die Kafka-Event-Contracts). Plattform-Chart, siehe charts/README.md ## apicurio.",
+  "description": "Apicurio Registry (schema registry for the Kafka event contracts).",
   "type": "object",
   "required": [
     "replicaCount",
@@ -65,7 +65,7 @@
         },
         "kafkaBootstrapServers": {
           "type": "string",
-          "description": "Leer = abgeleitet aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
+          "description": "Empty = derived from ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
         }
       }
     },

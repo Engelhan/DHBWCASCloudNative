@@ -1,7 +1,6 @@
 apiVersion: v2
 name: openbao-secretstore
-description: >-
-  Rendert nur eine ClusterSecretStore-CR gegen OpenBao (charts/openbao) - siehe charts/README.md
+description: "ClusterSecretStore against OpenBao."
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

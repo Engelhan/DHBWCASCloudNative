@@ -1,30 +1,12 @@
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# AKHQ (https://akhq.io) - Web-UI fuer den Strimzi-Kafka-Cluster (Topics/Consumer-Groups/
-# Messages/Schema-Registry). Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
-# reservation-worker), siehe CLAUDE.md ## Team. Wrapper um den Upstream-Chart, gleiches Muster
-# wie die anderen Addon-Charts, siehe charts/README.md ## Addon-Charts.
-#
-# B2 (Root-README ## Bonus): eigenes ExternalSecret (templates/kafka-sasl-secret.yaml) fuer die
-# SCRAM-Credentials der "akhq"-KafkaUser (charts/kafka-cluster values.yaml kafka.users) - bewusst
-# AUSSERHALB des "akhq:"-Dependency-Blocks unten (das waere an den Upstream-Chart durchgereicht,
-# dieses Template ist aber unser eigenes, zusaetzliches). Seit 2026-09-23 (B1, Root-README ##
-# Bonus) kein "kafkaSasl:"-Werteblock mehr hier - Strimzi generiert Username UND einen fertigen
-# JAAS-Config-String selbst (wie bei catalog-api/reservation-worker/notification-worker), der
-# per PushSecret/ExternalSecret unveraendert durch OpenBao durchgereicht wird, siehe
-# templates/kafka-sasl-secret.yaml.
+# Kafka UI. Our own templates (secrets, ingress) live outside the upstream "akhq:" block.
 
-# Muss unter dem Dependency-Alias "akhq" verschachtelt sein (siehe Chart.yaml), damit Helm die
-# Werte an den gewrappten Upstream-Chart durchreicht.
+# Upstream chart values (dependency alias).
 akhq:
   image:
-    tag: "0.28.0" # = Chart.AppVersion, explizit statt implizitem Default (kein :latest, siehe P3)
+    tag: "0.28.0"
 
   resources:
     requests:
@@ -34,18 +16,8 @@ akhq:
       cpu: 500m
       memory: 512Mi
 
-  # Zwei Replicas in zwei Regionen (P4). AKHQs Upstream-Chart hat (anders als
-  # charts/ticketflow-app/charts/reservation-worker/charts/apicurio) KEIN natives
-  # topologySpreadConstraints-Feld - gegen templates/deployment.yaml im Upstream-Chart-Tarball
-  # geprueft (nur affinity/nodeSelector/tolerations werden dort templated, reiner
-  # toYaml-Passthrough). Deshalb als harte (required) podAntiAffinity auf das Regions-Label
-  # ausgedrueckt: zwei AKHQ-Pods duerfen nie in derselben Region liegen. Bei 2 Replicas und 3
-  # Regionen bleibt fuer den Rolling-Update-Surge-Pod immer eine Region frei. labelSelector ist
-  # hier (anders als bei den volleigenen Charts) auf die tatsaechlich vom Upstream-Chart
-  # gerenderten Pod-Labels haendisch hartkodiert (app.kubernetes.io/name=akhq,
-  # app.kubernetes.io/instance=akhq - Release-Name = ArgoCD-Application-Name "akhq"), da
-  # values.yaml selbst nicht templated wird und daher keine Helm-Helper wie "akhq.selectorLabels"
-  # referenzieren kann. Gegen `helm template` verifiziert.
+  # P4: two replicas in two regions. The upstream chart has no spread field, hence a required
+  # anti-affinity with the rendered pod labels.
   replicaCount: 2
   affinity:
     podAntiAffinity:
@@ -56,11 +28,7 @@ akhq:
               app.kubernetes.io/name: akhq
               app.kubernetes.io/instance: akhq
 
-  # Chart-Default fuer beide ist {} (ungehaertet) - wie bei charts/strimzi-operator (siehe
-  # dessen values.yaml) explizit gesetzt statt uebernommen. readOnlyRootFilesystem bewusst NICHT
-  # gesetzt: unklar, ob/wohin AKHQ zur Laufzeit schreibt (kein Hinweis im Upstream-Chart/-Doku
-  # gefunden) - vor einem echten Deploy per `helm template` + laufendem Pod verifizieren, dann
-  # erst aktivieren (siehe charts/README.md ## Resource-Limits... zum selben Vorgehen bei Tempo).
+  # readOnlyRootFilesystem left off: unknown whether AKHQ writes at runtime.
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -71,65 +39,36 @@ akhq:
     capabilities:
       drop: ["ALL"]
 
-  # B2 (Root-README ## Entscheidungen): AKHQ authentifiziert sich seit
-  # charts/kafka-cluster/templates/messaging/kafka-users.yaml (authorization: type: simple ist
-  # jetzt Default-Deny fuer jeden unauthentifizierten Client) als eigene KafkaUser-Identitaet
-  # "akhq" statt anonym zu verbinden. Das JAAS-Config-Secret wird NICHT hier eingetragen (waere
-  # ein Klartext-Passwort im Repo), sondern per Env-Var aus einem selbst angelegten Secret
-  # (secretKeyRef unten) injiziert - AKHQ/Micronaut loest "${VAR}"-Platzhalter in jedem
-  # Config-Wert zur Laufzeit auf.
+  # Kafka login (B2); Micronaut resolves ${VAR} at runtime, no password in the repo.
   extraEnv:
     - name: KAFKA_SASL_JAAS_CONFIG
       valueFrom:
         secretKeyRef:
           name: akhq-kafka-sasl
           key: sasl.jaas.config
-    # B1 (Root-README ## Bonus): Basic-Auth-Passwort-Hash kommt jetzt per ExternalSecret aus
-    # OpenBao (templates/basic-auth-secret.yaml) statt als Klartext-Hash-Literal in
-    # secrets.akhq.security.basic-auth unten zu stehen - gleicher Mechanismus wie
-    # KAFKA_SASL_JAAS_CONFIG oben. MUSS zur Implementierungszeit verifiziert werden: ob
-    # "${VAR}"-Substitution auch im Feld secrets.akhq.security.basic-auth[].password greift
-    # (bisher nur fuer sasl.jaas.config bestaetigt) - beide liegen im selben
-    # Micronaut-Config-Merge, sollte also funktionieren.
+    # Basic-auth hash from OpenBao (B1).
     - name: AKHQ_BASIC_AUTH_PASSWORD_HASH
       valueFrom:
         secretKeyRef:
           name: akhq-basic-auth
           key: password-hash
-    # Gemeinsamer JWT-Signaturschluessel aller Replicas (siehe configuration.micronaut unten und
-    # templates/basic-auth-secret.yaml).
+    # Shared JWT signing key for all replicas.
     - name: AKHQ_JWT_SECRET
       valueFrom:
         secretKeyRef:
           name: akhq-basic-auth
           key: jwt-secret
 
-  # Aus - alle NetworkPolicies kommen zentral aus charts/network-policies (B1). Die Chart-eigene
-  # (Upstream-Default an) liess http/management von jeder Quelle zu.
+  # NetworkPolicies come from charts/network-policies.
   networkPolicy:
     enabled: false
 
-  # Nicht-sensible Konfiguration (landet in einem ConfigMap). RBAC-Rollen/-Gruppen an AKHQs
-  # eigenem application.example.yml angelehnt (https://github.com/tchiotludo/akhq/blob/dev/
-  # application.example.yml), aber bewusst NUR die *-read-Rollen uebernommen (keine
-  # */-admin-Rollen mit CREATE/UPDATE/DELETE) - root README.md ## Entscheidungen (B2) legt AKHQ
-  # explizit als "schreibgeschuetzt konfiguriert" fest (Topics/ACLs werden deklarativ ueber
-  # charts/kafka-cluster bzw. kuenftige KafkaUser-CRs verwaltet, nicht ad-hoc per UI). Kafka-Connect-
-  # Rollen (connect-admin/connect-cluster-read) komplett weggelassen - es existiert kein Kafka-
-  # Connect-Cluster in diesem Projekt. default-group auf eine leere Gruppe ("no-roles") statt
-  # "reader" wie fuer eingeloggte Nutzer, damit nicht eingeloggte Besucher:innen ueber die
-  # oeffentliche Ingress unten trotzdem NICHTS sehen.
-  #
-  # UNVERIFIZIERT (kein laufender Cluster zum Gegenpruefen verfuegbar) - vor dem ersten echten
-  # Sync in der ArgoCD-UI kontrollieren, ob Login + Rollenzuweisung tatsaechlich wie erwartet
-  # greifen.
+  # Read-only roles only (B2); anonymous visitors get none.
   configuration:
     micronaut:
       security:
         enabled: true
-        # Bei replicaCount: 2 muessen beide Pods Session-Cookies mit demselben Schluessel
-        # signieren/pruefen, sonst fliegt man bei jedem Request, der auf dem anderen Pod landet,
-        # aus dem Login. Wert per Env-Substitution aus OpenBao (extraEnv AKHQ_JWT_SECRET).
+        # Both replicas must sign sessions with the same key.
         token:
           jwt:
             signatures:
@@ -162,33 +101,15 @@ akhq:
             - role: registry-read
             - role: group-read
 
-  # Sensible Werte (Kafka-Verbindung, Basic-Auth-Passwort-Hash) - landen in einem Secret statt im
-  # ConfigMap (siehe Upstream-values.yaml-Kommentar zu "secrets"). Kein passwordHash-Feld gesetzt
-  # -> SHA256 ist AKHQs Default, siehe akhq.io Basic-Auth-Doku.
-  #
-  # B1 (Root-README ## Bonus): das Passwort selbst existiert seit 2026-09-22 nur noch in OpenBao
-  # (vom Bootstrap-Job in charts/openbao zufaellig generiert, KV-Pfad "akhq/basic-auth") - der
-  # Hash unten ist kein Literal mehr, sondern "${AKHQ_BASIC_AUTH_PASSWORD_HASH}"
-  # (Micronaut-Env-Substitution zur Laufzeit, gleicher Mechanismus wie
-  # "${KAFKA_SASL_JAAS_CONFIG}" unten), injiziert per secretKeyRef aus
-  # templates/basic-auth-secret.yaml (siehe extraEnv oben). Username "admin" ist nur ein Label -
-  # die Gruppe "reader" bestimmt die tatsaechlichen (schreibgeschuetzten) Rechte, siehe root
-  # README.md ## Entscheidungen (B2) "AKHQ schreibgeschuetzt konfiguriert".
+  # Secret config. "admin" is just a name; group "reader" grants read-only access.
   secrets:
     akhq:
       connections:
         ticketflow-kafka:
           properties:
-            # Kurzer In-Namespace-Name: AKHQ laeuft im selben Namespace wie der Kafka-Cluster
-            # (ticketflow.namespaces.kafka), der Eintrag bleibt damit auch bei einer
-            # Umbenennung dieses Namespace korrekt. Ein abgeleiteter Wert ist hier nicht
-            # moeglich - der Block gehoert zu den Values des gewrappten Upstream-Charts,
-            # und Helm templatet Values-Dateien nicht (siehe charts/README.md).
+            # Short name: values files aren't templated, AKHQ shares Kafka's namespace.
             bootstrap.servers: "ticketflow-kafka-kafka-bootstrap:9092"
-            # SASL_PLAINTEXT statt PLAINTEXT (B2) - "${KAFKA_SASL_JAAS_CONFIG}" wird von
-            # Micronaut/AKHQ zur Laufzeit aus der env-Var aufgeloest, die extraEnv oben per
-            # secretKeyRef aus templates/kafka-sasl-secret.yaml injiziert (kein Klartext-Passwort
-            # in dieser Datei).
+            # SASL_PLAINTEXT (B2); JAAS config from the KAFKA_SASL_JAAS_CONFIG env var.
             security.protocol: SASL_PLAINTEXT
             sasl.mechanism: SCRAM-SHA-512
             sasl.jaas.config: "${KAFKA_SASL_JAAS_CONFIG}"
@@ -199,14 +120,11 @@ akhq:
             groups:
               - reader
 
-  # Bewusst aus: der Ingress wird von diesem Chart selbst gerendert
-  # (templates/ingress.yaml), weil sein Hostname aus der zentralen DNS-Zone abgeleitet wird -
-  # siehe den ingress-Block ausserhalb dieses "akhq:"-Blocks weiter unten.
+  # Rendered by templates/ingress.yaml instead.
   ingress:
     enabled: false
 
-# Einstellungen fuer den chart-eigenen Ingress (templates/ingress.yaml). Der Hostname selbst steht
-# hier NICHT - er ist immer "akhq.<ticketflow.dnsZone>" aus gitops/env/cluster.yaml.
+# Own Ingress; host is always akhq.<dnsZone>.
 ingress:
   className: traefik
   clusterIssuerName: certificate-cluster-issuer

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: cert-manager
-description: Wrapper-Chart um den Upstream-cert-manager-Chart mit unseren Werten (siehe values.yaml)
+description: "Wrapper around the upstream cert-manager chart."
 type: application
 version: 0.1.0
 dependencies:

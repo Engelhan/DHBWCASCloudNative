@@ -1,7 +1,4 @@
-# Traegt die beiden kanonischen JSON-Schemas (files/schemas/) in den Cluster, damit
-# register-job.yaml sie ohne eigenes Image/Checkout registrieren kann. .Files.Get liest nur
-# innerhalb dieses Charts - deshalb liegen die Schemas hier unter files/schemas/ und nicht z.B.
-# in charts/apicurio (das kennt sie nicht und braucht sie auch nicht, siehe dessen Chart.yaml).
+# Ships the JSON schemas for register-job.yaml (.Files.Get only reads inside this chart).
 apiVersion: v1
 kind: ConfigMap
 metadata:

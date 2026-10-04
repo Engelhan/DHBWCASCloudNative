@@ -1,6 +1,6 @@
 apiVersion: v2
 name: external-dns
-description: Wrapper-Chart um den Upstream-external-dns-Chart mit unseren Werten (siehe values.yaml)
+description: "Wrapper around the upstream external-dns chart."
 type: application
 version: 0.1.0
 dependencies:

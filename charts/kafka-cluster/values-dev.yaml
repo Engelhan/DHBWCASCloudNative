@@ -1,13 +1,4 @@
-# Lab-Profil (aktiv, siehe gitops/env/cluster.yaml environment: dev) - siehe README ## values-dev.yaml
-# vs. values-prod.yaml.
-#
-# Seit P4/P5-Pruefung (2026-09-29) laeuft auch dev mit 3 Controllern + 3 Brokern und
-# replicationFactor 3: genau dieser Cluster ist der, an dem Platzierung (P4: ein Broker pro
-# simulierter Region, harte topologySpreadConstraint) und Resilienz (P5: Rolling Update/
-# Pod-Verlust ohne Ausfall) gezeigt werden. Mit einem einzigen Broker waere beides unmoeglich -
-# jeder Broker-Neustart waere ein Totalausfall des Reservierungs-Eingangs. Replicas, Requests/
-# Limits, Heap, Replication-Factor und Topics kommen deshalb unveraendert aus values.yaml; dev
-# unterscheidet sich von prod nur in der Storage-Groesse.
+# Active lab profile. Same as prod (3 brokers, RF 3 - needed for P4/P5) except storage size.
 
 kafka:
   controller:

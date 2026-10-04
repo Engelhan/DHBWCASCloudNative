@@ -1,19 +1,9 @@
-{{/*
-Standard-helm-create-Helper - identisch zu charts/reservation-worker und charts/ticketflow-app,
-nur mit anderem Chart-Namen. Bewusst je Chart dupliziert statt als Library-Chart ausgelagert:
-eine file://-Dependency mehr pro Chart waere fuer drei kurze Defines mehr Aufwand als Nutzen.
-*/}}
+{{/* Standard helpers (duplicated per chart on purpose). */}}
 
-{{/*
-Vollstaendiger Image-Name. Registry und Tag kommen zentral aus gitops/env/cluster.yaml
-(ticketflow.imageRegistry / .imageTag), damit ein Image-Bump nur EINE Stelle im Repo beruehrt -
-.github/workflows/build-images.yml schreibt den Tag dort automatisch fort. image.repository bzw.
-image.tag in values.yaml bleiben als bewusster Einzelfall-Override moeglich (z.B. ein Test-Build
-aus einer privaten Registry), sind aber normalerweise leer.
-*/}}
+{{/* Image: registry and tag from gitops/env/cluster.yaml; image.* only as an override. */}}
 {{- define "notification-worker.image" -}}
-{{- $repo := .Values.image.repository | default (printf "%s/ticketflow-notification-worker" (required "ticketflow.imageRegistry fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageRegistry)) -}}
-{{- $tag := .Values.image.tag | default (required "ticketflow.imageTag fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageTag) -}}
+{{- $repo := .Values.image.repository | default (printf "%s/ticketflow-notification-worker" (required "ticketflow.imageRegistry is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageRegistry)) -}}
+{{- $tag := .Values.image.tag | default (required "ticketflow.imageTag is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.imageTag) -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end -}}
 
@@ -35,17 +25,8 @@ aus einer privaten Registry), sind aber normalerweise leer.
 {{- end -}}
 
 {{/*
-Name des chart-eigenen Secrets (SMTP-Zugang, optionale Kafka-mTLS-Materialien).
-
-Der Suffix ist NICHT kosmetisch: der Strimzi User Operator legt fuer jede KafkaUser-CR ein Secret
-mit exakt dem CR-Namen an, und die CR heisst "notification-worker" (siehe
-charts/kafka-cluster/values.yaml kafka.users) - im selben Namespace, in den dieser Chart deployt.
-Ohne Suffix waere das dasselbe Objekt: ArgoCD und der User Operator wuerden es abwechselnd
-ueberschreiben, und das envFrom unten zoege die SCRAM-Keys als Env-Variablen in den Container,
-waehrend der KAFKA_SASL_PASSWORD-secretKeyRef ins Leere liefe.
-
-secret.name ueberschreibt den Namen, z.B. wenn secret.create=false ist und ein External Secret
-das Objekt unter eigenem Namen bereitstellt.
+Chart-owned secret (SMTP, Kafka mTLS). The suffix avoids a clash with the Strimzi secret of the
+same-named KafkaUser. secret.name overrides it.
 */}}
 {{- define "notification-worker.secretName" -}}
 {{- .Values.secret.name | default (printf "%s-credentials" (include "notification-worker.fullname" .)) -}}
@@ -68,19 +49,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: {{ include "notification-worker.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
-{{/*
-Bootstrap-Adresse des Kafka-Clusters. Kafka laeuft in einem eigenen Namespace, getrennt von der
-Anwendung - Name und Namespace kommen deshalb aus gitops/env/cluster.yaml statt als
-ausgeschriebener DNS-Name hier in values.yaml zu stehen (er stand frueher in vier Charts parallel).
-Port 9092 ist Strimzis "plain"-Listener (SASL_PLAINTEXT seit B2). config.kafkaBrokers ueberschreibt die Ableitung, falls noetig.
-*/}}
+{{/* Kafka bootstrap (SASL listener 9092); config.kafkaBrokers overrides it. */}}
 {{- define "notification-worker.kafkaBootstrap" -}}
-{{- .Values.config.kafkaBrokers | default (printf "%s-kafka-bootstrap.%s.svc:9092" (required "ticketflow.kafka.clusterName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName) (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
+{{- .Values.config.kafkaBrokers | default (printf "%s-kafka-bootstrap.%s.svc:9092" (required "ticketflow.kafka.clusterName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName) (required "ticketflow.namespaces.kafka is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}
 
-{{/*
-URL der Apicurio-Registry - laeuft im selben Kafka-Namespace.
-*/}}
+{{/* Apicurio registry URL. */}}
 {{- define "notification-worker.schemaRegistryUrl" -}}
-{{- .Values.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
+{{- .Values.config.registryUrl | default (printf "http://apicurio.%s.svc:8080/apis/registry/v3" (required "ticketflow.namespaces.kafka is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka)) -}}
 {{- end -}}

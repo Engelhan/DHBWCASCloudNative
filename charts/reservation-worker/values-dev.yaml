@@ -1,4 +1,1 @@
-# Lab-Profil (aktiv, gitops/env/cluster.yaml environment: dev). Bewusst keine Abweichungen von
-# values.yaml: genau auf diesem Cluster laeuft der Flash-Sale-Lasttest, er braucht also dasselbe
-# KEDA-Fenster (1-10 Pods) wie prod. Das PodDisruptionBudget (maxUnavailable: 1) bleibt ebenfalls
-# an - es blockiert auch bei einem einzigen Pod keinen Node-Drain.
+# Active lab profile: same as values.yaml, the load test needs the full KEDA range.

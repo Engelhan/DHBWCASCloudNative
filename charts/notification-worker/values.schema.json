@@ -20,7 +20,7 @@
     },
     "image": {
       "type": "object",
-      "description": "Optionaler Override. Normalerweise leer - Registry/Tag kommen aus ticketflow.imageRegistry/.imageTag.",
+      "description": "Optional override. Normally empty - registry/tag come from ticketflow.imageRegistry/.imageTag.",
       "properties": {
         "repository": {
           "type": "string"
@@ -51,7 +51,7 @@
       "properties": {
         "kafkaBrokers": {
           "type": "string",
-          "description": "Leer = abgeleitet aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
+          "description": "Empty = derived from ticketflow.kafka.clusterName + ticketflow.namespaces.kafka."
         },
         "resultTopic": {
           "type": "string",
@@ -67,7 +67,7 @@
         },
         "registryUrl": {
           "type": "string",
-          "description": "Leer = abgeleitet aus ticketflow.namespaces.kafka."
+          "description": "Empty = derived from ticketflow.namespaces.kafka."
         },
         "registryGroupId": {
           "type": "string",
@@ -192,7 +192,7 @@
     },
     "externalSecret": {
       "type": "object",
-      "description": "B1 (Root-README ## Bonus): stellt das Secret aus OpenBao bereit (templates/externalsecret.yaml), statt es wie vorher als Klartext-Platzhalter in secret.* zu halten.",
+      "description": "B1: provides the secret from OpenBao (templates/externalsecret.yaml).",
       "required": [
         "enabled"
       ],
@@ -216,7 +216,7 @@
     },
     "ticketflow": {
       "type": "object",
-      "description": "Zentrale Werte aus gitops/env/cluster.yaml (von ArgoCD per Multi-Source durchgereicht).",
+      "description": "Central values from gitops/env/cluster.yaml (passed in by ArgoCD).",
       "required": [
         "imageRegistry",
         "imageTag",

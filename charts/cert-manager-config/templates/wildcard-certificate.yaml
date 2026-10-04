@@ -1,8 +1,8 @@
 {{- if .Values.wildcardCertificate.enabled }}
 {{- if ne .Values.challenge "dns01" }}
-{{- fail "wildcardCertificate.enabled erfordert challenge: dns01 (Wildcards koennen nicht per http01 validiert werden)" }}
+{{- fail "wildcardCertificate.enabled requires challenge: dns01 (wildcards cannot be validated via http01)" }}
 {{- end }}
-# Ein Wildcard-Zertifikat fuer *.<ticketflow.dnsZone> statt Zertifikate pro Host.
+# One wildcard certificate for *.<dnsZone>.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -11,13 +11,12 @@ metadata:
 spec:
   secretName: {{ .Values.wildcardCertificate.secretName }}
   dnsNames:
-    - "*.{{ (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}"
+    - "*.{{ (required "ticketflow.dnsZone is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}"
   issuerRef:
     name: {{ .Values.clusterIssuerName }}
     kind: ClusterIssuer
 ---
-# Traefik serviert dieses Zertifikat fuer jeden HTTPS-Host ohne spezifischeres Zertifikat - muss
-# "default" heissen und im Traefik-Namespace liegen.
+# Traefik's default certificate: must be named "default" in Traefik's namespace.
 apiVersion: traefik.io/v1alpha1
 kind: TLSStore
 metadata:

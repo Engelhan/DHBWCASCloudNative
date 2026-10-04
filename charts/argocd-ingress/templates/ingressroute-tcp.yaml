@@ -1,16 +1,11 @@
-# TLS-Passthrough statt Termination an Traefik: argocd-server praesentiert sein eigenes
-# Zertifikat (siehe certificate.yaml) direkt an den Client durch (SNI-basiertes Routing auf
-# TCP-Ebene, Traefik entschluesselt nichts). Vermeidet damit auch die HTTP/2-/gRPC-Problematik,
-# die bei TLS-Termination von argocd-server-Traffic an manchen Ingress-Controllern auftritt
-# (siehe ArgoCD-Doku ## Ingress Configuration -> SSL-Passthrough).
+# TLS passthrough: argocd-server terminates TLS itself (avoids gRPC/HTTP2 issues).
 apiVersion: traefik.io/v1alpha1
 kind: IngressRouteTCP
 metadata:
   name: argocd-server
   namespace: {{ .Values.argocdServer.namespace }}
   annotations:
-    # Erforderlich, damit external-dns' traefik-proxy-Source ueberhaupt einen Record erzeugt -
-    # siehe Kommentar bei externalDnsTarget in values.yaml.
+    # external-dns' traefik-proxy source needs an explicit target.
     external-dns.alpha.kubernetes.io/target: {{ include "argocd-ingress.externalDnsTarget" . | quote }}
 spec:
   entryPoints:

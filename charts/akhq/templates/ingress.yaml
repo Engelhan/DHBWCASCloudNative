@@ -1,14 +1,6 @@
-# Eigener Ingress statt des Upstream-Ingress (akhq.ingress.enabled ist in values.yaml deshalb
-# false): der Hostname haengt an der zentralen DNS-Zone, und Helm templatet Values-Dateien nicht -
-# aus dem "akhq:"-Block heraus kaeme man an .Values.ticketflow.dnsZone nicht heran. Als eigenes
-# Template ist das kein Problem. Backend (Service "akhq", Port "http") stammt unveraendert aus dem
-# gewrappten Upstream-Chart.
-#
-# Bewusst ein einfacher Ingress, kein IngressRouteTCP wie bei charts/argocd-ingress: AKHQ spricht
-# reines HTTP, Traefik darf hier terminieren. Damit greift auch external-dns' "ingress"-Source, die
-# das Target - anders als bei IngressRoute - selbst aus dem LoadBalancer-Status ableitet; es
-# braucht also keine target-Annotation.
-{{- $host := printf "akhq.%s" (required "ticketflow.dnsZone fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}
+# Own Ingress (the upstream one can't use the central dnsZone). Plain HTTP, Traefik terminates TLS;
+# external-dns picks it up without a target annotation.
+{{- $host := printf "akhq.%s" (required "ticketflow.dnsZone is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.dnsZone) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

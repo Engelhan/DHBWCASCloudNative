@@ -4,8 +4,8 @@ metadata:
   name: {{ .Values.clusterIssuerName }}
 spec:
   acme:
-    email: {{ (required "ticketflow.acmeEmail fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.acmeEmail) | quote }}
-    server: {{ (required "ticketflow.acmeServer fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.acmeServer) | quote }}
+    email: {{ (required "ticketflow.acmeEmail is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.acmeEmail) | quote }}
+    server: {{ (required "ticketflow.acmeServer is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.acmeServer) | quote }}
     privateKeySecretRef:
       name: {{ .Values.privateKeySecretName }}
     solvers:
@@ -17,7 +17,7 @@ spec:
             {{- else }}
             nameserver: "{{ .Values.ticketflow.rfc2136.server }}:{{ .Values.rfc2136.port }}"
             {{- end }}
-            tsigKeyName: {{ (required "ticketflow.rfc2136.keyName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.rfc2136.keyName) | quote }}
+            tsigKeyName: {{ (required "ticketflow.rfc2136.keyName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.rfc2136.keyName) | quote }}
             tsigAlgorithm: {{ .Values.rfc2136.tsigAlgorithm | replace "-" "" | upper }}
             tsigSecretSecretRef:
               name: {{ .Values.rfc2136.tsigSecretName }}

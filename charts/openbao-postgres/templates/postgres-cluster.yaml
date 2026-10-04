@@ -49,11 +49,7 @@ spec:
     initdb:
       database: {{ include "openbao-postgres.databaseName" . | quote }}
       owner: {{ .Values.database.owner | quote }}
-      # Bewusst KEIN "secret:"-Feld (anders als charts/postgres-cluster): ohne vorgegebenes Secret
-      # generiert CNPG das App-User-Credential selbst (Secret "<clusterName>-app", siehe
-      # _helpers.tpl openbao-postgres.appSecretName) - ein hier chart-hardcodiertes Passwort waere
-      # fuer die Vault, die genau solche Passwoerter ersetzen soll, dasselbe Henne-Ei-Problem nur
-      # verschoben.
+      # No secret: CNPG generates the credential (it can't come from the vault it backs).
       encoding: UTF-8
       localeCollate: en_US.UTF-8
       localeCType: en_US.UTF-8

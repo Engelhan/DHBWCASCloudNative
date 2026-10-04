@@ -1,7 +1,4 @@
-# Kleine Werte fuer Funktionstests auf den Lab-VMs - siehe README ## values-dev.yaml vs.
-# values-prod.yaml. Auch hier zwei Replicas je Service: die harte Regions-Verteilung (P4) legt sie
-# in zwei verschiedene Regionen, ein Worker-Ausfall nimmt also nie das ganze Frontend/die ganze
-# API mit. PodDisruptionBudget minAvailable: 1 (values.yaml) laesst einen Drain dabei zu.
+# Two replicas per service in two regions (P4).
 
 catalogApi:
   replicaCount: 2

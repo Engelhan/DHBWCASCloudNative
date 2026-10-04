@@ -1,49 +1,35 @@
-# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers gibt.
-# Der Datenbankname kommt von dort (ticketflow.openbao.databaseName), analog zu
-# charts/postgres-cluster (ticketflow.postgres.databaseName) - aber eine eigene, GETRENNTE CNPG-
-# Cluster-CR: dies ist OpenBaos eigenes Storage-Backend, nicht die TicketFlow-App-DB.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
 instances: 2
-# Kein namespace-Wert: es gilt der Namespace der ArgoCD-Application (ticketflow.namespaces.openbao).
+# Namespace comes from the ArgoCD Application.
 
 image:
   # Container image repository used by CloudNativePG.
   repository: ghcr.io/cloudnative-pg/postgresql
   pullPolicy: IfNotPresent
   pullSecret: ""
-  # PostgreSQL image tag - identisch zu charts/postgres-cluster (gleiche Operator-Version).
+  # PostgreSQL image tag.
   tag: "18.4-202608030910-standard-trixie@sha256:f0cc49632b5cc1e51f65ba03658c89bd31d64ea2672b14843a808a8d281417e1"
 
 database:
-  # Logischer Datenbankname steht zentral in gitops/env/cluster.yaml (ticketflow.openbao.databaseName).
-  # Rollenname des App-Users - KEIN Passwort-Feld hier (anders als charts/postgres-cluster):
-  # CNPG generiert das Credential selbst, siehe postgres-cluster.yaml (bootstrap.initdb ohne
-  # secret-Feld) und templates/_helpers.tpl (openbao-postgres.appSecretName).
+  # App user role; CNPG generates the password.
   owner: openbao
   primaryUpdateMethod: switchover
   primaryUpdateStrategy: supervised
   postgresql:
     parameters:
-      # Kleiner dimensioniert als charts/postgres-cluster - diese DB haelt nur OpenBaos KV-Daten
-      # + HA-Lock-Zeilen, kein App-Datenvolumen.
+      # Small: only OpenBao's KV data and HA lock.
       shared_buffers: 256MB
       effective_cache_size: 512MB
       work_mem: 4MB
       max_connections: "50"
     extraParameters:
-      # Obergrenze fuer WAL, das ein Replication Slot zurueckhalten darf. CNPG legt fuer jede
-      # Replica einen HA-Slot an; faellt eine Replica dauerhaft aus, haelt der Primary sonst jedes
-      # WAL-Segment fuer sie fest. OpenBao schreibt seine HA-Lock-Zeilen alle paar Sekunden -
-      # am 29.09. lief so ein 5Gi-Volume in ~2,5 Tagen voll und CNPG startete den Primary nicht
-      # mehr. Mit der Grenze verwirft Postgres den Slot, die Replica muss sich neu klonen.
+      # Caps WAL held by a lost replica's slot; otherwise OpenBao's HA-lock writes fill the volume.
       max_slot_wal_keep_size: 1GB
     pg_hba: [ ]
 
-# Optional backup configuration. Enable it to render backup resources. Standardmaessig aus, wie im
-# Original (charts/postgres-cluster) - bewusst NICHT entfernt, auf ausdruecklichen Wunsch, damit es
-# bei Bedarf spaeter aktiviert werden kann.
+# Optional backup configuration (off).
 backup:
   enabled: false
   restoreFromBackup: false
@@ -68,16 +54,12 @@ import:
 
 affinity:
   podAntiAffinityType: required
-  # Primary und Replica muessen in verschiedenen simulierten Regionen liegen (P4), nicht nur auf
-  # verschiedenen Nodes - gleiche Ausfalldomaene wie Kafka/OpenBao. Ohne diesen Wert faellt das
-  # Template auf kubernetes.io/hostname zurueck.
+  # P4: primary and replica in different regions.
   topologyKey: topology.ticketflow/region
 
 storage:
   storageClass: longhorn
-  # Kleiner als charts/postgres-cluster (10Gi) - nur KV-Metadaten + HA-Lock-Tabelle. 8Gi statt
-  # 5Gi: Platz fuer wal_keep_size (512MB) + max_slot_wal_keep_size (1GB) mit Reserve. CNPG
-  # vergroessert die PVCs laufend (resizeInUseVolumes), Longhorn erlaubt Volume-Expansion.
+  # Room for wal_keep_size + max_slot_wal_keep_size; Longhorn supports expansion.
   size: 8Gi
 
 resources:
@@ -87,7 +69,7 @@ resources:
     memory: 512Mi
     cpu: "1"
 
-# Rendert den PodMonitor - aus, seit kube-prometheus-stack entfernt ist (keine CRD mehr).
+# Off: no Prometheus in the cluster.
 monitoring: false
 
 podMonitor:

@@ -1,26 +1,13 @@
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Registry und Tag kommen zentral aus gitops/env/cluster.yaml (ticketflow.imageRegistry /
-# .imageTag) - ein Image-Bump beruehrt damit genau eine Stelle im Repo und gilt fuer alle vier
-# Services gleichzeitig; .github/workflows/build-images.yml schreibt den Tag dort automatisch
-# fort. Die beiden Felder hier sind nur ein bewusster Einzelfall-Override (z.B. ein Test-Build
-# aus einer anderen Registry) und bleiben normalerweise leer. Nie :latest (P3) - das verbietet
-# auch values.schema.json.
+# Empty: registry/tag from gitops/env/cluster.yaml. Never :latest (P3).
 image:
   repository: ""
   tag: ""
   pullPolicy: IfNotPresent
 
-# Mehrere Consumer-Instanzen derselben CONSUMER_GROUP teilen sich die Partitionen von
-# config.resultTopic automatisch (Kafka-Consumer-Group-Rebalancing) - die Partitionsanzahl des
-# Topics sollte >= replicaCount sein, sonst bleiben ueberzaehlige Replicas ungenutzt. Das Topic
-# selbst entsteht erst mit Strimzi/charts/kafka-cluster, ausserhalb des Scopes dieses Charts.
+# Replicas share the partitions; more replicas than partitions stay idle.
 replicaCount: 3
 
 resources:
@@ -46,89 +33,59 @@ securityContext:
     drop: ["ALL"]
 
 config:
-  # Echter Wert: Strimzi-Bootstrap-Service aus charts/kafka-cluster, gleicher Namespace
-  # "ticketflow" (dieser Chart ist noch nicht via gitops/apps/*.yaml deployed, siehe
-  # CLAUDE.md ## Current implementation status - Wert trotzdem schon real, nicht Platzhalter,
-  # damit er sofort zum kafkaSasl-Setup unten passt). Port 9092 = Strimzi's "plain"-Listener -
-  # seit B2 SASL_PLAINTEXT (SCRAM-Auth), Transport bleibt unverschluesselt.
-  # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
-  # abgeleitet (Kafka laeuft in einem eigenen Namespace, siehe gitops/env/cluster.yaml).
+  # Empty = derived (SASL listener 9092).
   kafkaBrokers: ""
-  # Muss zum echten Topic-Namen aus charts/kafka-cluster/values.yaml kafka.topics passen (war
-  # zuvor "reservation-results", ein Platzhalter-Tippfehler - siehe src/*/README.md ## Konfiguration).
+  # Must match charts/kafka-cluster kafka.topics.
   resultTopic: "reservation-result"
   consumerGroup: "notification-worker"
-  # Leer = kein Dead-Letter-Publish. Das "Offset nur bei tatsaechlichem Versand committen"-
-  # Verhalten bleibt trotzdem bestehen, siehe internal/kafkaconsumer im Anwendungscode.
+  # Empty = no dead-letter publish (offsets are still committed only after a successful send).
   dltTopic: ""
   notifyMaxRetries: 3
   notifyRetryBackoff: "2s"
-  # Apicurio Registry (charts/apicurio), siehe charts/kafka-cluster/values.yaml schemaRegistry.* fuer
-  # denselben Wert - kein Secret, keine Zugangsdaten involviert (siehe charts/apicurio/Chart.yaml).
-  # Leer lassen: wird aus ticketflow.namespaces.kafka abgeleitet.
+  # Empty = derived from ticketflow.namespaces.kafka.
   registryUrl: ""
   registryGroupId: "ticketflow"
   logLevel: "info"
   httpAddr: ":8080"
 
   kafkaTls:
-    enabled: false # optionales mTLS zum Kafka-Broker; Zertifikate kommen aus secret.kafkaTls*
+    enabled: false  # optional mTLS; certs from secret.kafkaTls*
 
-  # B2 (Root-README ## Entscheidungen): SASL/SCRAM-SHA-512-Auth gegen die vom Strimzi User
-  # Operator verwaltete KafkaUser "notification-worker" (siehe charts/kafka-cluster values.yaml
-  # kafka.users) - unabhaengig vom optionalen mTLS oben (unser Listener ist SASL_PLAINTEXT, nicht
-  # SASL_SSL). secretName referenziert das vom User Operator AUTOMATISCH angelegte Secret (Keys
-  # "password"/"sasl.jaas.config") direkt per secretKeyRef - kein eigenes Secret noetig wie bei
-  # Postgres, weil dieser Chart und der Kafka-Cluster denselben Namespace "ticketflow" teilen.
+  # B2: SCRAM as KafkaUser notification-worker; secret created by Strimzi.
   kafkaSasl:
     enabled: true
     username: notification-worker
     secretName: notification-worker
 
   smtp:
-    enabled: false # Demo-sicherer Default: nur Log-Ausgabe, kein echter Mailversand
+    enabled: false  # demo-safe default: log only
     host: ""
     port: 587
     from: ""
-    tlsMode: "starttls" # none|starttls|tls
+    tlsMode: "starttls"  # none|starttls|tls
 
 secret:
-  # B1 (Root-README ## Bonus): false seit 2026-09-22 - templates/externalsecret.yaml (siehe
-  # externalSecret.enabled unten) stellt das Secret jetzt bereit, aus OpenBao gesynct statt hier
-  # als Platzhalter-Werte im Chart zu stehen. Genau das war mit "extern bereitgestelltes Secret"
-  # hier von Anfang an gemeint.
+  # Provided by templates/externalsecret.yaml instead (B1).
   create: false
-  # Leer = "<release>-credentials". Der Suffix haelt das Secret von dem des Strimzi User Operators
-  # getrennt, der fuer die KafkaUser-CR "notification-worker" ein gleichnamiges Secret im selben
-  # Namespace anlegt (siehe templates/_helpers.tpl notification-worker.secretName).
+  # Empty = "<release>-credentials" (avoids the Strimzi secret name).
   name: ""
 
-# B1 (Root-README ## Bonus): ExternalSecret statt chart-eigenem Secret-Template (secret.create
-# oben). SMTP/Kafka-mTLS bleiben standardmaessig deaktiviert (siehe config.smtp.enabled/
-# config.kafkaTls.enabled oben im File) - der Bootstrap-Job in charts/openbao seedet dafuer nur
-# leere Platzhalter-Strings in die KV-Pfade, echte Werte traegt bei Bedarf jemand spaeter per
-# einmaligem "bao kv put" nach (siehe README.md).
+# B1: from OpenBao. SMTP/mTLS paths are seeded empty; fill them with bao kv put when needed.
 externalSecret:
   enabled: true
 
-# PodMonitor statt ServiceMonitor: es gibt keinen anderen Konsumenten der HTTP-Endpunkte (siehe
-# templates/podmonitor.yaml), daher auch keine eigene Service-Ressource in diesem Chart.
-# Aus: der Observability-Stack (kube-prometheus-stack) ist entfernt, die PodMonitor-CRD gibt es
-# im Cluster nicht mehr - ein gerenderter PodMonitor liesse den Sync scheitern. /metrics bleibt.
+# Off: no Prometheus in the cluster.
 podMonitor:
   enabled: false
   interval: 30s
-  # Chart-Default-Selector von kube-prometheus-stack ("release: <helm-release-name>").
   labels:
     release: kube-prometheus-stack
 
 podDisruptionBudget:
   enabled: true
-  minAvailable: 2 # toleriert einen Node-Drain/Rollout-Schritt bei replicaCount: 3
+  minAvailable: 2
 
-# Harte Verteilung ueber die drei simulierten Regionen (P4) - der Consumer ist stateless, ein
-# Regionsausfall darf nie alle Replicas gleichzeitig treffen. Gleiches Muster/gleiche Keys wie
-# charts/reservation-worker und charts/ticketflow-app.
+# P4: hard spread across regions.
 topologySpreadConstraint:
   enabled: true
   maxSkew: 1

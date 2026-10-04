@@ -1,3 +1,2 @@
-# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Dieser Chart hat praktisch
-# keine eigenen Werte - alles Relevante (Namespaces) kommt aus ticketflow.* zentral.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}

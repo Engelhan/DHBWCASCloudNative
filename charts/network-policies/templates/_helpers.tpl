@@ -1,29 +1,25 @@
-{{/*
-Namespaces und Namen aus gitops/env/cluster.yaml - dieselben Werte, aus denen die jeweiligen
-Workload-Charts ihre Ressourcen ableiten. Stimmen sie hier nicht, greifen die Selektoren ins Leere
-und der Traffic wird verworfen, deshalb required statt Default.
-*/}}
+{{/* Names from gitops/env/cluster.yaml; required, since wrong selectors silently drop traffic. */}}
 {{- define "np.ns.app" -}}
-{{- required "ticketflow.namespaces.app fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.app -}}
+{{- required "ticketflow.namespaces.app is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.app -}}
 {{- end -}}
 {{- define "np.ns.kafka" -}}
-{{- required "ticketflow.namespaces.kafka fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka -}}
+{{- required "ticketflow.namespaces.kafka is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.kafka -}}
 {{- end -}}
 {{- define "np.ns.openbao" -}}
-{{- required "ticketflow.namespaces.openbao fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.openbao -}}
+{{- required "ticketflow.namespaces.openbao is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.openbao -}}
 {{- end -}}
 {{- define "np.ns.externalSecrets" -}}
-{{- required "ticketflow.namespaces.externalSecrets fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.externalSecrets -}}
+{{- required "ticketflow.namespaces.externalSecrets is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.namespaces.externalSecrets -}}
 {{- end -}}
 {{- define "np.kafkaCluster" -}}
-{{- required "ticketflow.kafka.clusterName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName -}}
+{{- required "ticketflow.kafka.clusterName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.kafka.clusterName -}}
 {{- end -}}
-{{/* CNPG-Cluster-CR-Namen, gleiche Ableitung wie charts/postgres-cluster bzw. charts/openbao-postgres. */}}
+{{/* CNPG cluster names, derived like in the postgres charts. */}}
 {{- define "np.pgCluster" -}}
-{{- printf "%s-postgres-cluster" (required "ticketflow.postgres.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName) -}}
+{{- printf "%s-postgres-cluster" (required "ticketflow.postgres.databaseName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.postgres.databaseName) -}}
 {{- end -}}
 {{- define "np.openbaoPgCluster" -}}
-{{- printf "%s-postgres-cluster" (required "ticketflow.openbao.databaseName fehlt - gitops/env/cluster.yaml mitgeben (-f gitops/env/cluster.yaml)" .Values.ticketflow.openbao.databaseName) -}}
+{{- printf "%s-postgres-cluster" (required "ticketflow.openbao.databaseName is missing - pass gitops/env/cluster.yaml (-f gitops/env/cluster.yaml)" .Values.ticketflow.openbao.databaseName) -}}
 {{- end -}}
 
 {{- define "np.labels" -}}
@@ -33,9 +29,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end -}}
 
-{{/*
-Kopf einer NetworkPolicy. Aufruf: include "np.header" (list $ "<name>" "<namespace>")
-*/}}
+{{/* Policy header. Usage: include "np.header" (list $ "<name>" "<namespace>") */}}
 {{- define "np.header" -}}
 {{- $root := index . 0 -}}
 apiVersion: networking.k8s.io/v1
@@ -48,10 +42,8 @@ metadata:
 {{- end -}}
 
 {{/*
-Grundausstattung jedes Namespaces: alles verbieten (einzige Stelle mit leerem podSelector - das
-ist hier gewollt, anders als beim dokumentierten Loki-Vorfall) plus DNS zu CoreDNS fuer alle Pods,
-weil praktisch jede Verbindung mit einer Namensaufloesung beginnt.
-Aufruf: include "np.baseline" (list $ "<namespace>")
+Per namespace: default-deny (the only empty podSelector, intended) plus DNS for all pods. Usage:
+include "np.baseline" (list $ "<namespace>")
 */}}
 {{- define "np.baseline" -}}
 {{- $root := index . 0 -}}
@@ -78,7 +70,7 @@ spec:
           protocol: TCP
 {{- end -}}
 
-{{/* ----- Peers (Eintraege fuer from:/to:) ----- */}}
+{{/* ----- Peers (from:/to: entries) ----- */}}
 
 {{- define "np.nsSelector" -}}
 namespaceSelector:
@@ -93,29 +85,26 @@ podSelector:
     k8s-app: kube-dns
 {{- end -}}
 
-{{/*
-Der API-Server als Quelle (Admission-Webhooks, APIServices, API-Proxy). Siehe
-gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressbereiche.
-*/}}
+{{/* API server as source (webhooks, APIServices, proxy), see ticketflow.network. */}}
 {{- define "np.peer.apiServer" -}}
-{{- range (required "ticketflow.network.nodeCIDRs fehlt - gitops/env/cluster.yaml mitgeben" .Values.ticketflow.network.nodeCIDRs) }}
+{{- range (required "ticketflow.network.nodeCIDRs is missing - pass gitops/env/cluster.yaml" .Values.ticketflow.network.nodeCIDRs) }}
 - ipBlock:
     cidr: {{ . }}
 {{- end }}
-{{- range (required "ticketflow.network.controlPlaneTunnelIPs fehlt - gitops/env/cluster.yaml mitgeben" .Values.ticketflow.network.controlPlaneTunnelIPs) }}
+{{- range (required "ticketflow.network.controlPlaneTunnelIPs is missing - pass gitops/env/cluster.yaml" .Values.ticketflow.network.controlPlaneTunnelIPs) }}
 - ipBlock:
     cidr: {{ . }}
 {{- end }}
 {{- end -}}
 
 {{- define "np.peer.nodes" -}}
-{{- range (required "ticketflow.network.nodeCIDRs fehlt - gitops/env/cluster.yaml mitgeben" .Values.ticketflow.network.nodeCIDRs) }}
+{{- range (required "ticketflow.network.nodeCIDRs is missing - pass gitops/env/cluster.yaml" .Values.ticketflow.network.nodeCIDRs) }}
 - ipBlock:
     cidr: {{ . }}
 {{- end }}
 {{- end -}}
 
-{{/* Ziele ausserhalb des Clusters (ACME, DNS, GitHub, Helm-Repos) - nur mit Portbeschraenkung verwenden. */}}
+{{/* Targets outside the cluster - only use with a port restriction. */}}
 {{- define "np.peer.internet" -}}
 - ipBlock:
     cidr: 0.0.0.0/0
@@ -137,7 +126,7 @@ gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressber
       app.kubernetes.io/name: traefik
 {{- end -}}
 
-{{/* Alle Kafka-Pods (Broker + Controller) des Strimzi-Clusters. */}}
+{{/* All Kafka pods (brokers + controllers). */}}
 {{- define "np.peer.kafkaNodes" -}}
 - {{ include "np.nsSelector" (include "np.ns.kafka" .) | nindent 2 | trim }}
   podSelector:
@@ -147,7 +136,7 @@ gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressber
       strimzi.io/name: {{ include "np.kafkaCluster" . }}-kafka
 {{- end -}}
 
-{{/* Nur die Broker - Clients sprechen nach dem Bootstrap jeden Broker direkt an. */}}
+{{/* Brokers only - clients talk to each broker directly after bootstrap. */}}
 {{- define "np.peer.kafkaBrokers" -}}
 - {{ include "np.nsSelector" (include "np.ns.kafka" .) | nindent 2 | trim }}
   podSelector:
@@ -171,9 +160,9 @@ gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressber
       app.kubernetes.io/name: cloudnative-pg
 {{- end -}}
 
-{{/* ----- Komplette Regeln ----- */}}
+{{/* ----- Complete rules ----- */}}
 
-{{/* Egress zum API-Server. Jeder Operator/Controller braucht das. */}}
+{{/* Egress to the API server. */}}
 {{- define "np.egress.apiServer" -}}
 - to:
     {{- include "np.peer.nodes" . | nindent 4 }}
@@ -183,9 +172,8 @@ gitops/env/cluster.yaml ticketflow.network fuer die Begruendung beider Adressber
 {{- end -}}
 
 {{/*
-Ingress fuer Prometheus-Scrapes auf den angegebenen Ports.
-Aufruf: include "np.ingress.prometheus" (list $ 8080 9090)
-Rendert nichts, solange namespaces.monitoring nicht gesetzt ist (kein Prometheus im Cluster).
+Prometheus scrape ingress; renders nothing without namespaces.monitoring. Usage: include
+"np.ingress.prometheus" (list $ 8080 9090)
 */}}
 {{- define "np.ingress.prometheus" -}}
 {{- $root := first . -}}
@@ -201,8 +189,8 @@ Rendert nichts, solange namespaces.monitoring nicht gesetzt ist (kein Prometheus
 {{- end -}}
 
 {{/*
-Ingress vom API-Server auf den angegebenen Ports (Webhook, APIService).
-Aufruf: include "np.ingress.apiServer" (list $ 10250)
+Ingress from the API server (webhook, APIService). Usage: include "np.ingress.apiServer" (list $
+10250)
 */}}
 {{- define "np.ingress.apiServer" -}}
 {{- $root := first . -}}
@@ -216,12 +204,8 @@ Aufruf: include "np.ingress.apiServer" (list $ 10250)
 {{- end -}}
 
 {{/*
-Ein CNPG-Postgres-Cluster (App-DB oder OpenBao-DB), gemaess CNPG-Doku (docs/src/networking.md,
-samples/networkpolicy-example.yaml): der Operator muss jeden Instanz-Pod auf 8000 und 5432
-erreichen, und die Pods muessen untereinander sprechen koennen (Streaming-Replikation, Join-/
-initdb-Jobs, die CNPG mit demselben cnpg.io/cluster-Label startet). Der Instance-Manager in jedem
-Pod ist selbst ein Kubernetes-Controller und braucht deshalb den API-Server.
-Aufruf: include "np.cnpgCluster" (dict "root" $ "ns" "<ns>" "cluster" "<name>" "clients" "<peer-yaml>")
+CNPG cluster per CNPG docs: operator -> 8000/5432, pods among themselves, instance manager -> API.
+Usage: include "np.cnpgCluster" (dict "root" $ "ns" "<ns>" "cluster" "<name>" "clients" "<peers>")
 */}}
 {{- define "np.cnpgCluster" -}}
 {{- $root := .root -}}
@@ -250,7 +234,7 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # `kubectl cnpg status` liest den Instance-Manager ueber den API-Server-Proxy.
+    # `kubectl cnpg status` reads the instance manager via the API server proxy.
     {{- include "np.ingress.apiServer" (list $root 8000) | nindent 4 }}
     {{- include "np.ingress.prometheus" (list $root 9187) | nindent 4 }}
   egress:

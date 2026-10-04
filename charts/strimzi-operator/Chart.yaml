@@ -1,8 +1,6 @@
 apiVersion: v2
 name: strimzi-operator
-description: >-
-  Wrapper-Chart um den Upstream-Strimzi-Kafka-Operator-Chart mit unseren Werten (siehe
-  values.yaml)
+description: "Wrapper around the upstream Strimzi Kafka operator chart."
 type: application
 version: 0.1.0
 dependencies:

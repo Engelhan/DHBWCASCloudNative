@@ -1,7 +1,6 @@
 apiVersion: v2
 name: keda
-description: >-
-  Wrapper-Chart um den Upstream-KEDA-Chart mit unseren Werten (siehe values.yaml)
+description: "Wrapper around the upstream KEDA chart."
 type: application
 version: 0.1.0
 dependencies:

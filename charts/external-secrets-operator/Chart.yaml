@@ -1,8 +1,6 @@
 apiVersion: v2
 name: external-secrets-operator
-description: >-
-  Wrapper-Chart um den Upstream-External-Secrets-Chart (Operator only, keine ExternalSecret/
-  ClusterSecretStore-Objekte) mit unseren Werten (siehe values.yaml)
+description: "Wrapper around the upstream External Secrets chart (operator only)."
 type: application
 version: 0.1.0
 dependencies:

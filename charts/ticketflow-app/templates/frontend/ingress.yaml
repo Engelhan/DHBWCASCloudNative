@@ -1,11 +1,7 @@
 {{- $api := dict "root" $ "component" "catalog-api" }}
 {{- $fe := dict "root" $ "component" "frontend" }}
-# Ein Ingress fuer Frontend + catalog-api auf derselben Origin/demselben Host - vermeidet damit
-# komplett CORS zwischen Browser und catalog-api (siehe src/frontend/README.md ## Stack und
-# catalogApi.config.corsAllowedOrigin in values.yaml). /events und /reservations sind die einzigen
-# vom Frontend-JS aufgerufenen catalog-api-Pfade (siehe src/frontend/app.js) - bewusst NICHT
-# /healthz, /readyz, /metrics oeffentlich geroutet, die bleiben rein cluster-intern
-# (Kubelet-Probes bzw. ServiceMonitor). Alles andere (/) faellt auf das Frontend zurueck.
+# One host for frontend and API (no CORS). Only /events and /reservations go to catalog-api;
+# health/metrics stay internal.
 {{- if .Values.frontend.ingress.enabled }}
 {{- $host := include "ticketflow-app.ingressHost" $ }}
 apiVersion: networking.k8s.io/v1

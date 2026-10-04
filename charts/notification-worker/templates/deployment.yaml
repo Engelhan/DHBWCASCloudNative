@@ -14,11 +14,7 @@ spec:
       labels:
         {{- include "notification-worker.labels" . | nindent 8 }}
     spec:
-      # Harte Verteilung ueber die drei simulierten Regionen (P4): DoNotSchedule + maxSkew 1 heisst,
-      # schon das zweite Replica MUSS in einer anderen Region landen als das erste. Nodes ohne
-      # Regions-Label (die Control-Plane) fallen damit automatisch heraus. matchLabelKeys zaehlt
-      # nur Pods derselben ReplicaSet-Revision - sonst blockieren beim Rollout die alten Pods die
-      # Regionen, in die die neuen sollen.
+      # P4: hard spread across regions; matchLabelKeys ignores old pods during rollouts.
       {{- if .Values.topologySpreadConstraint.enabled }}
       topologySpreadConstraints:
         - maxSkew: {{ .Values.topologySpreadConstraint.maxSkew }}
@@ -46,16 +42,14 @@ spec:
             - configMapRef:
                 name: {{ include "notification-worker.fullname" . }}
             - secretRef:
-                # Bewusst NICHT fullname: das waere der Name des vom Strimzi User Operator
-                # erzeugten SCRAM-Secrets - siehe _helpers.tpl notification-worker.secretName.
+                # Not fullname: that's the Strimzi SCRAM secret.
                 name: {{ include "notification-worker.secretName" . }}
           {{- if .Values.config.kafkaSasl.enabled }}
           env:
             - name: KAFKA_SASL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  # Vom Strimzi User Operator automatisch angelegtes Secret (siehe
-                  # values.yaml-Kommentar bei config.kafkaSasl) - nicht dieser Chart.
+                  # Created by the Strimzi User Operator.
                   name: {{ .Values.config.kafkaSasl.secretName }}
                   key: password
           {{- end }}

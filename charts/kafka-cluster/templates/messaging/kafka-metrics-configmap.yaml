@@ -1,10 +1,4 @@
-# JMX-Prometheus-Exporter-Regeln fuer kafka-cluster.yaml (spec.kafka.metricsConfig). Uebernommen
-# aus einer realen Strimzi-Referenz des Nutzers, mit zwei Anpassungen:
-# - den "zookeeper-metrics-config.yml"-Key gibt es hier nicht (wir laufen in KRaft, kein
-#   ZooKeeper).
-# - die KRaft-spezifischen Regeln (raft-metrics, raft-channel-metrics, broker-metadata-metrics),
-#   die die Referenz nur auskommentiert als Hinweis mitfuehrt, sind hier aktiv - bei uns IST
-#   KRaft der Betriebsmodus, nicht nur eine Option.
+# JMX exporter rules (KRaft rules enabled).
 kind: ConfigMap
 apiVersion: v1
 metadata:

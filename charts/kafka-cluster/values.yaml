@@ -1,71 +1,25 @@
-# Gemeinsame Basiswerte fuer alle Umgebungen. dev/prod-spezifische Overrides in
-# values-dev.yaml/values-prod.yaml (siehe README ## values-dev.yaml vs. values-prod.yaml).
-#
-# Kafka-/Messaging-Teil + Schema-Registry-Registrierung (P1 fuer Carlos' Scope). catalog-api/
-# frontend, reservation-worker, notification-worker, CNPG-Postgres sind bewusst NICHT hier drin
-# - eigene, volleigenstaendige Charts (charts/ticketflow-app, charts/reservation-worker,
-# charts/notification-worker, charts/postgres-cluster), siehe charts/README.md.
-#
-# Struktur (getrennte broker-/controller-NodePools statt Combined-Role, metricsConfig,
-# kafkaExporter, entityOperator-Resources) orientiert sich an einem realen Strimzi-Setup, das der
-# Nutzer als Referenz aus seinem Arbeitsumfeld bereitgestellt hat - siehe die Kommentare in den
-# jeweiligen Templates fuer die Stellen, an denen bewusst abgewichen wurde (z.B. kein externer
-# Listener/keine Auth, da wir noch keine Client-Identitaeten haben; kein message.max.bytes-Override,
-# da unsere JSON-Events klein sind).
+# Kafka, topics, users and schema registration. App charts and Postgres are separate charts.
 
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
-#
-# Namespace (ticketflow.namespaces.kafka) und Cluster-Name (ticketflow.kafka.clusterName) kommen
-# von dort. Der Kafka-Namespace ist bewusst von dem der Anwendung getrennt; die KafkaUser-CRs
-# bilden die einzige Ausnahme und liegen im App-Namespace - warum, steht in templates/_helpers.tpl.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
 kafka:
 
-  # Kafka-Version, die der gepinnte Strimzi-Operator (charts/strimzi-operator, Chart-Version
-  # 1.1.0, existiert real nicht) unterstuetzt - live gegen den Kafka.status-Fehler geprueft
-  # (Operator meldete beim ersten Sync-Versuch "Unsupported Kafka.spec.kafka.version: 4.0.0.
-  # Supported versions are: [4.2.0, 4.2.1, 4.3.0]"), 4.3.0 gewaehlt als neueste unterstuetzte.
-  # Kein metadataVersion gesetzt - siehe Kommentar in templates/messaging/kafka-cluster.yaml.
+  # Newest version supported by the pinned Strimzi operator.
   version: "4.3.0"
 
-  # Getrennte Pools statt Combined-Role (anders als unser erster Entwurf) - orientiert an der
-  # realen Referenz. Braucht mehr Pods als Combined-Role, aber ist die im Referenz-Setup
-  # tatsaechlich genutzte Aufteilung.
-  #
-  # P4/P5: je DREI Replicas, in dev wie in prod (values-dev.yaml unterscheidet sich nur noch bei
-  # Storage-Groesse). Drei, weil der Cluster drei simulierte Regionen hat und die
-  # topologySpreadConstraints in den NodePool-Templates genau einen Pod pro Region erzwingen:
-  #   - Broker: replicationFactor 3 + min.insync.replicas 2 -> eine Region (Node) darf ausfallen
-  #     bzw. per Rolling Update neu starten, ohne dass catalog-api eine Reservierung abweisen muss.
-  #   - Controller: KRaft-Quorum braucht eine Mehrheit - 3 ist die kleinste Zahl, die den
-  #     Verlust eines Controllers uebersteht (2 von 3), 2 Controller haetten keine Toleranz.
-  #
-  # Requests/Limits - hergeleitet, nicht geraten (Budget-Rechnung: 3 Worker; Summe aller
-  # Kafka-Requests = 3 x 1Gi + 3 x 512Mi = 4,5Gi):
-  #   memory request == limit: Broker/Controller sind zustandsbehaftet - ein OOM-Kill oder eine
-  #     Eviction bei Node-Memory-Druck loest Log-Recovery + Leader-Wechsel aus. Mit request ==
-  #     limit reserviert der Scheduler den vollen Speicher, der Pod wird nie ueberbucht.
-  #   cpu request < limit: CPU ist komprimierbar (Drosselung statt Kill). Der Request deckt den
-  #     Grundbetrieb, das hohe Limit laesst Bursts (Flash-Sale, Log-Recovery nach Neustart, GC)
-  #     zu, ohne dass Drosselung die Produce-Latenz von catalog-api hochtreibt.
-  #   Nachmessen: Grafana container_memory_working_set_bytes / container_cpu_usage_seconds_total
-  #   waehrend des k6-Flash-Sale-Tests (src/load-generator) - bei Abweichung hier anpassen.
+  # Separate broker/controller pools, 3 each (one per region, P4/P5):
+  # - brokers: RF 3 + min.insync 2 survive one region down
+  # - controllers: smallest quorum that survives one loss
+  # Memory request == limit (stateful, never overcommit); CPU limit > request for bursts.
+  # Total Kafka requests: 3 x 1Gi + 3 x 512Mi = 4.5Gi.
   controller:
     replicas: 3
     storage:
       type: persistent-claim
-      # KRaft-Metadaten-Log: nur Topic-/Partition-/User-Metadaten (2 Topics, 4 KafkaUser) -
-      # Kilobytes, 2Gi ist reine Reserve fuer Snapshots.
+      # Metadata log only (KBs).
       size: 2Gi
-    # 256m Heap: der Metadaten-Zustand von 2 Topics/wenigen Partitionen ist winzig. Rest bis
-    # 512Mi: ~100Mi Metaspace, ~50Mi JMX-Exporter-Agent (metricsConfig, P7), Thread-Stacks und
-    # Netzwerk-Puffer.
+    # Tiny metadata state; rest of 512Mi for metaspace, JMX agent, buffers.
     jvmOptions:
       heap: 256m
     resources:
@@ -80,29 +34,21 @@ kafka:
     replicas: 3
     storage:
       type: persistent-claim
-      # Reservierungs-Events sind ~300 Byte JSON. Selbst 1 Mio. Events (weit ueber 3 Hallen x
-      # 1000 Plaetze inkl. abgelehnter Versuche) x 2 Topics = ~600MB bei 7 Tagen Retention.
+      # ~300-byte events: 1M events x 2 topics = ~600MB at 7 days retention.
       size: 5Gi
-    # 512m Heap = Haelfte des Limits: Kafka haelt Nachrichten nicht im Heap, sondern liest/
-    # schreibt ueber den OS-Page-Cache - ein grosser Heap bringt nichts, nur laengere GC-Pausen.
-    # Rest bis 1Gi: ~250-300Mi Off-Heap (Metaspace, Direct-Buffers fuer Netzwerk/Replikation,
-    # JMX-Exporter) + ~200Mi Page-Cache (reclaimbar, fuehrt nicht zum OOM-Kill).
+    # Half the limit: Kafka uses the page cache, not the heap. Rest: ~300Mi off-heap + page cache.
     jvmOptions:
       heap: 512m
     resources:
       requests:
-        # Grundlast: Follower-Replikation von ~40 Partition-Replicas je Broker (siehe topics)
-        # + Metrik-Scrapes. Drei Broker zusammen reservieren damit 0,6 Kerne.
+        # Baseline: replicating ~40 partition replicas per broker.
         cpu: 200m
         memory: 1Gi
       limits:
         cpu: "1"
         memory: 1Gi
 
-  # Muss zur Broker-Zahl passen: replicationFactor 3 bei 3 Brokern, min.insync.replicas 2 ->
-  # Produce mit acks=all toleriert genau einen fehlenden Broker (Ausfall ODER Rolling-Update-
-  # Schritt, P5). Wirkt fuer die internen Topics (__consumer_offsets) nur beim ersten Anlegen -
-  # siehe README ## Umstellung von 1 auf 3 Broker.
+  # Must match the broker count. Only applies to internal topics at creation.
   config:
     offsetsTopicReplicationFactor: 3
     transactionStateLogReplicationFactor: 3
@@ -110,11 +56,7 @@ kafka:
     defaultReplicationFactor: 3
     minInsyncReplicas: 2
 
-  # Topic-/User-Operator sind Java-Prozesse im selben Entity-Operator-Pod. Live gemessen (kubectl
-  # top, Leerlauf) ~220-235Mi je Container - das fruehere Limit von 256Mi liess kaum Luft, 384Mi
-  # deckt Reconcile-Spitzen ab. Memory request == limit aus demselben Grund wie bei den Brokern
-  # (kein Ueberbuchen, kein OOM-Kill mitten im Reconcile). CPU im Leerlauf 1-8m; der Request
-  # reserviert Grundlast, das Limit laesst den JVM-Start zu, ohne ihn minutenlang zu drosseln.
+  # Topic/User operator JVMs, measured ~230Mi each at idle.
   entityOperator:
     topicOperator:
       resources:
@@ -133,7 +75,7 @@ kafka:
           cpu: 250m
           memory: 384Mi
 
-  # Kafka Exporter (Consumer-Lag-Metriken, P7): Go-Binary, live ~9Mi / 1m CPU.
+  # Go binary, ~9Mi.
   kafkaExporter:
     resources:
       requests:
@@ -143,19 +85,9 @@ kafka:
         cpu: 100m
         memory: 64Mi
 
-  # RESERVATION_TOPIC (catalog-api -> reservation-worker) und RESULT_TOPIC
-  # (reservation-worker -> notification-worker), siehe src/*/README.md ## Konfiguration.
-  # replicationFactor darf broker.replicas nicht uebersteigen.
-  #
-  # partitions: 20 (dev und prod gleich) = Obergrenze der parallelen Consumer je Consumer-Group.
-  # charts/reservation-worker skaliert per KEDA auf maximal 10 Pods (config.keda.maxReplicaCount)
-  # - 20 ist ein Vielfaches davon (jeder Pod genau 2 Partitionen) und laesst Reserve bis 20 Pods.
-  # Nicht "auf Vorrat" hoeher: Kafka kann Partitionen eines Topics nie reduzieren, nur erhoehen,
-  # und jede Erhoehung verschiebt die Zuordnung Key (seat_id) -> Partition. Kosten auf den
-  # Brokern: 2 Topics x 20 Partitionen x RF 3 = 120 Partition-Replicas, ~40 je Broker -
-  # vernachlaessigbar fuer Heap und Page-Cache bei ~300-Byte-Events.
-  # reservation-result hat dieselbe Zahl, damit notification-worker unabhaengig davon mitwachsen
-  # kann.
+  # replicationFactor <= broker count.
+  # 20 partitions = max parallel consumers (KEDA max 10 pods -> 2 each). Kafka can't reduce
+  # partitions, and increasing them remaps keys.
   topics:
     - name: reservation-requested
       partitions: 20
@@ -172,25 +104,14 @@ kafka:
         cleanup.policy: delete
         min.insync.replicas: "2"
 
-  # B2 (Root-README ## Entscheidungen): eine KafkaUser-CR (SCRAM-SHA-512 + engst moegliche ACLs)
-  # pro Client-Identitaet statt eines einzigen geteilten Credentials - siehe
-  # templates/messaging/kafka-users.yaml. name = KafkaUser-CR-Name = SASL-Username = Name des vom
-  # Strimzi User Operator angelegten Secrets (Keys "password"/"sasl.jaas.config"), das
-  # verbrauchende Charts direkt per secretKeyRef referenzieren (funktioniert nur, weil
-  # catalog-api/reservation-worker/notification-worker denselben Namespace "ticketflow" wie
-  # dieser Kafka-Cluster teilen - siehe charts/README.md). operations sind Kafka-ACL-Operationen
-  # (Read/Write/Describe/... - siehe `kubectl explain kafkauser.spec.authorization.acls.operations`);
-  # DESCRIBE ist bei WRITE/READ auf demselben Topic automatisch mit-erlaubt (Kafka-eigenes
-  # implizites Grant), daher hier nicht redundant aufgefuehrt.
+  # B2: one KafkaUser per client; name = SASL user = Strimzi secret name. READ/WRITE imply DESCRIBE.
   users:
-    # catalog-api: darf ReservationRequested nur schreiben, nie lesen (siehe Root-README ## B2).
+    # Write only.
     - name: catalog-api
       acls:
         - resource: { type: topic, name: reservation-requested, patternType: literal }
           operations: [Write]
-    # reservation-worker: konsumiert ReservationRequested (eigene Consumer-Group "reservation-worker",
-    # muss zum Config-Wert config.consumerGroup in charts/reservation-worker/values.yaml passen)
-    # und publiziert das Ergebnis auf ReservationResult.
+    # Group must match config.consumerGroup in charts/reservation-worker.
     - name: reservation-worker
       acls:
         - resource: { type: topic, name: reservation-requested, patternType: literal }
@@ -199,26 +120,14 @@ kafka:
           operations: [Read]
         - resource: { type: topic, name: reservation-result, patternType: literal }
           operations: [Write]
-    # notification-worker: zweite, unabhaengige Consumer-Group auf demselben ReservationResult-Topic
-    # (Kafka als Bus mit Fan-out, siehe CLAUDE.md ## Domain model) - muss zu
-    # charts/notification-worker/values.yaml config.consumerGroup passen.
+    # Second, independent group (fan-out); must match charts/notification-worker.
     - name: notification-worker
       acls:
         - resource: { type: topic, name: reservation-result, patternType: literal }
           operations: [Read]
         - resource: { type: group, name: notification-worker, patternType: literal }
           operations: [Read]
-    # akhq: schreibgeschuetzte Kafka-Ops-UI (siehe Root-README ## B2 "AKHQ schreibgeschuetzt
-    # konfiguriert") - braucht Sicht auf ALLE Topics/Consumer-Groups (nicht nur die beiden oben),
-    # deshalb Resource-Name "*" (Kafkas eingebauter ACL-Wildcard fuer "jede Resource dieses Typs",
-    # kein Praefix-Pattern). Seit 2026-09-23 KEIN passwordSecretName mehr - das Passwort wird wie
-    # bei catalog-api/reservation-worker/notification-worker vom Strimzi User Operator selbst
-    # generiert (Secret "akhq" im App-Namespace, Keys password/sasl.jaas.config). Dass AKHQs Pod
-    # im Namespace "kafka" laeuft und dieses Secret damit nicht direkt per secretKeyRef lesen
-    # kann (Namespace-Grenze), wird jetzt genau wie bei den drei anderen Usern geloest: ein
-    # PushSecret (kafka-user-pushsecrets.yaml) spiegelt es nach OpenBao, und
-    # charts/akhq/templates/kafka-sasl-secret.yaml holt es von dort wieder heraus - keine
-    # AKHQ-spezifische Sonderbehandlung mehr.
+    # Read-only UI over all topics/groups ("*" wildcard). Password reaches AKHQ via OpenBao.
     - name: akhq
       acls:
         - resource: { type: topic, name: "*", patternType: literal }
@@ -227,24 +136,15 @@ kafka:
           operations: [Describe, Read]
         - resource: { type: cluster }
           operations: [Describe]
-    # Kein "apicurio"-Eintrag hier (frueherer Versuch, siehe git-Historie) - Apicurios
-    # kafkasql-Storage unterstuetzt kein SCRAM/PLAIN-SASL mit Username/Passwort (siehe
-    # kafka-cluster.yaml Kommentar beim "unauth"-Listener), eine KafkaUser-CR braucht aber immer
-    # eine Authentifizierungsmethode. Apicurio verbindet stattdessen unauthentifiziert ueber den
-    # "unauth"-Listener und ist dort per authorization.superUsers (kafka-cluster.yaml) als
-    # "User:ANONYMOUS" freigeschaltet - keine ACL/ KafkaUser noetig.
+    # No apicurio user: it uses the anonymous listener (no SASL support).
 
 
-# Apicurio Registry (charts/apicurio), siehe templates/schema-registry/ und charts/README.md
-# ## apicurio. Die URL ist die vom Apicurio-Chart gerenderte Service-DNS (Release-Name "apicurio",
-# = Name des ApplicationSet-Elements) - noch nicht live gegen einen echten Sync geprueft.
+# Apicurio registry (charts/apicurio).
 schemaRegistry:
-  # Leer lassen: wird als "http://apicurio.<ticketflow.namespaces.kafka>.svc:8080/apis/registry/v3"
-  # abgeleitet - charts/apicurio laeuft im selben Kafka-Namespace.
+  # Empty = http://apicurio.<kafka ns>.svc:8080/apis/registry/v3
   url: ""
   groupId: ticketflow
-  # Registrierungs-Job (templates/schema-registry/register-job.yaml): alpine + curl/jq, laeuft
-  # einmal pro Sync fuer wenige Sekunden.
+  # Registration job image (alpine + curl/jq).
   job:
     resources:
       requests:

@@ -1,25 +1,10 @@
-# Zentrale, deployment-weite Werte - werden NICHT hier gepflegt, sondern in
-# gitops/env/cluster.yaml (ArgoCD reicht die Datei jedem Chart per Multi-Source "$values"
-# durch, siehe gitops/applicationset.yaml). Der leere Default steht hier nur, damit ein
-# Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers liefert.
-# Lokal deshalb immer:
-#   helm template <name> charts/<name> -f charts/<name>/values.yaml -f gitops/env/cluster.yaml
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Hostname, unter dem Traefiks LoadBalancer-Service selbst per external-dns veroeffentlicht
-# wird - dient als stabiles CNAME-Ziel fuer alles, was per IngressRoute/IngressRouteTCP/-UDP
-# routet (external-dns' traefik-proxy-Source kann Targets NICHT selbst aus dem
-# Service-Status ableiten, siehe charts/argocd-ingress/values.yaml).
-#
-# Leer lassen: leitet sich per Default als "traefik.<ticketflow.dnsZone>" aus der zentralen
-# Konfiguration ab (gitops/env/cluster.yaml) und liegt damit automatisch innerhalb der
-# aktivierten RFC2136-Zone.
+# Traefik's own DNS name, the CNAME target for IngressRoutes. Empty = traefik.<dnsZone>.
 traefikHostname: ""
 
-# Requests/Limits fuer k3s' mitgelieferten Traefik (Chart-Default: keine). Werden per
-# HelmChartConfig in dessen HelmChart gemerged. Traefik liegt im Flash-Sale-Lastpfad - jeder
-# Request aus src/load-generator geht ueber den Ingress zu catalog-api -, deshalb ein hohes
-# CPU-Limit, damit Drosselung nicht die Reservierungs-Latenz bestimmt. Live im Leerlauf ~33Mi.
+# Traefik is on the flash-sale path: high CPU limit so throttling doesn't set the latency.
 resources:
   requests:
     cpu: 100m
@@ -28,8 +13,5 @@ resources:
     cpu: "1"
     memory: 256Mi
 
-# Zwei Traefik-Pods in zwei Regionen (P4) - jeder Request (auch jeder Flash-Sale-Request des
-# load-generators) laeuft ueber Traefik; mit nur einem Pod waere ein Worker-Ausfall ein Ausfall
-# aller Ingress-Hosts. ServiceLB (svclb-traefik) laeuft ohnehin auf jedem Node und leitet an
-# beide Pods weiter.
+# P4: two pods in two regions; one pod would make a worker outage an outage of all hosts.
 replicas: 2

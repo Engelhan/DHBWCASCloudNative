@@ -1,49 +1,25 @@
-# Zentrale, deployment-weite Werte - siehe gitops/env/cluster.yaml. Leerer Default nur, damit
-# ein Rendern ohne diese Datei eine verstaendliche Fehlermeldung statt eines Nil-Pointers gibt.
+# Set via gitops/env/cluster.yaml; empty default only for a readable error.
 ticketflow: {}
 
-# Apicurio Registry (https://www.apicur.io) - JSON-Schema-Registry fuer die Kafka-Event-Contracts
-# (ReservationRequested/ReservationResult), Carlos' Scope (Kafka Cluster/Schema Registry/AKHQ/
-# reservation-worker), siehe CLAUDE.md ## Team. Volleigener Chart statt Upstream-Wrapper - siehe
-# Chart.yaml fuer die Begruendung (community Upstream-Chart nicht mehr pullbar).
-# Zwei Replicas in zwei Regionen (P4). Mit kafkasql-Storage problemlos: jede Instanz liest das
-# Journal-Topic mit einer eigenen, zufaellig benannten Consumer-Group vollstaendig in ihre eigene
-# In-Memory-H2 - die Instanzen teilen keinen Zustand ausser Kafka.
+# Schema registry. Two replicas (P4); each reads the kafkasql journal into its own H2.
 replicaCount: 2
 
 image:
   repository: quay.io/apicurio/apicurio-registry
-  tag: "3.3.3" # kein :latest, siehe P3; echte, aktuelle 3.x-Version (verifiziert auf quay.io)
+  tag: "3.3.3"
   pullPolicy: IfNotPresent
 
-# kafkasql-Storage: Schemas landen in einem Kafka-Topic + In-Memory-H2 statt einer eigenen
-# Postgres-Instanz - vermeidet bewusst dieselbe Cross-Namespace-Secret-Problematik, die andere
-# Services (z.B. reservation-worker/Postgres) loesen mussten (siehe deren values.yaml-Kommentare).
-# Zeigt auf den Strimzi-Bootstrap-Service im Kafka-Namespace, Port 9093 =
-# der "unauth"-Listener (charts/kafka-cluster kafka-cluster.yaml), nicht der SASL-Listener auf
-# 9092. Grund: Apicurios kafkasql-Storage unterstuetzt in Version 3.3.3 kein SCRAM/PLAIN-SASL mit
-# Username/Passwort - der Quellcode (KafkaSqlConfiguration.java, gegen den echten 3.3.3-Tag auf
-# GitHub geprueft) baut sasl.jaas.config nur programmatisch fuer einen OAuth-Client-Credentials-
-# Flow; ein GitHub-Issue (Apicurio/apicurio-registry#4893) bestaetigt, dass SASL/PLAIN am selben,
-# hart auf OAuth verdrahteten Callback-Handler scheitert. Ein erster Versuch mit SCRAM-SHA-512 +
-# JAAS-Secret (siehe git-Historie) scheiterte deshalb live mit
-# "No serviceName defined in either JAAS or Kafka config" (der Client fiel mangels
-# sasl.mechanism-Unterstuetzung auf GSSAPI/Kerberos zurueck). Einen echten OAuth/OIDC-Server nur
-# fuer dieses eine Client-Login aufzusetzen war fuer dieses Uni-Projekt nicht verhaeltnismaessig,
-# daher der pragmatische unauthentifizierte Zweit-Listener statt SASL (kein externer
-# Zugriffspunkt, type: internal). Zugangsdaten deshalb komplett entfallen, kein Secret noetig.
+# kafkasql storage (Kafka topic + in-memory H2), no own database. Uses the unauthenticated
+# listener: Apicurio 3.3.3 supports only OAuth for Kafka SASL.
 config:
   storageKind: kafkasql
-  # Leer lassen: wird aus ticketflow.kafka.clusterName + ticketflow.namespaces.kafka
-  # abgeleitet (siehe templates/_helpers.tpl).
+  # Empty = derived from ticketflow.kafka.clusterName/namespaces.kafka.
   kafkaBootstrapServers: ""
 
 service:
   port: 8080
 
-# Groessenordnung an den (fuer 2.x geschriebenen) Vorschlagswerten des urspruenglich geplanten
-# Upstream-Charts orientiert - Apicurio ist eine Quarkus/JVM-Anwendung, braucht spuerbar mehr
-# Memory als z.B. AKHQ.
+# Quarkus/JVM app.
 resources:
   requests:
     cpu: 200m
@@ -52,11 +28,7 @@ resources:
     cpu: 1000m
     memory: 1300Mi
 
-# runAsUser: 185 ist keine Vermutung, sondern die von Red-Hat/Quarkus-basierten Images (inkl.
-# frueherer Apicurio-Versionen) verwendete Standard-UID. readOnlyRootFilesystem bewusst NICHT
-# gesetzt - unklar, ob/wohin die Anwendung zur Laufzeit schreibt (kein Hinweis in der 3.x-Doku
-# gefunden); vor einem echten Deploy per laufendem Pod verifizieren, dann erst aktivieren (siehe
-# charts/README.md ## Resource-Limits... zum selben Vorgehen bei AKHQ/Tempo).
+# 185 = default UID of Quarkus images. readOnlyRootFilesystem unverified, left off.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 185
@@ -70,13 +42,11 @@ securityContext:
 nameOverride: ""
 fullnameOverride: ""
 
-# Harte Verteilung ueber die drei simulierten Regionen (P4) - gleiches Muster wie
-# charts/ticketflow-app catalogApi.topologySpreadConstraint.
+# P4: hard spread across regions.
 topologySpreadConstraint:
   enabled: true
   maxSkew: 1
 
-# Bei zwei Replicas haelt minAvailable: 1 immer eine Instanz erreichbar und laesst einen Drain zu.
 podDisruptionBudget:
   enabled: true
   minAvailable: 1

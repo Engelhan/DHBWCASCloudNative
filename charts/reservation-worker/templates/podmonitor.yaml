@@ -9,8 +9,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  # PodMonitor statt ServiceMonitor: siehe values.yaml-Kommentar - kein anderer Konsumenten der
-  # HTTP-Endpunkte, eine eigene Service-Ressource waere unnoetig.
+  # PodMonitor: no Service, nothing else calls the HTTP endpoints.
   selector:
     matchLabels:
       {{- include "reservation-worker.selectorLabels" . | nindent 6 }}
