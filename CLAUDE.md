@@ -35,7 +35,7 @@ Observability dropped as Pflichtthemen, moved to optional bonus B1 Observability
 Teil B now needs only **one** elective topic (10 points total), not two. Team has already
 implemented work matching three electives (W1 Packaging, W2 GitOps, W7 Cluster-Härtung via
 OpenBao) — which one counts as the graded Teil-B topic is an **open team decision** (see root
-`README.md` `## ToDo` 23.06. and the `TODO` markers in `## Entscheidungen`/`## Bonus`), not
+`TODO-Abgabe.md` (the former README `## ToDo`, moved there 2026-10-04) and the `TODO` markers in `## Entscheidungen`/`## Bonus`), not
 resolved here. Don't assume W1+W2 are still "the" chosen pair — that was the V1 framing.
 
 ## Domain model (why the infra exists)
@@ -654,7 +654,7 @@ commands here once these gaps close instead of leaving this section stale.
 - **Done, verified locally (2026-09-14, Go 1.27: `go mod tidy && go vet ./... && go build ./...
   && go test ./...` all pass, `go.sum` now committed):** `src/reservation-worker/` — the
   second Kafka consumer in the repo, the one that does the actual booking (Carlos' "Kafka
-  Consumer" task, see root `README.md` ## ToDo). Consumes `RESERVATION_TOPIC`
+  Consumer" task, see `TODO-Abgabe.md`, formerly root README ## ToDo). Consumes `RESERVATION_TOPIC`
   (`event.Requested`, exactly `catalog-api`'s already-published schema), claims the seat via
   **optimistic locking on `seats.status`** (`UPDATE ... WHERE status = 'free'`, no
   `SELECT ... FOR UPDATE`, per the service's own README), writes `reservations` and publishes

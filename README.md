@@ -3,74 +3,6 @@
 Cloud-native Ticketverkaufsplattform für Live-Events. Prüfungsleistung "Cloud Infrastructures and
 Cloud Native Applications", DHBW. Dieses Dokument ersetzt den schriftlichen Bericht vollständig.
 
-## ToDo
-
-### 23.06.2026
-
-P3 -> Niklas prüfen
-P4 -> Jeder für sein Helm Chart prüfen
-P5 -> Jeder für sein Helm Chart prüfen
-W2 -> Niklas prüft ob das passt (sollte bereits fertig sein)
-B3 -> neue technologie Kafka, bereits umgesetzt -> muss noch endgültig dokumentiert werden
-B4 -> Entscheidung welches Wahlthema wir nehmen W1 oder W7
-Wollen wir noch B2 machen für die Bonuspunkte -> ja zumindest dokumentieren, die Punkte kann man mitnhehmen
-
-
-
-Pfisterer:
-- Application
-   - Frontend -> Philipp
-      - Buchungsseite, Sitzplatzauswahl, Anzeige Bestätigung, Fehlermeldung, Datenbank Info welche PLätze belegt, Session ID Kundenunterscheidung
-   - API + Kafka Producer -> Philipp
-   - Kafka Consumer -> Carlos
-      - DB Schema aufbauen und über applikation versionieren
-      - Event verarbeitung mit Reservierung des sitzplatzes, anschließend event ob successfull oder nicht
-   - Message service -> Niklas
-- Kafka Cluster -> Carlos
-   - Schema Registry
-   - Kafka Cluster
-   - AKHQ als Oberfläche
-- Postgres Cluster -> Niklas
-
-
-Für alle Applikationen:
-- Scheduling und Platzierung der Pods
-- Resilienz der deployments
-- Requests und Limits checken
-- Helm Chart mit Values Schema
-
-Bonus:
-- Helm Charts
-- Packaging von Helm Charts
-- Kafka Strimzi
-- Chaos Experiment
-
-
-Screen Cast:
-Alle Zusammen
-
-
-- Observability mit OpenTelemetry
-   - Logging
-   - Metriken
-   - evtl. Traces
-- Autoscaler
-
-Sturm:
-Beleuchten Sie die ihnen zugeteilte Laborarbeit auf der Basis der in der Vorlesung
-vermittelten theoretischen Grundlagen:
-− Welche Vorteile und Nachteile ergeben sich für Ihre Anwendung aus der Realisierung
-als Cloud Native? Zeigen Sie dabei auch alternative Realisierungsmöglichkeiten auf,
-stellen Sie diese Ihrer Cloud Native Lösung gegenüber und erörtern Sie kritisch.
-Unterlegen sie ihrer Argumentation mit konkreten Beispielen.
-− Wie gewährleisten Sie die Datensicherheit? Bewerten Sie dabei auch die Relevanz der
-DSGVO für Ihre Anwendung.
-− Skizzieren und begründen Sie abschließend welche Cloud Native Pattern sich wo in
-ihrer Anwendungsarchitektur wiederfinden.
-
-Alea macht einen ersten Wurf
- 
-
 > **Status:** Der Stack läuft auf der DHBWCloud. Noch offene Punkte sind mit `TODO` markiert.
 > Jeder Ordner enthält eine eigene README mit Details.
 
@@ -358,11 +290,11 @@ keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verur
 
 > `TODO` (Aufgabenstellung V2, Stand 23.07.): P6 (Skalierbarkeit) und P7 (Observability) sind
 > keine Pflichtthemen mehr — nur noch P1–P5 (siehe `2026_07_23_Aufgabenstellung - v2.pdf`).
-> KEDA-Autoscaling ist deshalb nach `## Bonus` B2 verschoben (Team-Beschluss laut `## ToDo`
+> KEDA-Autoscaling ist deshalb nach `## Bonus` B2 verschoben (Team-Beschluss laut `TODO-Abgabe.md`
 > 23.06.: "ja, zumindest dokumentieren"). Observability (Dashboard/Alert-Regel) ist nicht
 > Bonus-reif, siehe `## Grenzen`.
 
-> `TODO` (Team-Entscheidung offen, siehe `## ToDo` 23.06. "B4 -> Entscheidung welches Wahlthema
+> `TODO` (Team-Entscheidung offen, siehe `TODO-Abgabe.md` Punkt 2, "B4 -> Entscheidung welches Wahlthema
 > wir nehmen W1 oder W7"): V2 zählt für Teil B (10 Punkte) nur **ein** Wahlthema. Aktuell stehen
 > hier noch W1 und W2 nebeneinander, zusätzlich ist W7 (Cluster-Härtung/OpenBao) weit
 > fortgeschritten in `## Bonus` B3 dokumentiert. Sobald entschieden: das gewählte Thema bleibt
@@ -455,7 +387,7 @@ abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). 
 > `TODO`: Nummerierung folgt der Bonus-Tabelle in Aufgabenstellung V2 (B1 Observability, B2
 > Autoscaling, B3 Weiteres Wahlthema, B4 Neue Technologie, ...). B3 (W7 Cluster-Härtung) steht
 > hier nur vorläufig, solange die Team-Entscheidung "W1 oder W7 als Haupt-Wahlthema" offen ist
-> (siehe `## ToDo` und `## Entscheidungen`) — falls W7 gewählt wird, wandert dieser Absatz nach
+> (siehe `TODO-Abgabe.md` und `## Entscheidungen`) — falls W7 gewählt wird, wandert dieser Absatz nach
 > `## Entscheidungen` und ein anderes Thema rückt an seine Stelle. Für B3/B4 gilt zusätzlich:
 > "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe" — Verweise auf Dateien werden
 > ergänzt/geprüft, sobald der Nachweis live existiert.
