@@ -86,13 +86,32 @@ Four layers, each owning a distinct concern — don't blur them:
      apps. The list field is `chartPath`, **not** `path` — the git-files generator already
      occupies `.path` with file metadata and the two would collide in the cross product.
      `spec.template` is a typed Kubernetes object, so Go expressions may only appear inside
-     string values; everything conditional (sync-wave annotation, `ServerSideApply`,
-     `ignoreDifferences`) lives in `spec.templatePatch` at the bottom, which is a real text
-     template. Element names must stay byte-identical to the old Application names — that is what
-     lets the ApplicationSet adopt existing Applications instead of duplicating them.
-   - The **one literal repo URL left in the whole repo** is the `repoURL` of that git-files
-     generator (chicken-and-egg: it must know which repo to read `env/cluster.yaml` from). A fork
-     therefore edits two things: `env/cluster.yaml` and that one line.
+     string values; everything conditional (`ServerSideApply`, `ignoreDifferences`) lives in
+     `spec.templatePatch` at the bottom, which is a real text template. Element names must stay
+     byte-identical to the old Application names — that is what lets an ApplicationSet adopt
+     existing Applications instead of duplicating them.
+   - **Since 2026-10-04 the file holds TWO ApplicationSets** (two YAML documents, label
+     `ticketflow.io/stage`): `ticketflow-platform` (13 apps: addons, operators, OpenBao incl. its DB
+     and the ClusterSecretStore) and `ticketflow-apps` (8 apps: network-policies, postgres-cluster,
+     kafka-cluster, apicurio, akhq, ticketflow-app, both workers). `infra/ansible/roles/gitops_rollout`
+     applies them in order (`kubectl apply -l ticketflow.io/stage=...`) and only applies `apps` once
+     every `platform` Application is Synced **and** Healthy (expected count read from the file, so an
+     empty list never counts as green; 30 min timeout per stage, failure lists the red apps).
+     **ArgoCD sync waves do nothing on ApplicationSet-generated Applications** — the former
+     `syncWave` fields were inert and are gone. Progressive Syncs (`RollingSync`) was rejected: it
+     forces automated sync off, and in the 3.4.5 controller code a pure live drift never triggers a
+     resync (only a new revision/spec does) — i.e. no selfHeal. Every Application now carries
+     `retry` (30s→5m backoff, unlimited) because intra-stage dependencies (issuer→cert-manager CRDs,
+     openbao→openbao-postgres, network-policies→namespaces) would otherwise leave a stage red
+     forever. **`kafka-cluster` and `apicurio` must stay in the same stage** — kafka-cluster's
+     schema-registration hook loops on Apicurio without timeout. Staging only governs applying the
+     ApplicationSets; afterwards every app syncs independently on push. Migrating a running
+     cluster from the old single `ticketflow` set: `kubectl -n argocd delete applicationset
+     ticketflow --cascade=orphan` first (otherwise GC deletes all 21 apps), then
+     `bootstrap-gitops.yml` — see `gitops/README.md` ## Gestufter Rollout.
+   - The **only literal repo URLs left in the whole repo** are the `repoURL`s of the two git-files
+     generators (one per ApplicationSet, same file; chicken-and-egg: each must know which repo to
+     read `env/cluster.yaml` from). A fork therefore edits `env/cluster.yaml` and those two lines.
    - Every chart additionally gets `values-<environment>.yaml` with `ignoreMissingValueFiles:
      true`, so a chart that later gains a dev/prod split needs no ApplicationSet change.
    Every `Application` points at a chart under `charts/` in this repo (never directly at an
@@ -205,9 +224,10 @@ if needed rather than reviving the Ansible role.
 ### Ansible specifics (verified in WSL against real DHBWCloud VMs)
 
 - Roles run in a fixed order (see `playbooks/site.yml`): `common` → `k3s_server` → `k3s_agent` →
-  `node_labels` → `argocd_bootstrap` → `gitops_secrets`. Each depends on state from the previous
-  one (e.g. agents need the server's node-token; labels need registered nodes; `gitops_secrets`
-  needs the kubeconfig `k3s_server` fetched locally).
+  `node_labels` → `argocd_bootstrap` → `gitops_secrets` → `gitops_rollout`. Each depends on state
+  from the previous one (e.g. agents need the server's node-token; labels need registered nodes;
+  `gitops_secrets` needs the kubeconfig `k3s_server` fetched locally; `gitops_rollout` needs the
+  repo credential from `gitops_secrets`, or the platform stage could never turn green).
 - k3s runs **dual-stack, IPv6-primary**: `--node-ip`/`--cluster-cidr`/`--service-cidr` each take
   a comma-separated `<IPv6>,<IPv4>` pair (IPv6 first — kubeconfig/SSH stay IPv6-only; `--tls-san`
   gets both addresses as two separate flags, harmless and future-proofs the cert in case anything
@@ -242,11 +262,11 @@ if needed rather than reviving the Ansible role.
 - Real-VM run also confirmed: k3s server/agent join, IPv6 node registration (`kubectl get nodes
   -o wide` shows the real DHBWV6 addresses), and node Ready state all work as designed.
 - `argocd_bootstrap` installs a version-pinned ArgoCD **core** manifest (not HA — single
-  control-plane lab cluster) and applies `gitops/applicationset.yaml` **only if that file
-  already exists** (checked via `stat`, skips otherwise instead of failing); the `stat` guard
-  stays as a safety net for older checkouts/tags without it. This is the only object Ansible
-  applies in the GitOps layer — ArgoCD creates the Applications from it. **Nothing syncs the
-  ApplicationSet itself afterwards:** a change to `gitops/applicationset.yaml` (e.g. adding or
+  control-plane lab cluster). `gitops_rollout` (separate role, after `gitops_secrets`) applies
+  the two ApplicationSets from `gitops/applicationset.yaml` stage by stage (see the gitops layer
+  above) **only if that file already exists** (checked via `stat`, skips otherwise instead of
+  failing). They are the only objects Ansible applies in the GitOps layer — ArgoCD creates the
+  Applications from them. **Nothing syncs the ApplicationSets themselves afterwards:** a change to `gitops/applicationset.yaml` (e.g. adding or
   removing an element) needs `kubectl apply -f gitops/applicationset.yaml` (or a re-run of
   `playbooks/bootstrap-gitops.yml`) on every running cluster — found 2026-10-03, when the removed
   observability elements kept their Applications alive. Removing an element cascades through
@@ -309,8 +329,8 @@ if needed rather than reviving the Ansible role.
 ```bash
 # Fork personalization (only when deploying under a different DHBW account/repo). There is no
 # script for this any more — scripts/personalize.py and deploy.env.example were deleted, since
-# there is nothing left to spread around: edit gitops/env/cluster.yaml, plus the single literal
-# repoURL in the git-files generator of gitops/applicationset.yaml. Secrets stay where they were
+# there is nothing left to spread around: edit gitops/env/cluster.yaml, plus the two literal
+# repoURLs in the git-files generators of gitops/applicationset.yaml (one per ApplicationSet). Secrets stay where they were
 # (terraform.tfvars / secrets.yml). ArgoCD only ever reads the pushed remote state, so commit AND
 # push before expecting anything to roll out.
 
@@ -325,7 +345,7 @@ terraform apply        # also generates ../ansible/inventory/hosts.ini
 source .venv/bin/activate   # repo-root venv, see infra/ansible/README.md ## Voraussetzungen
 cd infra/ansible
 ansible-playbook playbooks/site.yml
-ansible-playbook playbooks/bootstrap-gitops.yml   # re-run only the ArgoCD/ApplicationSet step
+ansible-playbook playbooks/bootstrap-gitops.yml   # re-run ArgoCD + secrets + staged ApplicationSet rollout
 export KUBECONFIG=infra/ansible/kubeconfig
 kubectl get nodes -o wide
 kubectl -n argocd get pods

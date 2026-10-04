@@ -109,11 +109,13 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
 2. Ansible konfiguriert die VMs, installiert k3s (Server auf der Control-Plane, Agents auf den
    Workern), übernimmt die simulierte Region als Kubernetes-Node-Label
    (`topology.ticketflow/region`) und bootstrapt ArgoCD — siehe [`infra/ansible/`](infra/ansible/).
-3. ArgoCD übernimmt ab hier per GitOps den Rest: ein einziges `ApplicationSet`
-   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugt alle 21 Applications —
-   Cluster-Addons (Longhorn, cert-manager, external-dns), die Operatoren (CNPG, Strimzi, KEDA,
-   External Secrets), den zentralen Secret-Vault OpenBao, die projektweiten NetworkPolicies (siehe
-   `## Bonus`) und die TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
+3. ArgoCD übernimmt ab hier per GitOps den Rest: zwei `ApplicationSet`s
+   ([`gitops/applicationset.yaml`](gitops/applicationset.yaml)) erzeugen zusammen alle 21
+   Applications, gestuft: zuerst die Plattform — Cluster-Addons (Longhorn, cert-manager,
+   external-dns), die Operatoren (CNPG, Strimzi, KEDA, External Secrets) und der zentrale
+   Secret-Vault OpenBao —, und erst wenn deren Pods alle Health-Checks bestehen, die Anwendung:
+   Datenhaltung, Kafka, die projektweiten NetworkPolicies (siehe `## Bonus`) und die
+   TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
    aus der zentralen [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) — siehe
    [`gitops/`](gitops/).
 4. `catalog-api` nimmt Reservierungsanfragen entgegen und veröffentlicht sie als Event auf Kafka,
@@ -184,7 +186,7 @@ Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
 $EDITOR gitops/env/cluster.yaml
 #    repoURL, dnsZone, acmeEmail, rfc2136.keyName, imageRegistry, namePrefix
 
-# 2. Die eine Repo-URL im git-Generator des ApplicationSet (Henne-Ei, siehe Kommentar dort)
+# 2. Die Repo-URL in den beiden git-Generatoren der ApplicationSets (Henne-Ei, siehe Kommentar dort)
 $EDITOR gitops/applicationset.yaml
 
 # 3. Committen UND in den eigenen Fork pushen.
@@ -208,7 +210,9 @@ terraform init
 terraform apply
 
 # 2. VMs konfigurieren, k3s aufbauen, ArgoCD bootstrappen, GitOps-Secrets anlegen.
-#    Der letzte Schritt wendet gitops/applicationset.yaml an - alles Weitere rollt ArgoCD aus.
+#    Der letzte Schritt wendet gitops/applicationset.yaml gestuft an: erst die Plattform, dann -
+#    sobald alle Plattform-Applications Synced/Healthy sind - die Anwendung. Das Playbook endet
+#    erst, wenn alles gruen ist (oder bricht nach 30 min je Stufe mit den roten Apps ab).
 cd ../ansible
 ansible-inventory -i inventory/hosts.ini --list
 ansible-playbook playbooks/site.yml
@@ -217,8 +221,8 @@ ansible-playbook playbooks/site.yml
 # 3. Rollout prüfen (aus dem Repo-Wurzelverzeichnis)
 cd ../..
 export KUBECONFIG=infra/ansible/kubeconfig
-kubectl -n argocd get applicationset ticketflow
-kubectl -n argocd get applications          # 21 Stueck, alle Synced/Healthy
+kubectl -n argocd get applicationset        # ticketflow-platform, ticketflow-apps
+kubectl -n argocd get applications -L ticketflow.io/stage   # 21 Stueck, alle Synced/Healthy
 kubectl get pods -A -o wide
 kubectl get kafka,cluster.postgresql.cnpg.io -A
 
@@ -381,16 +385,24 @@ das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, da
 von `dev` auf `prod` (mehr `reservation-worker`-Replicas, echter Topology-Spread, engere
 PodDisruptionBudgets) eine einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
 
-**W2 – GitOps.** *Wahl:* ArgoCD mit einem `ApplicationSet` (Matrix aus git-files- und
-list-Generator), Auto-Sync und Self-Heal.
+**W2 – GitOps.** *Wahl:* ArgoCD mit zwei gestuften `ApplicationSet`s (je eine Matrix aus
+git-files- und list-Generator; Plattform zuerst, Anwendung erst wenn die Plattform vollständig
+Synced/Healthy ist), Auto-Sync und Self-Heal.
 *Alternative:* reines `kubectl apply`/eine CI-Pipeline ohne Cluster-seitigen Agenten.
 *Begründung:* Ansible bootstrappt bewusst nur so viel, dass ArgoCD läuft; alles danach (Operatoren,
 Kafka, Postgres, App) kommt aus Git. Der Trade-off: eine reine CI-Pipeline hätte keinen laufenden
 Agenten im Cluster, der Drift erkennt — eine manuell (z. B. während eines Incidents) geänderte
 Replica-Zahl bliebe bestehen, bis zufällig die nächste Pipeline läuft, statt automatisch per
-Self-Heal zurückgedreht zu werden. Das ApplicationSet statt einzelner `Application`-Dateien
-(App-of-Apps) ist dabei bewusst gewählt: vorher stand die Repo-URL 20-mal im Repo, und ein Fork,
-der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Repo lief. Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
+Self-Heal zurückgedreht zu werden. ApplicationSets statt einzelner `Application`-Dateien
+(App-of-Apps) sind dabei bewusst gewählt: vorher stand die Repo-URL 20-mal im Repo, und ein Fork,
+der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Repo lief. Die
+Zweiteilung kommt aus dem Lastpfad: `catalog-api` und `reservation-worker` melden sich erst
+bereit, wenn Postgres, Kafka und die Schema-Registry antworten, und die brauchen ihrerseits
+StorageClass, Operatoren und Secrets aus dem Vault. Erst wenn diese Plattform nachweislich grün ist,
+startet die Anwendung — statt dass ein frischer Cluster minutenlang in Fehlschleifen läuft, die
+man von echten Fehlern nicht unterscheiden kann. ArgoCD-Sync-Waves helfen hier nicht (sie wirken
+nicht auf von einem ApplicationSet erzeugte Applications), Progressive Syncs würden Self-Heal
+abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
 `kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
 
 ## Grenzen

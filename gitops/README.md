@@ -2,7 +2,8 @@
 
 Ab dem Punkt, an dem Ansible ArgoCD auf dem frischen k3s-Cluster installiert hat
 (`infra/ansible/roles/argocd_bootstrap/`), übernimmt ArgoCD den gesamten weiteren Rollout aus
-diesem Ordner — gesteuert über **ein einziges `ApplicationSet`**.
+diesem Ordner — gesteuert über **zwei `ApplicationSet`s, die nacheinander ausgerollt werden**
+(siehe ## Gestufter Rollout).
 
 ## Struktur
 
@@ -10,7 +11,7 @@ diesem Ordner — gesteuert über **ein einziges `ApplicationSet`**.
 gitops/
 ├── env/
 │   └── cluster.yaml         # ZENTRALE Konfiguration: Fork-URL, DNS-Zone, ACME, Images, dev/prod
-└── applicationset.yaml      # erzeugt alle 19 Applications aus einer Liste
+└── applicationset.yaml      # zwei ApplicationSets (platform, apps) -> zusammen 21 Applications
 ```
 
 `env/cluster.yaml` ist die einzige git-getrackte Datei, die für ein eigenes Deployment angepasst
@@ -18,7 +19,7 @@ werden muss. Sie wird an vier Stellen gelesen:
 
 | Leser | wofür |
 |---|---|
-| ArgoCD (git-files-Generator) | Repo-URL, Revision, Environment des ApplicationSet |
+| ArgoCD (git-files-Generator) | Repo-URL, Revision, Environment der ApplicationSets |
 | ArgoCD (Multi-Source `$values`) | reicht die Datei jedem Chart als zusätzliche Values-Datei durch |
 | Helm-Charts | `.Values.ticketflow.*` — DNS-Zone, Image-Registry/-Tag, ACME-Kontakt, TSIG-Key-Name |
 | Terraform / Ansible | `namePrefix` bzw. `repoURL` (siehe `infra/`) |
@@ -28,13 +29,13 @@ werden muss. Sie wird an vier Stellen gelesen:
 Vorher lag unter `apps/` je eine `Application`-Datei pro Komponente plus eine
 `app-of-apps.yaml` als Root. Die Repo-URL stand damit **19-mal** im Repo (plus einmal in
 `infra/ansible/roles/gitops_secrets/`) — für einen Fork waren das 20 Stellen, von denen eine
-übersehene genügte, damit ArgoCD still auf das Original-Repo zeigte. Jetzt steht sie genau
-einmal: in der `repoURL` des git-Generators in `applicationset.yaml`. Dass sie dort wörtlich
-stehen bleiben muss, ist ein Henne-Ei-Problem — der Generator muss wissen, aus welchem Repo er
-`env/cluster.yaml` überhaupt lesen soll.
+übersehene genügte, damit ArgoCD still auf das Original-Repo zeigte. Jetzt steht sie nur noch in
+den `repoURL`s der beiden git-Generatoren in `applicationset.yaml` (eine je ApplicationSet, in
+derselben Datei). Dass sie dort wörtlich stehen bleiben muss, ist ein Henne-Ei-Problem — der
+Generator muss wissen, aus welchem Repo er `env/cluster.yaml` überhaupt lesen soll.
 
 Jedes Listen-Element beschreibt eine Application mit `name`, `chartPath`, `namespace` und
-optional `serverSideApply`, `syncWave`, `ignoreReplicas`. Alles, was nicht für alle Applications
+optional `serverSideApply`, `ignoreReplicas`. Alles, was nicht für alle Applications
 gleich ist, steht im `templatePatch` am Ende der Datei — `spec.template` ist ein typisiertes
 Kubernetes-Objekt, in dem Go-Ausdrücke nur innerhalb von String-Werten funktionieren, nicht als
 `{{- if }}`-Blöcke um YAML-Schlüssel herum.
@@ -90,7 +91,47 @@ Namespace `monitoring`, Persistenz durchgehend über Longhorn (bereits Default-S
 Alle Applications nutzen aktuell `project: default` — eine dedizierte `ticketflow-project.yaml`
 (Repo-/Namespace-/Ressourcen-Scoping) ist noch offen.
 
-**Der Root ist kein `Application` mehr, sondern das `ApplicationSet` selbst.** Damit entfällt auch
+### Gestufter Rollout
+
+Die 21 Applications verteilen sich auf zwei ApplicationSets mit dem Label `ticketflow.io/stage`:
+
+| Stufe | ApplicationSet | Inhalt |
+|---|---|---|
+| 1 | `ticketflow-platform` | Longhorn, cert-manager (+ ClusterIssuer), external-dns, Traefik-Config, ArgoCD-Ingress, CNPG-/Strimzi-Operator, KEDA, External Secrets, OpenBao (+ eigene Postgres-DB, ClusterSecretStore) |
+| 2 | `ticketflow-apps` | NetworkPolicies, App-Postgres, Kafka, Apicurio, AKHQ, catalog-api/frontend, reservation-/notification-worker |
+
+`infra/ansible/roles/gitops_rollout` wendet Stufe 2 erst an, wenn **jede** Application aus Stufe 1
+`Synced` und `Healthy` ist. `Healthy` bedeutet bei Deployments/StatefulSets, dass alle Pods der
+aktuellen Revision ihre Readiness-Probe bestehen; bei Operator-CRs die Ready-Condition (ArgoCD
+bringt Health-Checks für CNPG `Cluster`, cert-manager `ClusterIssuer`, ESO `ClusterSecretStore`,
+Strimzi `Kafka` u. a. mit); bei `openbao` zusätzlich den durchgelaufenen Bootstrap-Hook. Damit
+startet die Anwendung erst, wenn StorageClass, CRDs, Zertifikats-Issuer und ein entsiegelter
+Secret-Vault tatsächlich bereitstehen — vorher hingen ExternalSecrets, PushSecrets, KafkaUser
+und ScaledObjects in Fehler-/Retry-Schleifen, bis die Plattform zufällig nachgezogen hatte.
+
+Warum so und nicht anders:
+- **ArgoCD-Sync-Waves** wirken nur innerhalb einer Application bzw. auf Applications unter einer
+  App-of-Apps. Auf von einem ApplicationSet erzeugte Applications haben sie keine Wirkung — die
+  früheren `syncWave`-Felder hier waren wirkungslos und sind entfernt.
+- **ApplicationSet-Progressive-Syncs (`RollingSync`)** würden die Reihenfolge auch bei jedem Push
+  einhalten, schalten aber Auto-Sync und `selfHeal` aller erzeugten Applications ab (im
+  ArgoCD-3.4.5-Code geprüft: eine reine Live-Drift löst dort keinen Sync aus, nur eine neue
+  Revision). Das widerspricht W2.
+
+Innerhalb einer Stufe hängen einzelne Apps weiterhin voneinander ab (z. B. `cert-manager-issuer`
+von den cert-manager-CRDs). Deshalb tragen **alle** Applications `retry` mit Backoff (30 s bis
+5 min) — ohne das versucht ArgoCD einen gescheiterten automatischen Sync für denselben Commit nie
+erneut, und die Stufe würde nie grün. `kafka-cluster` und `apicurio` müssen in derselben Stufe
+bleiben: der Schema-Registrierungs-Hook von `kafka-cluster` wartet ohne Timeout auf Apicurio,
+Apicurio braucht Kafka.
+
+Die Stufung gilt für das **Anwenden der ApplicationSets** (erster Rollout, erneuter
+`bootstrap-gitops.yml`-Lauf). Danach synct ArgoCD jede Application bei jedem Push unabhängig — die
+Plattform existiert dann bereits. Bleibt eine Plattform-App rot, bricht Ansible nach 30 Minuten
+mit der Liste der noch nicht grünen Applications ab, statt die Anwendung auf eine halbe Plattform
+zu setzen.
+
+**Der Root ist kein `Application` mehr, sondern die beiden `ApplicationSet`s selbst.** Damit entfällt auch
 der frühere `source.directory.exclude`-Kunstgriff: die alte `app-of-apps.yaml` lag im selben
 Ordner, den sie synchronisierte, und hätte sich mit `prune: true` + `selfHeal: true` sonst selbst
 löschen können (über ihren `resources-finalizer` kaskadierend alle Kind-Applications mit ihr — auf
@@ -106,6 +147,18 @@ kubectl -n argocd patch app app-of-apps --type=merge -p '{"metadata":{"finalizer
 kubectl -n argocd delete app app-of-apps --cascade=orphan
 kubectl apply -f gitops/applicationset.yaml
 kubectl -n argocd get applications      # 19 Stueck, keine Duplikate
+```
+
+**Migration von einem ApplicationSet (`ticketflow`) auf die zwei gestuften** (einmalig, auf einem
+laufenden Cluster): das alte Set muss ohne Kaskade verschwinden — sonst löscht die
+Garbage-Collection über die ownerReferences alle 21 Applications samt Workloads. `--cascade=orphan`
+entfernt nur die ownerReferences; die neuen Sets übernehmen die Applications danach über ihre
+Namen.
+
+```bash
+kubectl -n argocd delete applicationset ticketflow --cascade=orphan
+cd infra/ansible && ansible-playbook playbooks/bootstrap-gitops.yml   # Stufe 1, warten, Stufe 2
+kubectl -n argocd get applications -L ticketflow.io/stage             # 21 Stueck, je mit Stufe
 ```
 
 ## ArgoCD-UI öffentlich erreichbar (`argocd-ingress`)
@@ -154,8 +207,8 @@ Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim
 
 **Bei einem eigenen Fork** wird die Fork-URL an genau zwei Stellen eingetragen:
 `env/cluster.yaml` → `ticketflow.repoURL` (daraus speisen sich alle erzeugten Applications und
-das Credential aus `infra/ansible/roles/gitops_secrets`) und die `repoURL` des git-Generators in
-`applicationset.yaml` (Henne-Ei, siehe ## Struktur). Ein Suchen-und-Ersetzen-Skript dafür gibt es
+das Credential aus `infra/ansible/roles/gitops_secrets`) und die `repoURL`s der beiden
+git-Generatoren in `applicationset.yaml` (Henne-Ei, siehe ## Struktur). Ein Suchen-und-Ersetzen-Skript dafür gibt es
 nicht mehr — es wurde zusammen mit `gitops/apps/` entfernt, weil es nichts mehr zu verteilen gibt.
 
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
@@ -213,7 +266,10 @@ deployen.
 ## Verwendung
 
 ```bash
-kubectl apply -f gitops/applicationset.yaml   # normalerweise automatisch via argocd_bootstrap
+# normalerweise automatisch und gestuft via infra/ansible/roles/gitops_rollout; von Hand:
+kubectl apply -f gitops/applicationset.yaml -l ticketflow.io/stage=platform
+kubectl apply -f gitops/applicationset.yaml -l ticketflow.io/stage=apps   # erst wenn Stufe 1 gruen
+kubectl -n argocd get applications -L ticketflow.io/stage
 argocd app list
 argocd app get longhorn
 argocd app get cert-manager
@@ -256,9 +312,10 @@ Vier Applications: `openbao-postgres` (OpenBaos eigene CNPG-`Cluster`-CR, Namesp
 Operator zusammengehört). Details zu Chart-Aufbau/Werten stehen in `CLAUDE.md` ## Current
 implementation status; hier nur der GitOps-spezifische Teil.
 
-**Kein `syncWave` auf keiner der vier Applications** — wie bei `cnpg-operator`→`postgres-cluster`/
-`strimzi-operator`→`kafka-cluster` verlässt sich das auf `selfHeal`, statt eine explizite
-Reihenfolge zu erzwingen. Die tatsächliche Abhängigkeitskette bis alles zum ersten Mal grün ist,
+**Alle vier liegen in Stufe 1 (`ticketflow-platform`)**, ihre Konsumenten (`postgres-cluster`,
+`kafka-cluster`, `akhq`, `notification-worker`) in Stufe 2 — die Anwendung startet also erst, wenn
+der `ClusterSecretStore` gegen ein entsiegeltes OpenBao `Valid` ist (siehe ## Gestufter Rollout).
+Innerhalb der Stufe sorgt `retry` für die Reihenfolge. Die tatsächliche Abhängigkeitskette bis alles zum ersten Mal grün ist,
 ist trotzdem länger als bei jedem anderen Addon-Paar in diesem Repo: `cnpg-operator` →
 `openbao-postgres` → `openbao` (Bootstrap-Hook-Job läuft) → `openbao-secretstore` (wird `Valid`)
 → jede migrierte `ExternalSecret` (`charts/postgres-cluster`, `charts/kafka-cluster`,

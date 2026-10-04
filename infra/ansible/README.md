@@ -53,15 +53,16 @@ ansible/
 │   ├── hosts.ini             # von Terraform generiert, git-ignoriert (siehe hosts.ini.example)
 │   └── hosts.ini.example
 ├── playbooks/
-│   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap -> gitops_secrets
-│   └── bootstrap-gitops.yml # nur ArgoCD/ApplicationSet + gitops_secrets, separat erneut aufrufbar
+│   ├── site.yml             # Gesamtablauf: common -> k3s_server -> k3s_agent -> node_labels -> argocd_bootstrap -> gitops_secrets -> gitops_rollout
+│   └── bootstrap-gitops.yml # nur ArgoCD + gitops_secrets + gitops_rollout, separat erneut aufrufbar
 └── roles/
     ├── common/               # Paketindex, Basispakete, deterministischer Hostname
     ├── k3s_server/           # k3s-Server (IPv6-Flags), Node-Token, kubeconfig lokal abholen
     ├── k3s_agent/            # k3s-Agent, Join per Token/URL der Control-Plane
     ├── node_labels/          # topology.ticketflow/region je Worker + NoSchedule-Taint auf der Control-Plane
-    ├── argocd_bootstrap/     # Namespace, gepinntes Core-Manifest, Admin-Passwort, ApplicationSet
-    └── gitops_secrets/       # ArgoCD-Repo-Credential + RFC2136-TSIG-K8s-Secrets (aus secrets.yml)
+    ├── argocd_bootstrap/     # Namespace, gepinntes Manifest, Admin-Passwort
+    ├── gitops_secrets/       # ArgoCD-Repo-Credential + RFC2136-TSIG-K8s-Secrets (aus secrets.yml)
+    └── gitops_rollout/       # ApplicationSets gestuft: platform anwenden, warten bis alle Synced/Healthy, dann apps
 ```
 
 ## Warum Ansible und nicht alles in Terraform (`user_data`/cloud-init)
