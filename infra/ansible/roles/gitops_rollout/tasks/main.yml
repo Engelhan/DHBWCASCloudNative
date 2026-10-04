@@ -1,28 +1,28 @@
 ---
-# Wendet die ApplicationSets aus gitops/applicationset.yaml gestuft an: Stufe fuer Stufe, und die
-# naechste erst, wenn jede Application der vorherigen Synced UND Healthy ist - Healthy heisst bei
-# Deployments/StatefulSets, dass alle Pods der aktuellen Revision ihre Readiness-Probe bestehen,
-# bei Operator-CRs deren Ready-Condition (Begruendung im Kopf von gitops/applicationset.yaml).
-# Das sind die einzigen Objekte, die Ansible im GitOps-Layer anwendet - die Applications und deren
-# Ressourcen erzeugt ArgoCD daraus selbst. Der stat-Check bleibt als Sicherheitsnetz, damit ein
-# Lauf auf einem aelteren Branch/Tag ohne diese Datei den Schritt ueberspringt statt zu scheitern.
-- name: Prüfen, ob das ApplicationSet-Manifest im Repo existiert
+# Applies the ApplicationSets from gitops/applicationset.yaml in stages: stage by stage, and the
+# next one only once every Application of the previous one is Synced AND Healthy - for
+# Deployments/StatefulSets, Healthy means all pods of the current revision pass their readiness
+# probe; for operator CRs, their Ready condition (rationale in the header of
+# gitops/applicationset.yaml). These are the only objects Ansible applies in the GitOps layer -
+# ArgoCD creates the Applications and their resources from them. The stat check stays as a safety
+# net so that a run on an older branch/tag without this file skips the step instead of failing.
+- name: Check whether the ApplicationSet manifest exists in the repo
   stat:
     path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
   delegate_to: localhost
   become: false
   register: applicationset_file
 
-- name: ApplicationSets stufenweise anwenden
+- name: Apply the ApplicationSets stage by stage
   when: applicationset_file.stat.exists
   block:
-    - name: ApplicationSet-Manifest auf die Control-Plane kopieren
+    - name: Copy the ApplicationSet manifest to the control plane
       copy:
         src: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
         dest: /tmp/ticketflow-applicationset.yaml
         mode: "0644"
 
-    - name: Stufe anwenden und auf "alles gruen" warten
+    - name: Apply the stage and wait for "everything green"
       include_tasks: stage.yml
       loop: "{{ gitops_rollout_stages }}"
       loop_control:

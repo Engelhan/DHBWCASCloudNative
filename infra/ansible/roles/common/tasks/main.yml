@@ -1,42 +1,42 @@
 ---
-- name: Paketindex aktualisieren
+- name: Update the package index
   apt:
     update_cache: true
     cache_valid_time: 3600
 
-- name: Basispakete installieren
+- name: Install base packages
   apt:
     name:
       - curl
       - ca-certificates
     state: present
 
-# k3s registriert den Node unter seinem OS-Hostnamen. Wir setzen ihn explizit auf den
-# Terraform-Ressourcennamen (z.B. ticketflow-worker-1), damit er deterministisch mit
-# inventory_hostname übereinstimmt - node_labels und die Agent-Join-Prüfung verlassen sich
-# darauf, statt vom Cloud-Image-Standardverhalten abhängig zu sein.
-- name: Hostname auf den Terraform-Ressourcennamen setzen
+# k3s registers the node under its OS hostname. We set it explicitly to the Terraform resource
+# name (e.g. ticketflow-worker-1) so that it deterministically matches inventory_hostname -
+# node_labels and the agent join check rely on this instead of depending on the cloud image's
+# default behavior.
+- name: Set the hostname to the Terraform resource name
   hostname:
     name: "{{ inventory_hostname }}"
 
-- name: Hostname in /etc/hosts eintragen
+- name: Add the hostname to /etc/hosts
   lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1'
     line: "127.0.1.1 {{ inventory_hostname }}"
     state: present
 
-# Longhorn haengt jedes Volume als iSCSI-Geraet (/dev/sdX) ein. Das Ubuntu-Cloud-Image bringt
-# multipathd mit, und das baut beim Booten aus solchen Geraeten eine Multipath-Map - das Geraet
-# ist dann belegt und der Mount scheitert mit "already mounted or mount point busy". Live
-# passiert am 2026-10-02 nach einem Reboot des Control-Plane-Nodes (OpenBao-DB kam nicht hoch).
-# Die Root-Platte ist virtio (vda), die Sperre trifft also nur Longhorns Geraete. Empfehlung aus
-# Longhorns eigenem Troubleshooting fuer multipathd.
-- name: Dienste erfassen (multipathd vorhanden?)
+# Longhorn attaches every volume as an iSCSI device (/dev/sdX). The Ubuntu cloud image ships
+# multipathd, which builds a multipath map from such devices at boot - the device is then busy and
+# the mount fails with "already mounted or mount point busy". Happened live on 2026-10-02 after a
+# reboot of the control-plane node (the OpenBao DB did not come up). The root disk is virtio
+# (vda), so the exclusion only affects Longhorn's devices. Recommendation from Longhorn's own
+# troubleshooting guide for multipathd.
+- name: Gather services (is multipathd present?)
   service_facts:
 
-# Standard-config_dir von multipath-tools; existiert auf dem Cloud-Image nicht zwingend.
-- name: Verzeichnis fuer multipath-Drop-ins anlegen
+# Default config_dir of multipath-tools; does not necessarily exist on the cloud image.
+- name: Create the directory for multipath drop-ins
   file:
     path: /etc/multipath/conf.d
     state: directory
@@ -45,7 +45,7 @@
     mode: "0755"
   when: "'multipathd.service' in ansible_facts.services"
 
-- name: Longhorn-Geraete von multipathd ausnehmen
+- name: Exclude Longhorn devices from multipathd
   copy:
     dest: /etc/multipath/conf.d/longhorn.conf
     content: |
@@ -56,4 +56,4 @@
     group: root
     mode: "0644"
   when: "'multipathd.service' in ansible_facts.services"
-  notify: Multipathd neu starten
+  notify: Restart multipathd

@@ -1,47 +1,47 @@
 ---
-# Gesamtablauf: Basis-Konfiguration -> k3s-Server -> k3s-Agents -> Node-Labels -> ArgoCD ->
-# GitOps-Secrets -> gestufter GitOps-Rollout. Reihenfolge ist bewusst so gewaehlt, dass jede Rolle
-# auf dem Ergebnis der vorherigen aufbaut (Agents brauchen den Node-Token des Servers, Labels
-# brauchen registrierte Worker-Nodes, gitops_secrets braucht die von k3s_server lokal abgeholte
-# kubeconfig, gitops_rollout braucht die Repo-Credential aus gitops_secrets usw.).
+# Full run: base configuration -> k3s server -> k3s agents -> node labels -> ArgoCD -> GitOps
+# secrets -> staged GitOps rollout. The order is deliberate so that every role builds on the
+# result of the previous one (agents need the server's node token, labels need registered worker
+# nodes, gitops_secrets needs the kubeconfig fetched locally by k3s_server, gitops_rollout needs
+# the repo credential from gitops_secrets, etc.).
 
-- name: Basis-Konfiguration auf allen Nodes
+- name: Base configuration on all nodes
   hosts: k3s_cluster
   become: true
   roles:
     - common
 
-- name: k3s-Server auf der Control-Plane installieren
+- name: Install the k3s server on the control plane
   hosts: control_plane
   become: true
   roles:
     - k3s_server
 
-- name: k3s-Agents auf den Workern installieren
+- name: Install the k3s agents on the workers
   hosts: workers
   become: true
   roles:
     - k3s_agent
 
-- name: Node-Labels fuer die simulierten Regionen setzen (P4)
+- name: Set node labels for the simulated regions (P4) and taint the control plane
   hosts: control_plane
   become: true
   roles:
     - node_labels
 
-- name: ArgoCD bootstrappen
+- name: Bootstrap ArgoCD
   hosts: control_plane
   become: true
   roles:
     - argocd_bootstrap
 
-- name: GitOps-Secrets anlegen (RFC2136-TSIG fuer cert-manager/external-dns)
+- name: Create GitOps secrets (repo credential, RFC2136 TSIG for cert-manager/external-dns)
   hosts: control_plane
   become: true
   roles:
     - gitops_secrets
 
-- name: ApplicationSets gestuft ausrollen (Plattform erst gruen, dann Anwendung)
+- name: Roll out the ApplicationSets in stages (platform green first, then the application)
   hosts: control_plane
   become: true
   roles:

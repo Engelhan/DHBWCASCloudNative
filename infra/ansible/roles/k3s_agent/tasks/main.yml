@@ -1,13 +1,13 @@
 ---
-- name: Prüfen, ob k3s bereits installiert ist
+- name: Check whether k3s is already installed
   stat:
     path: /usr/local/bin/k3s
   register: k3s_bin
 
-# --node-ip dual-stack (IPv6 primaer + IPv4), analog zu roles/k3s_server - siehe dortiger
-# Kommentar/CLAUDE.md ## Infra layering fuer den Grund (Pods brauchen IPv4-Egress zu
-# IPv4-only-Zielen wie github.com).
-- name: k3s-Agent installieren und mit der Control-Plane verbinden
+# --node-ip dual-stack (IPv6 primary + IPv4), same as roles/k3s_server - see the comment there and
+# CLAUDE.md ## Infra layering for the reason (pods need IPv4 egress to IPv4-only targets such as
+# github.com).
+- name: Install the k3s agent and join it to the control plane
   shell: |
     set -o pipefail
     curl -sfL https://get.k3s.io | \
@@ -20,10 +20,10 @@
     executable: /bin/bash
   when: not k3s_bin.stat.exists
 
-- name: Warten, bis der Node auf der Control-Plane als Ready gemeldet wird
-  # command als String wuerde von Ansible per shlex geparst, was die Anfuehrungszeichen um
-  # "Ready" verschluckt (aus =="Ready") wird ==Ready) und den jsonpath-Ausdruck bricht -
-  # deshalb argv (keine shlex-Verarbeitung, jedes Element geht 1:1 in den Prozess).
+- name: Wait until the control plane reports the node as Ready
+  # A command given as a string would be shlex-parsed by Ansible, which swallows the quotes around
+  # "Ready" (=="Ready" becomes ==Ready) and breaks the jsonpath expression - hence argv (no shlex
+  # processing, every element is passed to the process as-is).
   command:
     argv:
       - k3s

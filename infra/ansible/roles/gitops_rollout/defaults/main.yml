@@ -1,11 +1,11 @@
 ---
-# Reihenfolge der ApplicationSets aus gitops/applicationset.yaml (Label ticketflow.io/stage).
-# Jede Stufe wird erst angewendet, wenn alle Applications der vorherigen Synced UND Healthy sind.
+# Order of the ApplicationSets from gitops/applicationset.yaml (label ticketflow.io/stage).
+# Each stage is only applied once all Applications of the previous one are Synced AND Healthy.
 gitops_rollout_stages:
   - platform
   - apps
 
-# Wie lange je Stufe auf "alles gruen" gewartet wird: 120 x 15s = 30 Minuten. Der erste Rollout
-# der Plattform (Longhorn, Operatoren, OpenBao-Init) braucht auf den Lab-VMs ~10-15 Minuten.
+# How long to wait for "everything green" per stage: 120 x 15s = 30 minutes. The first rollout of
+# the platform (Longhorn, operators, OpenBao init) takes ~10-15 minutes on the lab VMs.
 gitops_rollout_retries: 120
 gitops_rollout_delay: 15

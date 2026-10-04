@@ -1,10 +1,11 @@
 ---
-# Eine Stufe (gitops_stage): das ApplicationSet mit dem Label ticketflow.io/stage=<stufe> anwenden
-# und warten, bis alle seine Applications existieren, Synced und Healthy sind.
+# One stage (gitops_stage): apply the ApplicationSet labeled ticketflow.io/stage=<stage> and wait
+# until all of its Applications exist and are Synced and Healthy.
 
-# Soll-Anzahl direkt aus der Datei (Elemente des list-Generators) - sonst waere "alle gruen" schon
-# erfuellt, solange der ApplicationSet-Controller noch keine einzige Application erzeugt hat.
-- name: "Stufe {{ gitops_stage }}: erwartete Anzahl Applications ermitteln"
+# Expected count taken directly from the file (elements of the list generator) - otherwise "all
+# green" would already be true while the ApplicationSet controller has not created a single
+# Application yet.
+- name: "Stage {{ gitops_stage }}: determine the expected number of Applications"
   set_fact:
     gitops_stage_expected: >-
       {%- set ns = namespace(n=0) -%}
@@ -15,24 +16,24 @@
       {%- endfor -%}
       {{ ns.n | int }}
 
-- name: "Stufe {{ gitops_stage }}: ApplicationSet im Manifest vorhanden"
+- name: "Stage {{ gitops_stage }}: ApplicationSet present in the manifest"
   assert:
     that: gitops_stage_expected | int > 0
-    fail_msg: "Kein ApplicationSet mit ticketflow.io/stage={{ gitops_stage }} in gitops/applicationset.yaml"
+    fail_msg: "No ApplicationSet with ticketflow.io/stage={{ gitops_stage }} in gitops/applicationset.yaml"
     quiet: true
 
-# -l waehlt aus der Datei genau das Dokument dieser Stufe aus.
-- name: "Stufe {{ gitops_stage }}: ApplicationSet anwenden"
+# -l selects exactly this stage's document from the file.
+- name: "Stage {{ gitops_stage }}: apply the ApplicationSet"
   command: >
     k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
     -l ticketflow.io/stage={{ gitops_stage }}
   register: gitops_stage_apply
   changed_when: "'unchanged' not in gitops_stage_apply.stdout"
 
-# Eine Zeile je Application: "<name> <sync> <health>". Gruen ist die Stufe erst, wenn es genau so
-# viele Zeilen wie erwartet gibt und jede "Synced Healthy" lautet. Laeuft die Zeit ab, zeigt die
-# Fehlermeldung die letzte Ausgabe - also genau, welche Application noch nicht gruen ist.
-- name: "Stufe {{ gitops_stage }}: warten, bis alle {{ gitops_stage_expected }} Applications Synced und Healthy sind"
+# One line per Application: "<name> <sync> <health>". The stage is only green once there are
+# exactly as many lines as expected and every one reads "Synced Healthy". If the time runs out,
+# the error message shows the last output - i.e. exactly which Application is not green yet.
+- name: "Stage {{ gitops_stage }}: wait until all {{ gitops_stage_expected }} Applications are Synced and Healthy"
   command:
     argv:
       - k3s

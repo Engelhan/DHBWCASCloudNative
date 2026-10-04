@@ -1,21 +1,20 @@
 ---
-# Gepinnte Versionen (siehe Root-README ## Entscheidungen zu P2/P3 - keine "latest"-Bezüge).
-# Beim Aktualisieren: https://github.com/k3s-io/k3s/releases bzw.
-# https://github.com/argoproj/argo-cd/releases prüfen und hier bewusst anpassen.
+# Pinned versions (see root README ## Entscheidungen on P2/P3 - no "latest" references).
+# When updating: check https://github.com/k3s-io/k3s/releases and
+# https://github.com/argoproj/argo-cd/releases and adjust deliberately here.
 k3s_version: "v1.37.0+k3s1"
 argocd_version: "v3.4.5"
 
-# DHBWV6 ist entgegen dem Namen dual-stack (jede VM bekommt zusaetzlich zur IPv6-Adresse per
-# DHCP eine private, aber tatsaechlich Internet-geroutete IPv4-Adresse - siehe
-# infra/terraform/modules/compute/outputs.tf). k3s laeuft deshalb im Dual-Stack-Modus: IPv6
-# bleibt primaer (--node-ip/--tls-san/kubeconfig-Server-URL zuerst IPv6, ULA-Bereich fd00::/8
-# fuer Cluster-/Service-CIDR, da nicht von aussen erreichbar sein muss - RFC 4193), IPv4 kommt
-# als zweite Familie dazu, ausschliesslich damit Pods (z.B. ArgoCD, external-dns) IPv4-only-
-# Ziele wie github.com erreichen koennen, das keinen AAAA-Eintrag hat. IPv4-CIDRs sind die
-# k3s-Standardwerte (10.42.0.0/16 / 10.43.0.0/16) - kollidieren nicht mit dem
-# DHCP-Adressraum 10.200.0.0/19 der VMs selbst. --flannel-ipv6-masq bleibt fuer IPv6-Pod-Egress
-# noetig (ULA ist nicht global routbar); IPv4-Pod-Egress wird von k3s/Flannel standardmaessig
-# maskiert, kein aequivalentes explizites Flag noetig.
+# Despite its name, DHBWV6 is dual-stack (in addition to its IPv6 address, every VM gets a
+# private but genuinely internet-routed IPv4 address via DHCP - see
+# infra/terraform/modules/compute/outputs.tf). k3s therefore runs in dual-stack mode: IPv6 stays
+# primary (--node-ip/--tls-san/kubeconfig server URL IPv6 first, ULA range fd00::/8 for the
+# cluster/service CIDR, since it does not need to be reachable from outside - RFC 4193), IPv4 is
+# added as the second family, solely so that pods (e.g. ArgoCD, external-dns) can reach IPv4-only
+# targets such as github.com, which has no AAAA record. The IPv4 CIDRs are the k3s defaults
+# (10.42.0.0/16 / 10.43.0.0/16) - they do not collide with the VMs' own DHCP range
+# 10.200.0.0/19. --flannel-ipv6-masq is still needed for IPv6 pod egress (ULA is not globally
+# routable); k3s/Flannel masquerade IPv4 pod egress by default, no equivalent explicit flag needed.
 k3s_cluster_cidr: "fd00:42::/56"
 k3s_service_cidr: "fd00:43::/112"
 k3s_cluster_cidr_v4: "10.42.0.0/16"
