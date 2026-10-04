@@ -94,11 +94,12 @@ einer `schema_migrations`-Tabelle) – das ist die "DB Schema aufbauen und über
 versionieren"-Aufgabe. `0001_init.sql` legt `events`/`seats`/`reservations` an –
 `CREATE TABLE IF NOT EXISTS`, damit die Migration idempotent gegen eine leere CNPG-Datenbank
 läuft (echter Cluster-Pfad über [`charts/postgres-cluster/`](../../charts/postgres-cluster/)).
-`reservation-worker` schreibt ausschließlich in `reservations`; `events`/`seats` werden nur
-gelesen (Sitzplatz-Claim) bzw. von `catalog-api` gelesen. Die Demo-Stammdaten legt `catalog-api`
-beim Start selbst an ([`internal/db/migrate.go`](../catalog-api/internal/db/migrate.go), idempotent
-per `ON CONFLICT DO NOTHING`): drei Veranstaltungen in drei Hallen mit je 1000 Plätzen (40 Reihen
-à 25), alle auf `free`.
+`0002_seed_demo_events.sql` legt die Demo-Stammdaten an (idempotent per `ON CONFLICT DO NOTHING`):
+drei Veranstaltungen in drei Hallen mit je 1000 Plätzen (40 Reihen à 25), alle auf `free`. Bis
+Oktober 2026 hat das `catalog-api` beim Start erledigt. Seit `catalog-api` nur noch von der
+Read-Replica liest, ist der `reservation-worker` der einzige Dienst, der in die Datenbank schreibt
+(`seats.status` beim Sitzplatz-Claim, `reservations`), und damit auch der alleinige Besitzer des
+Schemas.
 
 ## Konfiguration
 

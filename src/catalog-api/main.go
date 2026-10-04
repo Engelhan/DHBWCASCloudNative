@@ -64,10 +64,6 @@ func main() {
 	}
 
 	producer := reservation.NewProducer(kafkaBrokers, reservationTopic, schema, kafkaSASL)
-	if err := database.Migrate(ctx); err != nil {
-		slog.Error("database migration failed", "error", err)
-		os.Exit(1)
-	}
 	defer producer.Close()
 
 	a := api.New(database, producer, schema, corsOrigin)

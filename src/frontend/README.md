@@ -28,7 +28,7 @@ kein hartkodierter Cluster-Hostname im Image.
 ## Ablauf
 
 1. `GET /events` – lädt **alle** Veranstaltungen (aktuell drei, siehe
-   `src/catalog-api/internal/db/migrate.go`) und füllt damit die Auswahlliste im Kopfbereich.
+   `src/reservation-worker/internal/migrate/sql/0002_seed_demo_events.sql`) und füllt damit die Auswahlliste im Kopfbereich.
    Vorausgewählt ist die zuletzt gewählte Veranstaltung aus `localStorage` – sofern die API sie
    noch kennt, sonst `events[0]`, also die zeitlich nächste (`ORDER BY starts_at`). Bei nur einer
    Veranstaltung blendet sich die Auswahl aus. Danach `GET /events/{id}/seats` – zeigt den

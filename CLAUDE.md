@@ -614,7 +614,8 @@ commands here once these gaps close instead of leaving this section stale.
   1280/900/500px and, via an iframe, at 390px - see `src/frontend/README.md` ## Darstellung von
   1000 Plaetzen. `local/postgres/init.sql` seeds three events in three
   venues, 1000 seats each (40 rows x 25), all `free` — identical SQL to
-  `src/catalog-api/internal/db/migrate.go`, which is what actually seeds the cluster DB (the
+  `src/reservation-worker/internal/migrate/sql/0002_seed_demo_events.sql` (since 2026-10-05; was
+  catalog-api's `internal/db/migrate.go` before catalog-api moved to the read replica), which is what actually seeds the cluster DB (the
   `docker-entrypoint-initdb.d` hook only exists in the plain `postgres` image, not in CNPG). catalog-api deliberately never writes to `reservations` —
   only the (not-yet-built) `reservation-worker` will; `GET /reservations/{id}` reports `pending`
   from an in-memory cache until that row exists, so the full `pending`→`confirmed`/`rejected`
