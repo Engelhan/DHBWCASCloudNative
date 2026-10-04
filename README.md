@@ -126,8 +126,15 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
    kein Grafana-Dashboard, siehe `## Grenzen`).
 
-Screenshots des tatsächlichen Deployments folgen in [`docs/architecture/`](docs/architecture/)
-(`TODO`, sobald der Cluster steht).
+**Pod-Verteilung im laufenden Cluster** (Live-Stand 04.10.2026, dev-Profil, aus
+`kubectl get pods -A -o wide`):
+
+![Pod-Verteilung auf die Nodes](docs/architecture/pod-distribution.drawio.svg)
+
+Kafka-Broker/-Controller und OpenBao liegen erzwungen je einmal pro simulierter Region,
+Postgres-Primary und -Replica erzwungen auf verschiedenen Nodes; die App-Pods haben nur eine weiche
+Präferenz (Begründung unter `## Entscheidungen`, P4). Weitere Screenshots folgen in
+[`docs/architecture/`](docs/architecture/).
 
 ## Betrieb
 
@@ -294,7 +301,7 @@ bis zu zehn Kopien gleichzeitig einplant; die Rechnung steht jeweils als Komment
 [`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml). *Nachweis im
 Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
 `kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
-Controller pro Region. Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
+Controller pro Region (vollständige Verteilung als Diagramm unter `## Architektur`). Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
 `reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
 ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
 natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
