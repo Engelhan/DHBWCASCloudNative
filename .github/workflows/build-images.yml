@@ -1,24 +1,14 @@
 name: build-images
 
-# Baut reproduzierbar Container-Images aus src/ (P1) und taggt sie primaer mit dem
-# Git-Short-SHA statt nur `:latest` (P3, Nachvollziehbarkeit welcher Commit im Cluster laeuft).
-# Zusaetzlich wird derselbe Build auch als `:latest` gepusht, fuer Konsumenten, die keinen
-# festen Tag pinnen wollen. Push nach ghcr.io (GitHub Container Registry) - laut
-# Aufgabenstellung/ CLAUDE.md ausdruecklich erlaubte externe Abhaengigkeit ("container
-# registries/package sources"), Auth ueber den eingebauten GITHUB_TOKEN, kein zusaetzliches
-# Secret noetig. Die Packages muessen einmalig nach dem ersten Push in den
-# GitHub-Package-Settings auf "Public" gestellt werden (GITHUB_TOKEN kann das nicht selbst
-# setzen) - sonst braucht der Cluster ein imagePullSecret zum Pullen, siehe CLAUDE.md
-# ## Current implementation status (reservation-worker).
+# Builds the service images and pushes them to ghcr.io tagged with the short SHA (P3) and :latest.
+# The packages must be set to public once after the first push.
 
 on:
   push:
     branches: [main]
     paths:
       - "src/**"
-  # Manuell ausloesbar, damit ein frisch geforktes Repo die Images bauen kann, ohne erst
-  # kuenstlich eine Datei unter src/ aendern zu muessen - vorher war das ein echter Blocker beim
-  # ersten Deployment eines Forks (ohne Images: ImagePullBackOff fuer alle vier Services).
+  # Lets a fresh fork build images without touching src/.
   workflow_dispatch:
 
 env:
@@ -59,22 +49,12 @@ jobs:
           docker push "$SHA_TAG"
           docker push "$LATEST_TAG"
 
-  # Traegt den soeben gebauten Tag in die zentrale Konfigurationsdatei ein - erst damit landet ein
-  # neuer Build ueberhaupt im Cluster (ArgoCD synct gitops/env/cluster.yaml, die Charts leiten
-  # daraus ihre Image-Namen ab). Vorher musste der Short-SHA nach jedem Build von Hand in bis zu
-  # vier values.yaml nachgetragen werden.
-  #
-  # Bewusst ein EIGENER Job nach der Matrix (needs: build) statt eines Schritts darin: die vier
-  # Matrix-Jobs laufen parallel und wuerden sich sonst beim Pushen gegenseitig ueberholen. So
-  # entsteht genau ein Commit, und zwar erst, wenn alle vier Images wirklich gepusht sind.
-  #
-  # Keine Endlosschleife: dieser Workflow triggert nur auf Aenderungen unter src/**, der Commit
-  # hier beruehrt ausschliesslich gitops/ - er loest also keinen weiteren Lauf aus.
+  # Writes the new tag into gitops/env/cluster.yaml so ArgoCD rolls it out. Separate job so the four
+  # parallel builds produce exactly one commit. No loop: the commit only touches gitops/.
   bump-image-tag:
     needs: build
     runs-on: ubuntu-latest
-    # Nur auf main. Ein manueller Lauf (workflow_dispatch) auf einem anderen Branch soll die
-    # zentrale Konfiguration nicht umschreiben.
+    # main only.
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -87,13 +67,12 @@ jobs:
         run: |
           set -euo pipefail
           SHA_TAG="${GITHUB_SHA::8}"
-          # Gezielt nur die imageTag-Zeile ersetzen, statt die Datei per YAML-Tool neu zu
-          # serialisieren - so bleiben die ausfuehrlichen Kommentare darin unveraendert.
+          # Replace only the imageTag line to keep the file's comments.
           sed -i -E "s|^(  imageTag: ).*|\1\"${SHA_TAG}\"|" gitops/env/cluster.yaml
           grep -q "imageTag: \"${SHA_TAG}\"" gitops/env/cluster.yaml
 
           if git diff --quiet -- gitops/env/cluster.yaml; then
-            echo "imageTag steht bereits auf ${SHA_TAG} - nichts zu tun."
+            echo "imageTag is already ${SHA_TAG} - nothing to do."
             exit 0
           fi
 
@@ -101,6 +80,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add gitops/env/cluster.yaml
           git commit -m "chore: bump image tag to ${SHA_TAG}"
-          # Rebase gegen den Fall, dass waehrend des Builds ein weiterer Commit auf main landete.
+          # Rebase in case main moved during the build.
           git pull --rebase origin main
           git push origin main

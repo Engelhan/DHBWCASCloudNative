@@ -46,5 +46,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Claude Code local session state (never relevant to the submission)
+# Claude Code local session state
 .claude/

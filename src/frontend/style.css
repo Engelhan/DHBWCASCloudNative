@@ -15,10 +15,7 @@
   --cat-parkett: #6a4c93;
   --cat-balkon: #00897b;
   --radius: 12px;
-  /* 40 Reihen x 25 Plaetze pro Halle (siehe src/catalog-api/internal/db/migrate.go): eine Reihe
-     ist damit 25*--seat-w + 24*--seat-gap + --aisle-w breit. Die Werte sind so gewaehlt, dass
-     eine volle Reihe plus Reihenbeschriftung in --content-max passt; darunter scrollt
-     .hall-scroll horizontal, statt das Layout zu sprengen. */
+  /* 40 rows x 25 seats; one row plus label fits --content-max, below that .hall-scroll scrolls. */
   --seat-w: 1.7rem;
   --seat-h: 1.5rem;
   --seat-gap: 0.25rem;
@@ -67,8 +64,7 @@ main {
   margin: 0 auto;
 }
 
-/* Event-Auswahl im Hero: liegt auf dem Farbverlauf, deshalb helle Kontur statt Panel-Rahmen.
-   Die Optionen brauchen explizite Farben - sonst erben sie vom Verlauf und werden unlesbar. */
+/* Picker sits on the gradient: light outline, explicit option colors. */
 .event-picker {
   display: flex;
   align-items: center;
@@ -136,8 +132,7 @@ main {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  /* Umbruch noetig: "1000 von 1000 Plaetzen frei" ist mit white-space: nowrap breiter als eine
-     schmale Viewport-Haelfte und wuerde die Seite sonst horizontal scrollbar machen. */
+  /* Allow wrapping, otherwise narrow viewports scroll horizontally. */
   flex-wrap: wrap;
   gap: 0.35rem 1rem;
   margin-bottom: 1.25rem;
@@ -191,8 +186,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  /* max-content, damit die Reihen im Scroll-Container ihre echte Breite behalten statt
-     zusammengestaucht zu werden; min-width haelt sie bei wenigen Plaetzen trotzdem buendig. */
+  /* max-content keeps rows at their real width inside the scroll container. */
   width: max-content;
   min-width: 100%;
 }
@@ -215,7 +209,7 @@ main {
   font-size: 0.74rem;
   color: var(--text-muted);
   white-space: nowrap;
-  /* Beim horizontalen Scrollen soll sichtbar bleiben, in welcher Reihe/Kategorie man gerade ist. */
+  /* Keep the row label visible while scrolling horizontally. */
   position: sticky;
   left: 0;
   background: var(--panel-bg);
@@ -310,7 +304,7 @@ main {
 .seat-swatch.occupied { background: var(--occupied); }
 .seat-swatch.selected { background: var(--selected); border-radius: 50%; }
 
-/* Buchungsdialog */
+/* Booking dialog */
 dialog#booking-dialog {
   border: none;
   border-radius: var(--radius);
@@ -410,7 +404,7 @@ dialog#booking-dialog::backdrop {
   color: var(--text-muted);
 }
 
-/* Statuskarte */
+/* Status card */
 .status-card:not([hidden]) {
   display: flex;
   align-items: center;
@@ -497,8 +491,7 @@ dialog#booking-dialog::backdrop {
   .availability-summary { white-space: normal; }
 }
 
-/* Weder der Sitz-Hover noch der Auswahl-Puls sollen laufen, wenn der Nutzer reduzierte
-   Bewegung verlangt - bei 1000 Kacheln ist das besonders unangenehm. */
+/* No hover/pulse animations with reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .seat, .status-card:not([hidden]) { transition: none; animation: none; }
   .seat:not(:disabled):hover { transform: none; }

@@ -32,13 +32,11 @@ const errorBannerEl = document.getElementById("error-banner");
 
 let events = [];
 let currentEvent = null;
-// Sitzplaetze der aktuellen Halle, nach seat.id - der Klick-Handler laeuft ueber Delegation am
-// Hallen-Container (ein Listener statt 1000), deshalb wird aus der data-seat-id zurueckgemappt.
+// Seats of the current hall by id (one delegated click listener instead of 1000).
 let seatsById = new Map();
 let selectedSeat = null;
 let pollTimer = null;
-// Monoton steigend, damit eine langsame Antwort zu einem inzwischen abgewaehlten Event nicht
-// den Sitzplan des gerade ausgewaehlten ueberschreibt.
+// Increasing counter: a slow response for a deselected event must not overwrite the current one.
 let loadToken = 0;
 
 function seatLabel(seat) {
@@ -77,8 +75,7 @@ async function loadEvents() {
     }
 
     renderEventPicker();
-    // Zuletzt gewaehltes Event nur uebernehmen, wenn es die API noch kennt (Seed-Daten koennen
-    // sich zwischen zwei Deployments aendern) - sonst das naechste Event, also events[0].
+    // Restore the last event only if the API still knows it, else events[0].
     const remembered = localStorage.getItem(SELECTED_EVENT_KEY);
     const initial = events.find((e) => e.id === remembered) ?? events[0];
     await selectEvent(initial.id);
@@ -95,7 +92,7 @@ function renderEventPicker() {
     option.textContent = `${event.name} · ${event.venue} · ${shortDateFormatter.format(new Date(event.starts_at))}`;
     eventSelectEl.appendChild(option);
   }
-  // Bei genau einem Event waere die Auswahl nur Ballast - Titel und Meta-Zeile zeigen es ohnehin.
+  // Hide the picker for a single event.
   eventPickerEl.hidden = events.length < 2;
 }
 
@@ -107,8 +104,7 @@ async function selectEvent(eventId) {
   localStorage.setItem(SELECTED_EVENT_KEY, event.id);
   eventSelectEl.value = event.id;
 
-  // Ein Wechsel setzt den laufenden Buchungsvorgang zurueck: die Statuskarte gehoert zum
-  // vorherigen Event und waere hier nur irrefuehrend.
+  // Switching events resets the booking in progress.
   stopPolling();
   statusCardEl.hidden = true;
   selectedSeat = null;
@@ -154,8 +150,7 @@ function renderHall(seats) {
     if (!categoriesSeen.has(seat.category)) categoriesSeen.set(seat.category, seat.price_cents);
   }
 
-  // Eine Halle hat 1000 Plaetze (40 Reihen x 25) - alles in einem DocumentFragment aufbauen und
-  // genau einmal einhaengen, statt 1000 einzelne Layout-/Paint-Durchlaeufe auszuloesen.
+  // 1000 seats: build in a fragment and attach once.
   const fragment = document.createDocumentFragment();
   for (const rowNumber of [...rows.keys()].sort((a, b) => a - b)) {
     const rowSeats = rows.get(rowNumber).sort((a, b) => a.seat_number - b.seat_number);
@@ -168,9 +163,7 @@ function renderHall(seats) {
     const price = priceFormatter.format(rowSeats[0].price_cents / 100);
     const labelEl = document.createElement("div");
     labelEl.className = "row-label";
-    // Bewusst ohne Kategoriename: bei 40 Reihen wiederholt er sich nur und macht die Spalte so
-    // breit, dass die Beschriftung abgeschnitten wird. Die Farbe des Punktes trägt die Kategorie,
-    // aufgeschlüsselt in der Legende unter dem Sitzplan; der Klartext steht im title.
+    // No category name per row (too wide); the dot color and title carry it.
     labelEl.title = `Reihe ${rowNumber} · ${categoryLabel} · ${price}`;
     labelEl.innerHTML = `<span class="cat-dot ${category}"></span> Reihe ${rowNumber} · ${price}`;
     rowEl.appendChild(labelEl);
@@ -260,8 +253,7 @@ bookingFormEl.addEventListener("submit", async (event) => {
     last_name: formData.get("last_name"),
     email: formData.get("email"),
   };
-  // Festhalten, gegen welches Event gebucht wurde - waehrend des Pollings kann der Nutzer
-  // laengst ein anderes ausgewaehlt haben.
+  // Remember the booked event; the user may switch while polling.
   const bookedEventId = currentEvent.id;
 
   try {
