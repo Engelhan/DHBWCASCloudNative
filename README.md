@@ -132,8 +132,9 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
 ![Pod-Verteilung auf die Nodes](docs/architecture/pod-distribution.drawio.svg)
 
 Kafka-Broker/-Controller und OpenBao liegen erzwungen je einmal pro simulierter Region,
-Postgres-Primary und -Replica erzwungen auf verschiedenen Nodes; die App-Pods haben nur eine weiche
-Präferenz (Begründung unter `## Entscheidungen`, P4). Weitere Screenshots folgen in
+Postgres-Primary und -Replica erzwungen auf verschiedenen Nodes. Der Schnappschuss stammt von vor
+der Umstellung auf mindestens zwei, hart verteilte Replicas je Dienst und Control-Plane-Taint
+(siehe `## Entscheidungen`, P4) — dort laufen die App-Pods noch einzeln. Weitere Screenshots folgen in
 [`docs/architecture/`](docs/architecture/).
 
 ## Betrieb
@@ -282,10 +283,11 @@ nicht pro Umgebung (dev/prod, siehe W1) austauschbar, ohne das Image neu zu baue
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
 vergeben und von Ansible in ein Kubernetes-Label übersetzt – die DHBWCloud stellt real nur eine
 Region/AZ bereit, die Verteilung wird für diese Entscheidung bewusst simuliert). CNPG-Postgres
-(Primary+2 Replicas) und Kafka (Strimzi, je 3 Broker und 3 KRaft-Controller — auch im aktiven
-dev-Profil, siehe [`charts/kafka-cluster/values-dev.yaml`](charts/kafka-cluster/values-dev.yaml))
-erhalten je eine `topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas
-nie auf demselben simulierten Standort landen. Für Kafka ist das eine **harte** Regel
+(Primary + Replica, `podAntiAffinityType: required` auf diesem Label) und Kafka (Strimzi, je 3
+Broker und 3 KRaft-Controller — auch im aktiven dev-Profil, siehe
+[`charts/kafka-cluster/values-dev.yaml`](charts/kafka-cluster/values-dev.yaml)) erhalten je eine
+`topologySpreadConstraint`/`podAntiAffinity` auf diesem Label, sodass ihre Replicas nie auf
+demselben simulierten Standort landen. Für Kafka ist das eine **harte** Regel
 (`whenUnsatisfiable: DoNotSchedule`,
 [`kafka-broker-nodepool.yaml`](charts/kafka-cluster/templates/messaging/kafka-broker-nodepool.yaml)):
 Das Topic `reservation-requested` ist der Puffer aller Flash-Sale-Anfragen, jede Partition liegt
@@ -301,12 +303,20 @@ bis zu zehn Kopien gleichzeitig einplant; die Rechnung steht jeweils als Komment
 [`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml). *Nachweis im
 Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
 `kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
-Controller pro Region (vollständige Verteilung als Diagramm unter `## Architektur`). Alle zustandslosen App-Pods (`catalog-api`, `frontend`,
-`reservation-worker`, AKHQ, Apicurio) tragen dieselbe weiche Praferenz (`whenUnsatisfiable:
-ScheduleAnyway` bzw. eine `preferred`-`podAntiAffinity` dort, wo der jeweilige Helm-Chart kein
-natives `topologySpreadConstraints`-Feld anbietet, z. B. AKHQ) — wirkungslos, solange ein Dienst
-nur mit einer Replica läuft, greift aber sofort, sobald KEDA `reservation-worker` hochskaliert
-oder `catalog-api`/`frontend` mit `replicaCount: 2` (dev) bzw. `3` (prod) laufen. Auch deren
+Controller pro Region (vollständige Verteilung als Diagramm unter `## Architektur`). Dieselbe Regel gilt für alles, was im Ausfall eines Workers
+nicht verschwinden darf: Jeder Dienst läuft mit **mindestens zwei Replicas, hart auf zwei
+verschiedene Regionen verteilt** (`whenUnsatisfiable: DoNotSchedule`, `maxSkew: 1`, bzw. eine
+`required`-`podAntiAffinity`, wo das Upstream-Chart kein `topologySpreadConstraints`-Feld hat, z. B.
+AKHQ und Longhorn-UI) — die eigenen Services (`catalog-api`, `frontend`, `notification-worker`,
+`reservation-worker` mit KEDA-`minReplicaCount: 2`), AKHQ, Apicurio, Traefik und die Operatoren
+(cert-manager, CNPG, Strimzi, KEDA, External Secrets; Leader-Election, wo nötig eingeschaltet), je
+mit PodDisruptionBudget. Hart statt weich, weil eine weiche Präferenz genau im Engpass nachgibt:
+Ist eine Region voll, legt `ScheduleAnyway` das zweite Replica neben das erste — und der nächste
+Node-Ausfall nimmt beide mit, mitten im Vorverkauf. `matchLabelKeys: [pod-template-hash]` sorgt
+dafür, dass beim Rolling Update nur Pods derselben Revision zählen. Die Control-Plane hat kein
+Regions-Label und einen `NoSchedule`-Taint ([`node_labels`](infra/ansible/roles/node_labels/tasks/main.yml))
+und fällt damit für alle Workloads heraus. Welche Pods bewusst einzeln bleiben, steht unter
+`## Grenzen`. Auch deren
 Requests/Limits sind hergeleitet: `catalog-api` 50m/64Mi Request (I/O-gebunden zwischen DB-Read
 und Kafka-Produce, kaum CPU im Leerlauf) mit 300m/128Mi Limit als Kopfraum für die
 JSON-Schema-Validierung vor jedem Kafka-Publish; `frontend` nur 10m/16Mi Request (liefert nur
@@ -325,7 +335,7 @@ Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (A
 beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
 **P5 – Resilienz und Persistenz.** *Wahl:* Liveness/Readiness-Probes auf allen drei Services, CNPG
-verwaltet PVCs für Primary+2 Replicas, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
+verwaltet PVCs für Primary + Replica, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
 PodDisruptionBudgets sichern Rolling Updates ab (für `notification-worker` bereits umgesetzt:
 `replicaCount: 3`, `minAvailable: 2`, siehe
 [`charts/notification-worker/templates/poddisruptionbudget.yaml`](charts/notification-worker/templates/poddisruptionbudget.yaml)).
@@ -407,6 +417,14 @@ der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Rep
   Teil-Limits bei CoreDNS/metrics-server). Alle liegen außerhalb des Flash-Sale-Lastpfads und
   verbrauchen im Betrieb wenige MiB; ein LimitRange als Auffangnetz wurde bewusst nicht gesetzt,
   weil er für Longhorns privilegierte Pods geratene Werte erzwingen würde.
+- Nicht jeder Pod läuft doppelt. Bewusst einzeln bleiben: `external-dns` (ohne Leader-Election,
+  zwei Instanzen würden dieselben DNS-Records gegeneinander schreiben; ein Ausfall verzögert nur
+  neue Records), Strimzis Entity-Operator und Kafka-Exporter (Strimzi unterstützt je nur eine
+  Instanz), `longhorn-driver-deployer` (einmaliger Installer); Longhorns CSI-Sidecars laufen mit je
+  drei Replicas, ihre Platzierung legt Longhorn selbst fest. ArgoCD ist als nicht-HA-Upstream-
+  Manifest installiert (eine Instanz je Komponente), CoreDNS/metrics-server/local-path-provisioner
+  verwaltet k3s selbst. Fällt ein Worker aus, stockt dort also höchstens Verwaltung (Deployments,
+  Zertifikate, DNS), nicht der Ticketverkauf.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant);
   das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
 - Observability ist nicht vorhanden, nicht nur unvollständig: jeder Service exponiert zwar

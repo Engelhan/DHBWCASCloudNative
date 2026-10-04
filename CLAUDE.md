@@ -1201,5 +1201,25 @@ commands here once these gaps close instead of leaving this section stale.
   generated policies in `kafka` (commands in `charts/README.md` ## network-policies) — the
   operator doesn't clean them up and they'd keep 9092/9093 open. Longhorn's upgrade checker is
   switched off (`charts/longhorn`), because `longhorn-system` gets no internet egress.
+- **Done 2026-10-04, `helm lint`/`template` clean (dev+prod), not yet live-synced:** every workload
+  that can run twice now runs with **>= 2 replicas, hard-spread across two simulated regions**
+  (`topologySpreadConstraints` `DoNotSchedule`/`maxSkew: 1`/`matchLabelKeys: [pod-template-hash]`, or a
+  `required` region `podAntiAffinity` where the upstream chart has no spread field — AKHQ, Longhorn
+  UI), each with a PDB. Covers the own charts (dev profile too; `reservation-worker`
+  `keda.minReplicaCount: 2`), Apicurio, AKHQ, Traefik (via `charts/traefik-config`, keys verified
+  against the real upstream traefik chart 41.4.0), cert-manager, CNPG, Strimzi, KEDA, ESO (**`leaderElect:
+  true` was required** — upstream default is off), Longhorn UI. Both CNPG clusters now use
+  `affinity.topologyKey: topology.ticketflow/region`. Upstream-chart `labelSelector`s are hand-written
+  pod labels (values.yaml isn't templated) — re-check against `helm template` after any chart bump.
+  AKHQ at 2 replicas needs a shared JWT signing key: `secret/akhq/jwt` seeded by the OpenBao bootstrap
+  job → `akhq-basic-auth` key `jwt-secret` → `AKHQ_JWT_SECRET`. Deliberate singletons (root README ##
+  Grenzen): external-dns (no leader election), Strimzi entity-operator/kafka-exporter, longhorn-driver-
+  deployer, ArgoCD (non-HA manifest), k3s' own CoreDNS/metrics-server/local-path. **The control plane
+  now gets `node-role.kubernetes.io/control-plane:NoSchedule`** (`node_labels` role, before ArgoCD) —
+  the exact taint k3s' bundled components already tolerate. NoSchedule evicts nothing: on an existing
+  cluster the pods already on the control plane (openbao-postgres primary, ESO webhook/cert-controller,
+  Longhorn DaemonSet pods) must be moved once by hand (switchover the CNPG primary first). Not applied
+  to the live cluster yet. `docs/architecture/pod-distribution.drawio.svg` shows the state *before*
+  this change.
 - Commit history currently has a single large commit — the assignment explicitly penalizes
   "Monolith-Commits"; keep new work in small, separately-committed steps from here on.
