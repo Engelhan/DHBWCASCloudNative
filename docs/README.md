@@ -9,7 +9,10 @@ Beim Speichern in draw.io das Format `.drawio.svg` beibehalten und „Diagramm e
 
 ## [`architecture/`](architecture/)
 
-Das Architekturdiagramm (siehe oben) sowie Screenshots/Exports, die darüber hinausgehen (z.B. `kubectl get pods -o wide`
-zur Knotenverteilung für P4, Grafana-Dashboard-Screenshot für P7, ArgoCD-App-Tree für W2). Werden
-ergänzt, sobald der Cluster tatsächlich läuft — ein Diagramm, das den Ist-Zustand nicht trifft,
-zählt laut Bewertungsschema (Teil C) gegen uns.
+- [`architecture.drawio.svg`](architecture/architecture.drawio.svg) — Gesamtarchitektur (siehe oben).
+- [`pod-distribution.drawio.svg`](architecture/pod-distribution.drawio.svg) — Verteilung der Pods
+  auf die Nodes/Regionen (P4), aus `kubectl get pods -A -o wide` abgeleitet. Ein Schnappschuss:
+  nach Änderungen an Replicas oder Spread-Regeln neu erzeugen, sonst zeigt er nicht den Ist-Zustand
+  — ein Diagramm, das den Ist-Zustand nicht trifft, zählt laut Bewertungsschema (Teil C) gegen uns.
+
+Weitere Nachweise (z. B. der ArgoCD-App-Tree für W2) kommen ebenfalls hierher.

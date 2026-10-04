@@ -1,8 +1,7 @@
 # src/ – Anwendungscode
 
 Selbst geschriebene Services von TicketFlow (P1). Jeder Service hat ein eigenes `Dockerfile` und
-eine eigene README mit Sprache/Framework, lokalem Start und den Umgebungsvariablen, die er
-erwartet (diese werden im Cluster über ConfigMap/Secret injiziert – der jeweilige App-Chart ist in
+eine eigene README mit Sprache/Framework und den Umgebungsvariablen, die er erwartet (diese werden im Cluster über ConfigMap/Secret injiziert – der jeweilige App-Chart ist in
 [`../charts/README.md`](../charts/README.md) verlinkt).
 
 | Service | Rolle | Kommuniziert mit |

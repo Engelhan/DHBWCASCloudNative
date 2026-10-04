@@ -10,15 +10,15 @@ zeigen.
 
 - Spricht ausschließlich mit [`catalog-api`](../catalog-api/) über HTTP – keine eigene
   Business-Logik, kein direkter DB-/Kafka-Zugriff.
-- Wird als statisches Build in einem eigenen, schlanken Container (z.B. `nginx` oder
-  `caddy`) ausgeliefert.
+- Wird als statische Dateien in einem eigenen, schlanken `nginx:1.27-alpine`-Container
+  ausgeliefert.
 
 ## Stack
 
 Reines HTML/CSS/JS (`index.html`, `style.css`, `app.js`), kein Build-Step, kein Framework – deckt
 den kompletten Screencast-Bedarf (Veranstaltungsauswahl, Sitzplan, Buchungsformular, Live-Status)
 ohne zusätzliche Komplexität ab. `API_BASE_URL` wird in einer eigenen `config.js` gesetzt (kein Build-Step für
-Env-Injection vorhanden) – lokal per fest eingebautem Default (`http://localhost:8080`), im
+Env-Injection vorhanden) – im Image steht der Default `http://localhost:8080`, im
 Cluster überschreibt ein ConfigMap-Mount (`charts/ticketflow-app/templates/frontend/configmap.yaml`)
 diese Datei mit einem leeren String: das Ingress routet `/events` und `/reservations` bereits auf
 derselben Origin an `catalog-api` weiter (siehe `templates/frontend/ingress.yaml`), ein leerer
@@ -42,7 +42,7 @@ kein hartkodierter Cluster-Hostname im Image.
    unterscheiden.
 3. `POST /events/{id}/reservations` → Statuskarte „in Bearbeitung“ (mit Spinner), danach Polling
    von `GET /reservations/{id}` alle 2s bis `confirmed` („bestätigt“, ✓) oder `rejected`
-   („ausgebucht“, ✕) – oder Timeout nach 60s (z.B. wenn `reservation-worker` lokal nicht läuft).
+   („ausgebucht“, ✕) – oder Timeout nach 60s (z. B. wenn `reservation-worker` nicht läuft).
    Danach wird der Sitzplan neu geladen, aber nur, wenn noch dieselbe Veranstaltung ausgewählt
    ist wie beim Absenden.
 

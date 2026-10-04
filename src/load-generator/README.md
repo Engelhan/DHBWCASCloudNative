@@ -58,11 +58,9 @@ ist nur über IPv6/die DHBW-Route des Hosts erreichbar), unter Docker Desktop (m
 Ein Lauf verbraucht die Sitzplätze dauerhaft - ein zweiter Lauf findet nur noch die übrig
 gebliebenen freien Plätze.
 
-**Lokal beobachtet:** bei einem Testlauf mit 30 VUs/15s liefen 878 Requests durch (694×`202`,
-183×`409` durch den Hot-Seat-Mechanismus, 0 unerwartete Fehler) – `reservation-worker`
-verarbeitete den entstandenen Kafka-Backlog anschließend sichtbar zeitversetzt ab (lokal nur
-eine Worker-Instanz, kein KEDA) – im echten Cluster ist genau dieser Consumer-Lag das Signal,
-auf das KEDA mit zusätzlichen Replicas reagiert (siehe `charts/keda`, P6).
+Der Kafka-Backlog, den ein Lauf hinterlässt, wird von `reservation-worker` zeitversetzt
+abgearbeitet – genau dieser Consumer-Lag ist das Signal, auf das KEDA mit zusätzlichen Replicas
+reagiert (siehe `charts/reservation-worker`, Bonus B2).
 
 ## Ergebnisse einordnen
 
