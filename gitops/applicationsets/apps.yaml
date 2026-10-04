@@ -1,0 +1,110 @@
+---
+# Stage 2 of 2: data, Kafka, services, NetworkPolicies - applied once every Application of
+# platform.yaml is green. Fork: change the git-generator repoURL below.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ticketflow-apps
+  namespace: argocd
+  labels:
+    # Stage label, also set on every generated Application.
+    ticketflow.io/stage: apps
+spec:
+  goTemplate: true
+  generators:
+    # git generator: one parameter set (env/cluster.yaml); list: one per Application.
+    - matrix:
+        generators:
+          - git:
+              # Literal repo URL (chicken-and-egg).
+              repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+              revision: main
+              files:
+                - path: gitops/env/cluster.yaml
+          - list:
+              # Field notes: see platform.yaml.
+              elements:
+                # --- Network isolation (B1) ---
+                # Writes into namespaces other apps create; retry covers the race. Each object sets
+                # its own
+                # namespace.
+                - name: network-policies
+                  chartPath: charts/network-policies
+                  namespace: kube-system
+                # --- Data / messaging ---
+                # Same namespace as the app so it can read the CNPG secret.
+                - name: postgres-cluster
+                  chartPath: charts/postgres-cluster
+                  namespace: ticketflow
+                # Must share a stage with apicurio: the schema hook waits for Apicurio, which needs
+                # Kafka.
+                - name: kafka-cluster
+                  chartPath: charts/kafka-cluster
+                  namespace: kafka
+                - name: apicurio
+                  chartPath: charts/apicurio
+                  namespace: kafka
+                - name: akhq
+                  chartPath: charts/akhq
+                  namespace: kafka
+                # --- TicketFlow application ---
+                - name: ticketflow-app
+                  chartPath: charts/ticketflow-app
+                  namespace: ticketflow
+                - name: reservation-worker
+                  chartPath: charts/reservation-worker
+                  namespace: ticketflow
+                  ignoreReplicas: true
+                - name: notification-worker
+                  chartPath: charts/notification-worker
+                  namespace: ticketflow
+  # Typed object: see platform.yaml.
+  template:
+    metadata:
+      name: '{{ .name }}'
+      labels:
+        ticketflow.io/stage: apps
+    spec:
+      project: default
+      sources:
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          path: '{{ .chartPath }}'
+          helm:
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - values.yaml
+              - 'values-{{ .ticketflow.environment }}.yaml'
+              - $values/gitops/env/cluster.yaml
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
+  templatePatch: |
+    spec:
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          {{- if .serverSideApply }}
+          - ServerSideApply=true
+          {{- end }}
+      {{- if .ignoreReplicas }}
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: {{ .name }}
+          jsonPointers:
+            - /spec/replicas
+      {{- end }}
