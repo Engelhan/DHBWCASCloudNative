@@ -398,8 +398,13 @@ commands here once these gaps close instead of leaving this section stale.
   names and variable descriptions) is in English now.** Identifiers (resource, variable, role,
   register names) are unchanged, so Terraform state and Ansible behavior are unaffected; the only
   rendered-output change is the comment header of the generated `hosts.ini` (one `local_file`
-  update on the next `terraform apply`). Keep new code there in English. Charts, gitops/ and the
-  graded root README stay German.
+  update on the next `terraform apply`). Since 2026-10-04 **all code comments repo-wide are English
+  and deliberately terse** (one line where possible, rationale only where it isn't obvious; the
+  incident history lives here and in git, not in comments). Keep it that way. Everything else
+  outside the READMEs is English too (chart descriptions, schema descriptions, `required`/`fail`
+  messages, script/CI output, metric help texts, SQL comments). Deliberately still German: all
+  READMEs, `Laborbericht_teil_sturm.md`, the frontend UI texts and demo seed data (event names),
+  and the draw.io diagrams embedded in the root README.
 
 - **Done:** `infra/terraform/` (tested by user), `infra/ansible/` (written, verified both
   statically and against real DHBWCloud VMs — k3s server/agent join and IPv6 node registration
