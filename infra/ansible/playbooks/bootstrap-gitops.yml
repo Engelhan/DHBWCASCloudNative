@@ -1,17 +1,23 @@
 ---
 # Nur der ArgoCD-/GitOps-Teil, separat aufrufbar - z.B. um nach dem ersten "site.yml"-Lauf ein
-# inzwischen geaendertes gitops/apps/app-of-apps.yaml oder secrets.yml nachzuziehen, ohne k3s
-# neu anzufassen.
+# inzwischen geaendertes gitops/applicationset.yaml oder secrets.yml nachzuziehen, ohne k3s
+# neu anzufassen. Nichts synct die ApplicationSets selbst - eine Aenderung an
+# gitops/applicationset.yaml braucht genau diesen Lauf.
 
-- name: ArgoCD (erneut) bootstrappen / App-of-Apps aktualisieren
+- name: ArgoCD (erneut) bootstrappen
   hosts: control_plane
   become: true
   roles:
     - argocd_bootstrap
 
-- name: GitOps-Secrets anlegen (RFC2136-TSIG fuer cert-manager/external-dns)
+- name: GitOps-Secrets anlegen (Repo-Credential, RFC2136-TSIG fuer cert-manager/external-dns)
   hosts: control_plane
   become: true
   roles:
     - gitops_secrets
 
+- name: ApplicationSets gestuft ausrollen (Plattform erst gruen, dann Anwendung)
+  hosts: control_plane
+  become: true
+  roles:
+    - gitops_rollout

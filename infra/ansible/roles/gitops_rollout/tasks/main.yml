@@ -1,0 +1,29 @@
+---
+# Wendet die ApplicationSets aus gitops/applicationset.yaml gestuft an: Stufe fuer Stufe, und die
+# naechste erst, wenn jede Application der vorherigen Synced UND Healthy ist - Healthy heisst bei
+# Deployments/StatefulSets, dass alle Pods der aktuellen Revision ihre Readiness-Probe bestehen,
+# bei Operator-CRs deren Ready-Condition (Begruendung im Kopf von gitops/applicationset.yaml).
+# Das sind die einzigen Objekte, die Ansible im GitOps-Layer anwendet - die Applications und deren
+# Ressourcen erzeugt ArgoCD daraus selbst. Der stat-Check bleibt als Sicherheitsnetz, damit ein
+# Lauf auf einem aelteren Branch/Tag ohne diese Datei den Schritt ueberspringt statt zu scheitern.
+- name: Prüfen, ob das ApplicationSet-Manifest im Repo existiert
+  stat:
+    path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
+  delegate_to: localhost
+  become: false
+  register: applicationset_file
+
+- name: ApplicationSets stufenweise anwenden
+  when: applicationset_file.stat.exists
+  block:
+    - name: ApplicationSet-Manifest auf die Control-Plane kopieren
+      copy:
+        src: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
+        dest: /tmp/ticketflow-applicationset.yaml
+        mode: "0644"
+
+    - name: Stufe anwenden und auf "alles gruen" warten
+      include_tasks: stage.yml
+      loop: "{{ gitops_rollout_stages }}"
+      loop_control:
+        loop_var: gitops_stage

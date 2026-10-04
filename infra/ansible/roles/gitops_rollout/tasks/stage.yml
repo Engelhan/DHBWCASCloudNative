@@ -1,0 +1,55 @@
+---
+# Eine Stufe (gitops_stage): das ApplicationSet mit dem Label ticketflow.io/stage=<stufe> anwenden
+# und warten, bis alle seine Applications existieren, Synced und Healthy sind.
+
+# Soll-Anzahl direkt aus der Datei (Elemente des list-Generators) - sonst waere "alle gruen" schon
+# erfuellt, solange der ApplicationSet-Controller noch keine einzige Application erzeugt hat.
+- name: "Stufe {{ gitops_stage }}: erwartete Anzahl Applications ermitteln"
+  set_fact:
+    gitops_stage_expected: >-
+      {%- set ns = namespace(n=0) -%}
+      {%- for doc in lookup('file', playbook_dir ~ '/../../../gitops/applicationset.yaml') | from_yaml_all -%}
+      {%- if doc and doc.metadata.labels['ticketflow.io/stage'] | default('') == gitops_stage -%}
+      {%- set ns.n = ns.n + (doc.spec.generators[0].matrix.generators[1].list.elements | length) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ ns.n | int }}
+
+- name: "Stufe {{ gitops_stage }}: ApplicationSet im Manifest vorhanden"
+  assert:
+    that: gitops_stage_expected | int > 0
+    fail_msg: "Kein ApplicationSet mit ticketflow.io/stage={{ gitops_stage }} in gitops/applicationset.yaml"
+    quiet: true
+
+# -l waehlt aus der Datei genau das Dokument dieser Stufe aus.
+- name: "Stufe {{ gitops_stage }}: ApplicationSet anwenden"
+  command: >
+    k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
+    -l ticketflow.io/stage={{ gitops_stage }}
+  register: gitops_stage_apply
+  changed_when: "'unchanged' not in gitops_stage_apply.stdout"
+
+# Eine Zeile je Application: "<name> <sync> <health>". Gruen ist die Stufe erst, wenn es genau so
+# viele Zeilen wie erwartet gibt und jede "Synced Healthy" lautet. Laeuft die Zeit ab, zeigt die
+# Fehlermeldung die letzte Ausgabe - also genau, welche Application noch nicht gruen ist.
+- name: "Stufe {{ gitops_stage }}: warten, bis alle {{ gitops_stage_expected }} Applications Synced und Healthy sind"
+  command:
+    argv:
+      - k3s
+      - kubectl
+      - -n
+      - argocd
+      - get
+      - applications.argoproj.io
+      - -l
+      - "ticketflow.io/stage={{ gitops_stage }}"
+      - -o
+      - "jsonpath={range .items[*]}{.metadata.name} {.status.sync.status} {.status.health.status}{'\\n'}{end}"
+  register: gitops_stage_status
+  until: >-
+    gitops_stage_status.stdout_lines | length == gitops_stage_expected | int
+    and gitops_stage_status.stdout_lines | select('search', ' Synced Healthy$') | list | length
+    == gitops_stage_expected | int
+  retries: "{{ gitops_rollout_retries }}"
+  delay: "{{ gitops_rollout_delay }}"
+  changed_when: false

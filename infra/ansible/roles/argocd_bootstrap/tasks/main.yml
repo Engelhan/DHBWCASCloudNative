@@ -36,25 +36,6 @@
   debug:
     msg: "ArgoCD Admin-Login: user=admin password={{ argocd_admin_password_b64.stdout | b64decode }}"
 
-- name: Prüfen, ob das ApplicationSet-Manifest im Repo bereits existiert
-  stat:
-    path: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
-  delegate_to: localhost
-  become: false
-  register: applicationset_file
-
-# Das ApplicationSet ist das einzige Objekt, das Ansible im GitOps-Layer anwendet - alles Weitere
-# (die 19 Applications und deren Ressourcen) erzeugt ArgoCD daraus selbst. Der stat-Check bleibt
-# als Sicherheitsnetz, damit ein Playbook-Lauf auf einem aelteren Branch/Tag ohne diese Datei
-# nicht fehlschlaegt, sondern diesen Schritt nur ueberspringt.
-- name: ApplicationSet-Manifest auf die Control-Plane kopieren
-  copy:
-    src: "{{ playbook_dir }}/../../../gitops/applicationset.yaml"
-    dest: /tmp/ticketflow-applicationset.yaml
-    mode: "0644"
-  when: applicationset_file.stat.exists
-
-- name: ApplicationSet anwenden
-  command: k3s kubectl apply -f /tmp/ticketflow-applicationset.yaml
-  when: applicationset_file.stat.exists
-  changed_when: true
+# Die ApplicationSets wendet bewusst NICHT diese Rolle an, sondern gitops_rollout - erst nach
+# gitops_secrets: ohne Repo-Credential kann ArgoCD das private Repo nicht lesen, und das gestufte
+# Warten auf "alles gruen" liefe ins Leere.
