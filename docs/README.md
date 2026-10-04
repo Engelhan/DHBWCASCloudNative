@@ -10,9 +10,10 @@ Beim Speichern in draw.io das Format `.drawio.svg` beibehalten und „Diagramm e
 ## [`architecture/`](architecture/)
 
 - [`architecture.drawio.svg`](architecture/architecture.drawio.svg) — Gesamtarchitektur (siehe oben).
-- [`pod-distribution.drawio.svg`](architecture/pod-distribution.drawio.svg) — Verteilung der Pods
-  auf die Nodes/Regionen (P4), aus `kubectl get pods -A -o wide` abgeleitet. Ein Schnappschuss:
-  nach Änderungen an Replicas oder Spread-Regeln neu erzeugen, sonst zeigt er nicht den Ist-Zustand
-  — ein Diagramm, das den Ist-Zustand nicht trifft, zählt laut Bewertungsschema (Teil C) gegen uns.
+- [`pod-distribution.drawio.svg`](architecture/pod-distribution.drawio.svg) — Beispiel für die
+  Verteilung der Pods auf die Nodes/Regionen (P4): ein realer Abzug aus `kubectl get pods -A -o wide`,
+  aber nur eine Momentaufnahme — die konkrete Zuordnung ändert sich bei jedem Rescheduling, gleich
+  bleiben die Regeln. Nach Änderungen an Replicas oder Spread-Regeln neu erzeugen, damit das
+  Beispiel zu den Regeln passt.
 
 Weitere Nachweise (z. B. der ArgoCD-App-Tree für W2) kommen ebenfalls hierher.
