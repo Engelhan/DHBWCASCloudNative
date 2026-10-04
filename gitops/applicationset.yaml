@@ -1,25 +1,45 @@
 ---
-# Wurzelobjekt des GitOps-Rollouts (W2) - ersetzt das fruehere App-of-Apps-Pattern mit 19
-# einzelnen Application-Dateien unter gitops/apps/. Wird von infra/ansible/roles/argocd_bootstrap
-# einmalig angewendet; alles Weitere erzeugt und reconciled ArgoCD daraus selbst.
+# Wurzelobjekte des GitOps-Rollouts (W2): ZWEI ApplicationSets, als zwei Dokumente in dieser
+# Datei. Werden von infra/ansible/roles/gitops_rollout angewendet - nacheinander:
 #
-# Warum ein ApplicationSet statt 19 Dateien: Repo-URL, Revision und Environment standen vorher in
-# jeder einzelnen Datei (die repoURL allein 19x). Ein Fork musste sie alle umschreiben - jede
-# uebersehene Stelle blieb still auf dem Original-Repo stehen. Hier steht jede dieser Angaben
-# genau einmal, und alles Deployment-Spezifische kommt aus env/cluster.yaml.
+#   1. ticketflow-platform  Cluster-Addons, Operatoren, Secret-Vault (alles, wovon die Anwendung
+#                           abhaengt: CRDs, StorageClass, ClusterIssuer, ClusterSecretStore).
+#   2. ticketflow-apps      Datenhaltung, Kafka, TicketFlow-Services, NetworkPolicies.
+#
+# Ansible wendet Stufe 2 erst an, wenn JEDE Application aus Stufe 1 Synced UND Healthy ist -
+# Healthy heisst bei Deployments/StatefulSets: alle Pods der aktuellen Revision ready, also deren
+# Readiness-Probes gruen; bei Operator-CRs (CNPG-Cluster, ClusterIssuer, ClusterSecretStore)
+# deren Ready-Condition; bei Charts mit Helm-Hook (openbao) zusaetzlich der durchgelaufene
+# PostSync-Job. Warum nicht ArgoCD-Sync-Waves: die wirken nur innerhalb einer Application bzw.
+# unter einer App-of-Apps, auf von einem ApplicationSet erzeugte Applications gar nicht. Und
+# ApplicationSet-"Progressive Syncs" (RollingSync) schalten Auto-Sync/selfHeal aller erzeugten
+# Applications ab. So bleibt jede Application eigenstaendig automatisch synchronisiert, nur der
+# erste Rollout ist gestuft.
+#
+# Danach (normale Pushes) synct ArgoCD alle Applications beider Stufen unabhaengig voneinander -
+# die Plattform existiert dann ja schon. Nichts synct die ApplicationSets SELBST: eine Aenderung an
+# dieser Datei braucht einen erneuten Lauf von playbooks/bootstrap-gitops.yml (oder kubectl apply).
+#
+# Warum ApplicationSets statt 19 einzelner Application-Dateien: Repo-URL, Revision und
+# Environment standen vorher in jeder einzelnen Datei. Ein Fork musste sie alle umschreiben - jede
+# uebersehene Stelle blieb still auf dem Original-Repo stehen. Hier kommt alles
+# Deployment-Spezifische aus env/cluster.yaml.
 #
 # +---------------------------------------------------------------------------------------+
-# | DIE EINZIGE Stelle im gesamten Repo, an der die Repo-URL noch woertlich steht, ist die |
-# | repoURL des git-Generators unten. Henne-Ei: der Generator muss wissen, aus welchem     |
-# | Repo er env/cluster.yaml ueberhaupt lesen soll. Ab da kommt alles - inklusive der      |
-# | repoURL der erzeugten Applications - aus {{ .ticketflow.repoURL }}.                    |
-# | Fuer einen Fork also: env/cluster.yaml ausfuellen + diese eine Zeile anpassen.         |
+# | Die EINZIGEN Stellen im Repo, an denen die Repo-URL noch woertlich steht, sind die       |
+# | repoURLs der beiden git-Generatoren unten (eine je ApplicationSet). Henne-Ei: der        |
+# | Generator muss wissen, aus welchem Repo er env/cluster.yaml ueberhaupt lesen soll. Ab da |
+# | kommt alles - inklusive der repoURL der erzeugten Applications - aus                     |
+# | {{ .ticketflow.repoURL }}. Fuer einen Fork: env/cluster.yaml + diese zwei Zeilen.        |
 # +---------------------------------------------------------------------------------------+
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ticketflow
+  name: ticketflow-platform
   namespace: argocd
+  labels:
+    # kubectl apply -l ticketflow.io/stage=... waehlt damit genau dieses Dokument aus der Datei.
+    ticketflow.io/stage: platform
 spec:
   goTemplate: true
   generators:
@@ -29,7 +49,7 @@ spec:
     - matrix:
         generators:
           - git:
-              # <-- EINZIGE woertliche Repo-URL, siehe Kasten oben.
+              # <-- woertliche Repo-URL, siehe Kasten oben (je ApplicationSet einmal).
               repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
               revision: main
               files:
@@ -37,8 +57,9 @@ spec:
           - list:
               # Felder je Application:
               #   name             Name der erzeugten Application. Muss exakt so heissen wie
-              #                    bisher - beim Umstieg vom App-of-Apps uebernimmt das
-              #                    ApplicationSet die verwaisten Applications ueber ihren Namen.
+              #                    bisher - beim Umstieg (App-of-Apps -> ein ApplicationSet -> zwei
+              #                    ApplicationSets) uebernimmt das jeweils neue Set die verwaisten
+              #                    Applications ueber ihren Namen.
               #   chartPath        Pfad zum Chart im Repo. Bewusst NICHT "path": der git-Generator
               #                    belegt ".path" bereits mit Metadaten der gefundenen Datei, im
               #                    Kreuzprodukt wuerden sich beide ueberschreiben.
@@ -46,14 +67,8 @@ spec:
               #   serverSideApply  Nur noetig, wenn der Chart eine CRD ueber dem 262144-Byte-
               #                    Annotationslimit der Kubernetes-API mitbringt (siehe
               #                    templatePatch unten).
-              #   syncWave         Nur wo eine echte Reihenfolge noetig ist; sonst holt selfHeal
-              #                    verfruehte Syncs im naechsten Reconcile nach.
               #   ignoreReplicas   spec.replicas des gleichnamigen Deployments nicht vergleichen
               #                    (KEDA verwaltet es, siehe P6).
-              #   retry            Fehlgeschlagene Syncs automatisch wiederholen. Ohne das
-              #                    versucht ArgoCD einen gescheiterten Sync fuer denselben Commit
-              #                    nie erneut - noetig, wo ein Sync an Objekten ANDERER
-              #                    Applications haengt (z.B. deren Namespaces).
               elements:
                 # --- Cluster-Addons / Storage ---
                 - name: longhorn
@@ -62,22 +77,21 @@ spec:
                 - name: cert-manager
                   chartPath: charts/cert-manager
                   namespace: cert-manager
+                # Braucht die cert-manager-CRDs/-Webhooks derselben Stufe - retry (template)
+                # wiederholt den Sync, bis sie da sind.
                 - name: cert-manager-issuer
                   chartPath: charts/cert-manager-config
                   namespace: cert-manager
-                  # Braucht die cert-manager-CRDs aus der Wave davor.
-                  syncWave: "1"
                 - name: external-dns
                   chartPath: charts/external-dns
                   namespace: external-dns
                 - name: traefik-config
                   chartPath: charts/traefik-config
                   namespace: kube-system
+                # Braucht den ClusterIssuer aus cert-manager-issuer.
                 - name: argocd-ingress
                   chartPath: charts/argocd-ingress
                   namespace: argocd
-                  # Braucht den ClusterIssuer aus Wave 1.
-                  syncWave: "2"
                 # --- Operatoren ---
                 - name: cnpg-operator
                   chartPath: charts/cnpg-operator
@@ -91,76 +105,40 @@ spec:
                   chartPath: charts/keda
                   namespace: keda
                   serverSideApply: true
-                # --- Netzwerk-Isolation (B1) ---
-                # Legt NetworkPolicies in allen Namespaces an, auch in solchen, die erst andere
-                # Applications (mit CreateNamespace) erzeugen. Beim ersten Bootstrap scheitert der
-                # Sync fuer noch fehlende Namespaces - retry wiederholt ihn, bis alle da sind.
-                # Die Ziel-Namespace-Angabe ist nur formal, jedes Objekt traegt seinen eigenen.
-                - name: network-policies
-                  chartPath: charts/network-policies
-                  namespace: kube-system
-                  retry: true
                 # --- Secret-Vault (B1) ---
-                # Kein syncWave auf keinem der vier: folgt exakt dem Praezedenzfall
-                # cnpg-operator->postgres-cluster/strimzi-operator->kafka-cluster oben (auch die
-                # haben keinen) - selfHeal iteriert ueber das "Postgres/CRD noch nicht da"-Rennen,
-                # eine echte Reihenfolge ist nicht noetig.
                 - name: external-secrets-operator
                   chartPath: charts/external-secrets-operator
                   namespace: external-secrets
                   # secretstores/clustersecretstores-CRDs sind je ~252KB reines YAML (gemessen,
                   # Chart-Version 2.11.0) - knapp unter dem 262144-Byte-Limit, aber
                   # client-side-apply speichert die volle Ressource nochmal als JSON in der
-                  # last-applied-configuration-Annotation, was je nach Feldstruktur groesser als
-                  # das YAML ausfallen kann. ServerSideApply=true als sichere Marge statt das
-                  # knapp zu verifizieren - schadet nicht, selbst falls die JSON-Kodierung
-                  # tatsaechlich knapp darunter bliebe.
+                  # last-applied-configuration-Annotation, was groesser ausfallen kann.
+                  # ServerSideApply=true als sichere Marge.
                   serverSideApply: true
+                # Braucht die CNPG-CRDs (cnpg-operator).
                 - name: openbao-postgres
                   chartPath: charts/openbao-postgres
                   namespace: openbao
+                # Braucht die Datenbank aus openbao-postgres; erst grün, wenn der Bootstrap-Hook
+                # (init/unseal/KV/Kubernetes-Auth/Seeding) durchgelaufen ist.
                 - name: openbao
                   chartPath: charts/openbao
                   namespace: openbao
+                # Braucht die ESO-CRDs und ein entsiegeltes OpenBao - Healthy erst, wenn der
+                # ClusterSecretStore die Vault tatsaechlich erreicht (ESO-Health-Check).
                 - name: openbao-secretstore
                   chartPath: charts/openbao-secretstore
                   namespace: external-secrets
-                # --- Datenhaltung / Messaging ---
-                # Bewusst derselbe Namespace wie die Anwendung: catalog-api und
-                # reservation-worker lesen das CNPG-Credentials-Secret per secretKeyRef, was
-                # Namespace-Grenzen nicht ueberschreiten kann.
-                - name: postgres-cluster
-                  chartPath: charts/postgres-cluster
-                  namespace: ticketflow
-                # Kafka-Plattform bewusst getrennt von der Anwendung. Einzige Ausnahme sind die
-                # KafkaUser-CRs, die der Chart in den App-Namespace rendert - Begruendung in
-                # charts/kafka-cluster/templates/_helpers.tpl.
-                - name: kafka-cluster
-                  chartPath: charts/kafka-cluster
-                  namespace: kafka
-                - name: apicurio
-                  chartPath: charts/apicurio
-                  namespace: kafka
-                - name: akhq
-                  chartPath: charts/akhq
-                  namespace: kafka
-                # --- TicketFlow-Anwendung ---
-                - name: ticketflow-app
-                  chartPath: charts/ticketflow-app
-                  namespace: ticketflow
-                - name: reservation-worker
-                  chartPath: charts/reservation-worker
-                  namespace: ticketflow
-                  ignoreReplicas: true
-                - name: notification-worker
-                  chartPath: charts/notification-worker
-                  namespace: ticketflow
   # spec.template ist ein typisiertes Kubernetes-Objekt, kein Text-Template: Go-Ausdruecke duerfen
   # hier nur INNERHALB von String-Werten stehen, nicht als {{- if }}-Bloecke um YAML-Schluessel
   # herum. Alles Bedingte steht deshalb unten in templatePatch.
   template:
     metadata:
       name: '{{ .name }}'
+      labels:
+        # Woran infra/ansible/roles/gitops_rollout erkennt, welche Applications zu dieser Stufe
+        # gehoeren und ob sie schon alle Synced/Healthy sind.
+        ticketflow.io/stage: platform
     spec:
       project: default
       # Zwei Sources: der Chart selbst, plus dasselbe Repo noch einmal als reine Wertequelle
@@ -194,19 +172,24 @@ spec:
         automated:
           prune: true
           selfHeal: true
+        # Fuer ALLE Applications: ArgoCD versucht einen gescheiterten automatischen Sync fuer
+        # denselben Commit sonst nie erneut. Innerhalb einer Stufe haengen einzelne Apps an
+        # anderen derselben Stufe (CRDs, Namespaces, Webhooks, Secrets) - der erste Versuch darf
+        # scheitern, der naechste mit Backoff klappt. Ohne retry bliebe die Stufe fuer immer rot
+        # und Ansible wartete vergeblich.
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
   # Ergaenzt pro Element die Teile, die nicht fuer alle Applications gleich sind. Wird als
   # Merge-Patch auf das gerenderte template angewendet (Objekte werden gemergt, Listen ersetzt) -
-  # syncPolicy.automated oben bleibt also erhalten, syncOptions wird komplett gesetzt.
-  # Der spec-Block wird immer erzeugt, damit der Patch nie leer ist.
+  # syncPolicy.automated/retry oben bleiben also erhalten, syncOptions wird komplett gesetzt.
   #
   # CreateNamespace=true steht bewusst pauschal drin: fuer bereits existierende Namespaces
   # (kube-system, argocd) ist es wirkungslos, spart aber ein weiteres Feld je Element.
   templatePatch: |
-    {{- if .syncWave }}
-    metadata:
-      annotations:
-        argocd.argoproj.io/sync-wave: "{{ .syncWave }}"
-    {{- end }}
     spec:
       syncPolicy:
         syncOptions:
@@ -214,14 +197,162 @@ spec:
           {{- if .serverSideApply }}
           - ServerSideApply=true
           {{- end }}
-        {{- if .retry }}
+      {{- if .ignoreReplicas }}
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: {{ .name }}
+          jsonPointers:
+            - /spec/replicas
+      {{- end }}
+---
+# Stufe 2 - wird erst angewendet, wenn ticketflow-platform vollstaendig gruen ist (siehe oben).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ticketflow-apps
+  namespace: argocd
+  labels:
+    # kubectl apply -l ticketflow.io/stage=... waehlt damit genau dieses Dokument aus der Datei.
+    ticketflow.io/stage: apps
+spec:
+  goTemplate: true
+  generators:
+    # Matrix = Kreuzprodukt beider Generatoren: der git-Generator liefert genau EINEN Parametersatz
+    # (den Inhalt von env/cluster.yaml), der list-Generator einen pro Application. Jedes Element
+    # sieht dadurch sowohl seine eigenen Felder als auch .ticketflow.* aus der zentralen Datei.
+    - matrix:
+        generators:
+          - git:
+              # <-- woertliche Repo-URL, siehe Kasten oben (je ApplicationSet einmal).
+              repoURL: git@github.com:Engelhan/DHBWCASCloudNative.git
+              revision: main
+              files:
+                - path: gitops/env/cluster.yaml
+          - list:
+              # Felder je Application:
+              #   name             Name der erzeugten Application. Muss exakt so heissen wie
+              #                    bisher - beim Umstieg (App-of-Apps -> ein ApplicationSet -> zwei
+              #                    ApplicationSets) uebernimmt das jeweils neue Set die verwaisten
+              #                    Applications ueber ihren Namen.
+              #   chartPath        Pfad zum Chart im Repo. Bewusst NICHT "path": der git-Generator
+              #                    belegt ".path" bereits mit Metadaten der gefundenen Datei, im
+              #                    Kreuzprodukt wuerden sich beide ueberschreiben.
+              #   namespace        Ziel-Namespace.
+              #   serverSideApply  Nur noetig, wenn der Chart eine CRD ueber dem 262144-Byte-
+              #                    Annotationslimit der Kubernetes-API mitbringt (siehe
+              #                    templatePatch unten).
+              #   ignoreReplicas   spec.replicas des gleichnamigen Deployments nicht vergleichen
+              #                    (KEDA verwaltet es, siehe P6).
+              elements:
+                # --- Netzwerk-Isolation (B1) ---
+                # Legt NetworkPolicies in allen Namespaces an, auch in app/kafka, die erst
+                # postgres-cluster/kafka-cluster dieser Stufe (CreateNamespace) erzeugen - retry
+                # (template) wiederholt den Sync, bis alle da sind. Die Ziel-Namespace-Angabe ist
+                # nur formal, jedes Objekt traegt seinen eigenen.
+                - name: network-policies
+                  chartPath: charts/network-policies
+                  namespace: kube-system
+                # --- Datenhaltung / Messaging ---
+                # Bewusst derselbe Namespace wie die Anwendung: catalog-api und
+                # reservation-worker lesen das CNPG-Credentials-Secret per secretKeyRef, was
+                # Namespace-Grenzen nicht ueberschreiten kann.
+                - name: postgres-cluster
+                  chartPath: charts/postgres-cluster
+                  namespace: ticketflow
+                # Kafka-Plattform bewusst getrennt von der Anwendung. Einzige Ausnahme sind die
+                # KafkaUser-CRs, die der Chart in den App-Namespace rendert - Begruendung in
+                # charts/kafka-cluster/templates/_helpers.tpl. MUSS in derselben Stufe wie
+                # apicurio bleiben: sein Schema-Registrierungs-Hook wartet ohne Timeout auf
+                # Apicurio, Apicurio wiederum auf Kafka - in getrennten Stufen haengt beides.
+                - name: kafka-cluster
+                  chartPath: charts/kafka-cluster
+                  namespace: kafka
+                - name: apicurio
+                  chartPath: charts/apicurio
+                  namespace: kafka
+                - name: akhq
+                  chartPath: charts/akhq
+                  namespace: kafka
+                # --- TicketFlow-Anwendung ---
+                - name: ticketflow-app
+                  chartPath: charts/ticketflow-app
+                  namespace: ticketflow
+                - name: reservation-worker
+                  chartPath: charts/reservation-worker
+                  namespace: ticketflow
+                  ignoreReplicas: true
+                - name: notification-worker
+                  chartPath: charts/notification-worker
+                  namespace: ticketflow
+  # spec.template ist ein typisiertes Kubernetes-Objekt, kein Text-Template: Go-Ausdruecke duerfen
+  # hier nur INNERHALB von String-Werten stehen, nicht als {{- if }}-Bloecke um YAML-Schluessel
+  # herum. Alles Bedingte steht deshalb unten in templatePatch.
+  template:
+    metadata:
+      name: '{{ .name }}'
+      labels:
+        # Woran infra/ansible/roles/gitops_rollout erkennt, welche Applications zu dieser Stufe
+        # gehoeren und ob sie schon alle Synced/Healthy sind.
+        ticketflow.io/stage: apps
+    spec:
+      project: default
+      # Zwei Sources: der Chart selbst, plus dasselbe Repo noch einmal als reine Wertequelle
+      # ("ref: values"). Dadurch kann jeder Chart die zentrale env/cluster.yaml als zusaetzliche
+      # Values-Datei laden, ohne dass sie in jeden Chart kopiert werden muesste.
+      sources:
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          path: '{{ .chartPath }}'
+          helm:
+            # values.yaml muss explizit mit aufgefuehrt werden - sobald valueFiles gesetzt ist,
+            # laedt ArgoCD sie nicht mehr automatisch.
+            #
+            # values-<environment>.yaml wird fuer JEDEN Chart versucht und per
+            # ignoreMissingValueFiles uebersprungen, wo es die Datei nicht gibt. Damit braucht ein
+            # Chart, der spaeter einen dev/prod-Split bekommt, keine Aenderung mehr an dieser
+            # Datei. Die zentrale env/cluster.yaml ist davon nicht betroffen: fehlt sie, rendern
+            # die Charts nicht durch (required-Meldung), statt still falsche Defaults zu nehmen.
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - values.yaml
+              - 'values-{{ .ticketflow.environment }}.yaml'
+              - $values/gitops/env/cluster.yaml
+        - repoURL: '{{ .ticketflow.repoURL }}'
+          targetRevision: '{{ .ticketflow.targetRevision }}'
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        # Fuer ALLE Applications: ArgoCD versucht einen gescheiterten automatischen Sync fuer
+        # denselben Commit sonst nie erneut. Innerhalb einer Stufe haengen einzelne Apps an
+        # anderen derselben Stufe (CRDs, Namespaces, Webhooks, Secrets) - der erste Versuch darf
+        # scheitern, der naechste mit Backoff klappt. Ohne retry bliebe die Stufe fuer immer rot
+        # und Ansible wartete vergeblich.
         retry:
           limit: -1
           backoff:
             duration: 30s
             factor: 2
             maxDuration: 5m
-        {{- end }}
+  # Ergaenzt pro Element die Teile, die nicht fuer alle Applications gleich sind. Wird als
+  # Merge-Patch auf das gerenderte template angewendet (Objekte werden gemergt, Listen ersetzt) -
+  # syncPolicy.automated/retry oben bleiben also erhalten, syncOptions wird komplett gesetzt.
+  #
+  # CreateNamespace=true steht bewusst pauschal drin: fuer bereits existierende Namespaces
+  # (kube-system, argocd) ist es wirkungslos, spart aber ein weiteres Feld je Element.
+  templatePatch: |
+    spec:
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          {{- if .serverSideApply }}
+          - ServerSideApply=true
+          {{- end }}
       {{- if .ignoreReplicas }}
       ignoreDifferences:
         - group: apps
