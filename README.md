@@ -192,6 +192,55 @@ Toolchain wie im `reservation-worker` zum Einsatz kommt und das Image im Flash-S
 klein/schnell startend bleibt. *Alternative:* Python + FastAPI (schnelleres Prototyping, aber
 größeres Image und eine zweite Toolchain neben Go).
 
+**P1 – Ergänzung: gemeinsame Datenbank für `catalog-api` und `reservation-worker`.** *Wahl:*
+Beide Services nutzen dieselbe CNPG-Datenbank (`ticketflow`, Service
+`<db>-postgres-cluster-rw`) mit demselben, von CNPG generierten App-User. Die Rollen sind fachlich
+getrennt: `catalog-api` liest nur (`events`, `seats`, `reservations` für die Status-Abfrage),
+`reservation-worker` schreibt als Einziger (`seats.status`, `reservations`). `notification-worker`
+hat keinen Datenbankzugriff. *Alternative:* „Database per Service“, also eine eigene Datenbank je
+Service: Die API hält eine Lese-Kopie der Sitzplatz-Verfügbarkeit, die sie aus den
+`reservation-result`-Events aufbaut (CQRS/Read-Model). *Begründung:* Das knappe Gut im Flash-Sale
+ist der einzelne Sitzplatz, und dessen Zustand darf es nur einmal geben. Der Worker sperrt ihn
+atomar per `UPDATE seats … WHERE status = 'free'`; die API zeigt denselben Datensatz an. Mit
+getrennten Datenbanken wäre die Sitzplatzanzeige nur *eventually consistent*: Gerade in der
+Lastspitze, wenn der Consumer-Lag hoch ist (genau dann skaliert KEDA), sähen Käufer längst
+vergebene Plätze als frei und würden massenhaft in `409`/`Rejected` laufen. Außerdem bräuchte es
+einen zweiten CNPG-Cluster samt Replikation und Backup sowie einen Projektionsdienst. Das ist für
+drei Tabellen unverhältnismäßig.
+
+*Vorteile:*
+- eine Quelle der Wahrheit für den Sitzplatzstatus, keine Synchronisationslücke zwischen Anzeige
+  und Buchung;
+- die API kann den Endstatus einer Reservierung direkt aus `reservations` lesen;
+- nur ein zustandsbehafteter Datenbankdienst muss betrieben, repliziert (Primary + Replica in zwei
+  Regionen, P4/P5) und gesichert werden.
+
+*Nachteile:*
+- **Schema-Kopplung:** Beide Services legen das Schema an (`src/catalog-api/internal/db/migrate.go`
+  und `src/reservation-worker/internal/migrate/sql/0001_init.sql`, jeweils
+  `CREATE TABLE IF NOT EXISTS`). Eine Schemaänderung muss deshalb in beiden Services abgestimmt und
+  rückwärtskompatibel ausgerollt werden. Unabhängige Deployments gelten damit nur, solange das
+  Schema stabil bleibt.
+- **Gemeinsamer Engpass und Fehlerbereich:** Alle Lese- und Schreibzugriffe laufen auf denselben
+  Primary. Ein Ausfall oder Failover trifft beide Services gleichzeitig, und die eigentliche
+  Skalierungsgrenze des Workers ist dieser Primary, nicht die Pod-Zahl (siehe B2,
+  `maxReplicaCount`).
+- **Kein Least-Privilege auf DB-Ebene:** Dass `catalog-api` nur liest, ist eine Code-Konvention.
+  Ein Rechte-Konzept setzt das nicht durch, denn beide nutzen denselben DB-User.
+
+*Bezug zur Microservice-Architektur:* Das Muster „Database per Service“ fordert, dass jeder
+Service seine Daten exklusiv besitzt und andere nur über seine API oder Events darauf zugreifen.
+Diese Regel brechen wir hier bewusst an einer Stelle: Es handelt sich um ein *Shared-Database*-
+Muster zwischen zwei Services desselben Bounded Context „Reservierung“. Die Entkopplung, auf die es
+im Lastpfad ankommt, bleibt erhalten, denn die API schreibt nie synchron und die Annahme läuft
+über Kafka. Damit lassen sich API und Worker unabhängig skalieren und ausfallen: Ist der Worker
+weg, nimmt die API weiter an und Kafka puffert. Gekoppelt sind die beiden Services nur über das
+gemeinsame Schema. `notification-worker` hält sich dagegen vollständig an das Microservice-Prinzip
+und kennt nur Events. Falls Lesezugriffe den Primary später überlasten, wäre der erste Schritt,
+`catalog-api` auf den Read-Only-Service `<db>-postgres-cluster-ro` (CNPG-Replica) und einen
+eigenen Nur-Lese-DB-User umzustellen. Erst danach käme eine eigene Datenbank mit
+eventbasiertem Read-Model.
+
 **P2 – Infrastruktur als Code.** *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap — ein `terraform apply` gefolgt von einem
 `ansible-playbook site.yml` bringt den kompletten Stack hoch. *Alternative:* manuell im
@@ -339,6 +388,9 @@ abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). 
 
 ## Grenzen
 
+- `catalog-api` und `reservation-worker` teilen sich eine Datenbank und einen DB-User. Schema-
+  Änderungen müssen daher in beiden Services abgestimmt werden, und der eine Postgres-Primary
+  begrenzt den Durchsatz beider Services (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit; CNPG- und Kafka-Replikation
   sind daher klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
 - Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway); `notification-worker` kann
