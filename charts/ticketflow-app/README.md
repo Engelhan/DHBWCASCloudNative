@@ -6,8 +6,7 @@ frontend nicht in derselben Application wie Kafka deployen. catalog-api und fron
 hier einen Chart (statt je einen eigenen wie `charts/reservation-worker`/
 `charts/notification-worker`), da frontend ausschließlich mit catalog-api spricht und sich mit ihm
 eine Ingress-Route/Origin teilt. Innerhalb des Charts folgt aber **jede der beiden Komponenten
-exakt demselben Muster** wie die Worker-Charts — siehe `charts/README.md`
-## Muster für Applikations-Charts.
+exakt demselben Muster** wie die Worker-Charts — siehe `charts/README.md` ## Muster für Applikations-Charts.
 
 ## Struktur
 
@@ -15,17 +14,16 @@ exakt demselben Muster** wie die Worker-Charts — siehe `charts/README.md`
 ticketflow-app/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte, feste Key-Reihenfolge je Komponente
-├── values-dev.yaml          # 1 Replica je Service
+├── values-dev.yaml          # 2 Replicas je Service
 ├── values-prod.yaml         # 3 Replicas je Service + minAvailable: 2 (P4/P5)
 ├── values.schema.json       # JSON-Schema: Pflichtfelder, Typen, verbietet image.tag "latest"
 └── templates/
     ├── _helpers.tpl                          # Namen/Labels/Image, auch komponentenbezogen
     ├── catalog-api/
-    │   ├── deployment.yaml                   # DB_USER/DB_PASSWORD aus Secret, Rest aus ConfigMap
+    │   ├── deployment.yaml                   # DB_USER/DB_PASSWORD aus dem CNPG-Secret, Rest aus ConfigMap
     │   ├── service.yaml
     │   ├── configmap.yaml
-    │   ├── secret.yaml                       # chart-eigene Postgres-Credentials (s.u.)
-    │   ├── servicemonitor.yaml               # /metrics, P7
+    │   ├── servicemonitor.yaml               # aus (kein Prometheus im Cluster)
     │   └── poddisruptionbudget.yaml
     └── frontend/
         ├── deployment.yaml                   # config.js-Override per ConfigMap-Volume-Mount
@@ -69,16 +67,14 @@ wird das von CNPG selbst erzeugte Secret direkt referenziert statt dupliziert:
 `database.credentialsSecretName` ist leer und wird zu
 `<ticketflow.postgres.databaseName>-postgres-cluster-app` aufgelöst (bewusst nicht über OpenBao —
 die Kopie dort ist nur Audit, siehe `charts/postgres-cluster`), `database.host` zu
-`<...>-postgres-cluster-rw`. Vorher lag die Datenbank in `application`, was `secretKeyRef` über die
-Namespace-Grenze unmöglich machte und ein chart-eigenes Secret mit derselben, von Hand
-gepflegten Kopie der Zugangsdaten erzwang.
+`<...>-postgres-cluster-rw`.
 
 ## values-dev.yaml vs. values-prod.yaml
 
 | Wert | dev | prod | Begründung |
 |---|---|---|---|
-| `catalogApi.replicaCount` / `frontend.replicaCount` | 1 | 3 | prod: `topologySpreadConstraints` (P4) verteilen erst ab mehreren Replicas sichtbar über die drei simulierten Regionen |
-| `podDisruptionBudget.minAvailable` | 1 | 2 | prod: toleriert einen Node-Drain/Rollout-Schritt, ohne unter zwei laufende Replicas zu fallen |
+| `catalogApi.replicaCount` / `frontend.replicaCount` | 2 | 3 | beide Profile: mindestens zwei Replicas, hart auf verschiedene Regionen verteilt (P4); prod nutzt alle drei Regionen |
+| `podDisruptionBudget.minAvailable` | 1 | 2 | lässt in beiden Profilen einen Node-Drain/Rollout-Schritt zu |
 
 Welche der beiden Dateien greift, steuert `ticketflow.environment` in `gitops/env/cluster.yaml` —
 nicht die Application, siehe `gitops/applicationsets/`.
@@ -101,5 +97,4 @@ helm template ticketflow-app charts/ticketflow-app \
 ```
 
 Deployment läuft indirekt über ArgoCD (`gitops/applicationsets/`, Element `ticketflow-app`,
-Namespace `ticketflow` — Kafka liegt getrennt davon in `kafka`, siehe `charts/README.md`
-## Namespace-Aufteilung).
+Namespace `ticketflow` — Kafka liegt getrennt davon in `kafka`, siehe `charts/README.md` ## Namespace-Aufteilung).

@@ -3,7 +3,7 @@
 Eigenständiger Chart für Kafka (Messaging) sowie die Registrierung der kanonischen Kafka-Event-
 Schemas in Apicurio Registry (Carlos' Scope). `catalog-api`/`frontend` haben einen eigenen Chart
 (`charts/ticketflow-app/`) — Team-Entscheidung, nicht in derselben Application wie Kafka
-deployen, siehe `gitops/apps/ticketflow-app.yaml`. `notification-worker`, `reservation-worker`
+deployen. `notification-worker`, `reservation-worker`
 und der CNPG-Postgres-Cluster sind ebenfalls eigene, eigenständige Charts
 (`charts/notification-worker/`, `charts/reservation-worker/`, `charts/postgres-cluster/`) — siehe
 `../README.md`.
@@ -23,7 +23,7 @@ kafka-cluster/
     │   ├── kafka-broker-nodepool.yaml
     │   ├── kafka-controller-nodepool.yaml
     │   ├── kafka-cluster.yaml              # SCRAM-SHA-512-Auth + authorization: simple (B2)
-    │   ├── kafka-metrics-configmap.yaml   # JMX-Prometheus-Exporter-Regeln (P7)
+    │   ├── kafka-metrics-configmap.yaml   # JMX-Exporter-Regeln (derzeit scrapt sie kein Prometheus)
     │   ├── kafka-topics.yaml              # aus .Values.kafka.topics generiert
     │   ├── kafka-users.yaml               # aus .Values.kafka.users generiert (B2, KafkaUser+ACLs)
     │   └── kafka-user-pushsecrets.yaml    # spiegelt die Strimzi-SCRAM-Secrets nach OpenBao (B1)
@@ -41,14 +41,12 @@ kafka-cluster/
 | `partitions` | 20 | 20 | Obergrenze paralleler Consumer je Group; KEDA `maxReplicaCount` in `charts/reservation-worker` ist 10, jeder Pod bekommt genau 2 Partitionen. Kommt in beiden Profilen aus `values.yaml` — Kafka kann Partitionen nie reduzieren, ein kleinerer prod-Wert ließe sich auf einem bestehenden Cluster nicht anwenden |
 | Broker-/Controller-Storage | 5Gi / 2Gi | 10Gi / 5Gi | dev: Lab-Longhorn-Platz; Herleitung siehe `values.yaml` |
 
-dev lief bis 2026-09-29 mit einem einzigen Broker/Controller. Das hat P4 (keine Verteilung sichtbar,
-die harte Constraint war per `if replicas > 1` abgeschaltet) und P5 (jeder Broker-Neustart = Ausfall
-des Reservierungs-Eingangs) auf genau dem Cluster verfehlt, auf dem beides gezeigt werden muss.
 Requests/Limits/Heap stehen mit Herleitung in `values.yaml` (`kafka.broker`/`kafka.controller`).
 
-## Umstellung von 1 auf 3 Broker (einmalig, bestehender Cluster)
+## Umstellung von 1 auf 3 Broker (einmalig, nur Cluster von vor dem 29.09.)
 
-Ein ArgoCD-Sync allein reicht **nicht** vollständig: neue Broker/Controller kommen dazu, aber
+Bis 2026-09-29 lief dev mit einem einzigen Broker/Controller. Wer einen so alten Cluster noch
+hat: ein ArgoCD-Sync allein reicht **nicht** vollständig – neue Broker/Controller kommen dazu, aber
 
 - Strimzis Topic Operator kann den `replicationFactor` eines **bestehenden** Topics nur mit Cruise
   Control ändern (hier nicht deployt) — `reservation-requested`/`reservation-result` blieben bei 1
@@ -111,7 +109,7 @@ Der Chart rendert bewusst in **zwei** Namespaces:
 | Ressourcen | Namespace | warum |
 |---|---|---|
 | `Kafka`, `KafkaNodePool`, `KafkaTopic`, Metrics-ConfigMap, Schema-Registrar-Job | `ticketflow.namespaces.kafka` (= Release-Namespace) | die Kafka-Plattform läuft getrennt von der Anwendung |
-| `KafkaUser` + das AKHQ-Passwort-`Secret` | `ticketflow.namespaces.app` | siehe unten |
+| `KafkaUser` + deren `PushSecret`s nach OpenBao | `ticketflow.namespaces.app` | siehe unten |
 
 Der Strimzi User Operator legt das generierte SCRAM-`Secret` **immer im Namespace der
 `KafkaUser`-CR** ab, und Kubernetes erlaubt kein `secretKeyRef` über Namespace-Grenzen. Lägen die

@@ -11,7 +11,7 @@ nicht als Punkt-zu-Punkt-Queue. Folgt dem gemeinsamen Muster für Applikations-C
 notification-worker/
 ├── Chart.yaml
 ├── values.yaml
-├── values-dev.yaml          # 1 Replica, PDB minAvailable 1
+├── values-dev.yaml          # 2 Replicas, PDB minAvailable 1
 ├── values-prod.yaml         # 3 Replicas, PDB minAvailable 2
 ├── values.schema.json
 └── templates/
@@ -20,7 +20,7 @@ notification-worker/
     ├── configmap.yaml
     ├── secret.yaml                    # nur falls secret.create=true - Standard seit B1: aus
     ├── externalsecret.yaml            # OpenBao gesynct (siehe ## Secret-Namen und ## OpenBao)
-    ├── podmonitor.yaml                # /metrics, P7
+    ├── podmonitor.yaml                # aus (kein Prometheus im Cluster)
     └── poddisruptionbudget.yaml
 ```
 
@@ -29,8 +29,7 @@ Bewusst **kein** `Service` — gleiche Begründung wie bei `charts/reservation-w
 ## Zentrale Werte
 
 Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet daraus
-`<ticketflow.imageRegistry>/ticketflow-notification-worker:<ticketflow.imageTag>`. Vorher war
-`image.tag` hier leer und ein Deploy deshalb ohne `--set` gar nicht möglich.
+`<ticketflow.imageRegistry>/ticketflow-notification-worker:<ticketflow.imageTag>`.
 
 ## Besonderheiten
 
@@ -65,8 +64,8 @@ setzen.
 
 | Wert | dev | prod | Begründung |
 |---|---|---|---|
-| `replicaCount` | 1 | 3 | prod verteilt die Partitionen des Result-Topics über drei Consumer und gibt `topologySpreadConstraints` (P4) etwas zu verteilen |
-| `podDisruptionBudget.minAvailable` | 1 | 2 | bei einem einzigen Replica würde ein Budget von 2 jeden Node-Drain blockieren |
+| `replicaCount` | 2 | 3 | beide Profile: mindestens zwei Consumer in zwei Regionen (P4); prod nutzt alle drei |
+| `podDisruptionBudget.minAvailable` | 1 | 2 | bei zwei Replicas würde ein Budget von 2 jeden Node-Drain blockieren |
 
 Welche Datei greift, steuert `ticketflow.environment` in `gitops/env/cluster.yaml`.
 
