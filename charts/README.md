@@ -154,17 +154,18 @@ CNPG-Cluster lag ursprünglich im eigenen Namespace `application`, weshalb `cata
 (keine Namespace-Grenzen) und beide Charts die Zugangsdaten stattdessen in ein **eigenes** Secret
 duplizierten — dieselben Werte an drei Stellen, die von Hand übereinstimmen mussten. Seit
 `charts/postgres-cluster` im selben Namespace wie die Anwendung läuft, entfällt das: beide Charts
-referenzieren direkt das von dort angelegte `<ticketflow.postgres.databaseName>-postgres-user`
+referenzieren direkt das von CNPG angelegte `<ticketflow.postgres.databaseName>-postgres-cluster-app`
 (Keys `username`/`password`). Die chart-eigenen `secret.yaml`-Templates und die
 `databaseSecret`-Werteblöcke sind entfallen. **Das Passwort steht seit B1 (Root-README ## Bonus)
 nirgends mehr im Repo** — die CNPG-`Cluster`-CR gibt bewusst kein eigenes `bootstrap.initdb.secret`
-mehr vor, CNPG generiert das Credential selbst (`<clusterName>-app`), ein `PushSecret` spiegelt es
-nach OpenBao und ein `ExternalSecret` synct es von dort unter dem oben genannten konventionellen
-Namen zurück — siehe `charts/README.md`-Abschnitt zu `openbao-postgres`/`openbao-secretstore`
+mehr vor, CNPG generiert das Credential selbst (`<clusterName>-app`), die Anwendung liest es
+direkt, und ein `PushSecret` spiegelt es nur als Audit-Kopie nach OpenBao (bis 04.10. holte ein
+`ExternalSecret` es von dort unter dem Namen `<name>-postgres-user` zurück — ein Umweg, der die
+Datenbank-Zugangsdaten unnötig von OpenBao abhängig machte) — siehe `charts/README.md`-Abschnitt zu `openbao-postgres`/`openbao-secretstore`
 weiter unten und `CLAUDE.md` ## Current implementation status für Details.
 
 Host, Datenbankname und Secret-Name leiten sich aus `ticketflow.postgres.databaseName` ab
-(`<name>-postgres-cluster-rw` bzw. `<name>-postgres-user`), `database.{host,name,credentialsSecretName}`
+(`<name>-postgres-cluster-rw` bzw. `<name>-postgres-cluster-app`), `database.{host,name,credentialsSecretName}`
 bleiben als Override leer.
 
 ## Addon-Charts

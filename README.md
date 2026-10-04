@@ -598,7 +598,10 @@ Eingreifen (Postgres-Backend-Leader-Wahl); ein Neustart/Ersatz-Pod zeigt den Aut
 beim automatischen `bao operator unseal`, ohne einen erneuten manuellen Schritt; `kubectl -n
 <app-namespace> get externalsecret` zeigt `SecretSynced`; `kubectl -n <app-namespace> get
 pushsecret` zeigt `Synced` für die Strimzi-/CNPG-Credentials, `bao kv get secret/kafka/catalog-api`
-bzw. `bao kv get secret/postgres/app-user` zeigt den gespiegelten Wert. NetworkPolicy-Hälfte:
+bzw. `bao kv get secret/postgres/app-user` zeigt den gespiegelten Wert (`updatePolicy: Replace`:
+die Kopie folgt dem Original, auch wenn ein Operator das Passwort neu erzeugt). Die Anwendung
+selbst liest ihre Kafka- und Postgres-Zugangsdaten direkt aus den Operator-Secrets, nicht aus
+OpenBao — ein versiegelter Vault hält also den Ticketverkauf nicht an. NetworkPolicy-Hälfte:
 `kubectl get networkpolicy -A` zeigt je Namespace `default-deny-all` + `allow-*`; negative
 Probe — ein Pod ohne passendes Label erreicht CNPG:5432 und den Kafka-Broker nicht:
 ```bash

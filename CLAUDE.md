@@ -1057,7 +1057,8 @@ commands here once these gaps close instead of leaving this section stale.
 
   Chart-owned Secrets migrated to `ExternalSecret`s pulling from this vault (target Secret
   name/keys stay byte-identical to before, zero Deployment changes):
-  `charts/postgres-cluster/templates/postgres-user-secret.yaml`,
+  `charts/postgres-cluster/templates/postgres-user-secret.yaml` (deleted again 2026-10-04 — apps now
+  read CNPG's own secret directly, see the PushSecret paragraph below),
   `charts/akhq/templates/kafka-sasl-secret.yaml` (as of 2026-09-23 a straight 1:1 key copy of
   `sasl.jaas.config` — no template reconstruction, see below),
   `charts/akhq/templates/basic-auth-secret.yaml` — AKHQ's basic-auth password hash used to be a
@@ -1126,8 +1127,10 @@ commands here once these gaps close instead of leaving this section stale.
   OpenBao mirrors operator-generated credentials too, not just the ones this repo originates
   itself** — makes OpenBao a genuine central audit surface (`bao kv get ...` shows every
   credential in the cluster, not only the chart-seeded ones), per the B1 Begründung's "zentrale
-  Audit-Fläche" claim. Two additions, both `updatePolicy: IfNotExists` (the operator sets the
-  value once and doesn't rotate it, so `Replace` would just be a no-op write on every sync):
+  Audit-Fläche" claim. Two additions, both `updatePolicy: Replace` since 2026-10-04 (were
+  `IfNotExists`, which kept a stale value in OpenBao whenever an operator regenerated a password,
+  e.g. after a CNPG cluster rebuild; ESO's Vault provider skips the write when the property is
+  already identical, `providers/v1/vault/client_push.go`, so Replace costs nothing):
   - `charts/kafka-cluster/templates/messaging/kafka-user-pushsecrets.yaml` — one `PushSecret` per
     `kafka.users` entry **without** a `passwordSecretName`. Reads the Strimzi
     User-Operator-generated Secret (named after the `KafkaUser`, same namespace) and mirrors
@@ -1157,9 +1160,12 @@ commands here once these gaps close instead of leaving this section stale.
     already applied to `charts/openbao-postgres`), so CNPG now generates the ticketflow-app DB
     credential itself (`<clusterName>-app` — `postgres-cluster.appSecretName` in
     `_helpers.tpl`). New `templates/postgres-user-pushsecret.yaml` mirrors it to
-    `secret/postgres/app-user`; the existing `templates/postgres-user-secret.yaml`
-    (`ExternalSecret`) pulls it back out under the original, conventional name
-    (`postgres-cluster.userSecretName`) so `catalog-api`/`reservation-worker` need zero changes.
+    `secret/postgres/app-user` as an audit copy only. **Since 2026-10-04 nothing reads it back:**
+    the former `templates/postgres-user-secret.yaml` (`ExternalSecret` re-creating
+    `<db>-postgres-user` from OpenBao) is deleted, and `catalog-api`/`reservation-worker` read
+    CNPG's `<db>-postgres-cluster-app` directly (same namespace) — the round-trip made DB
+    credentials depend on an unsealed OpenBao and, with `IfNotExists`, could serve a stale
+    password after a cluster rebuild.
     This also means the OpenBao bootstrap job **no longer invents this password itself** — the
     `seed_if_missing secret/postgres/app-user ...` line was removed from
     `charts/openbao/templates/bootstrap-job.yaml`; CNPG is now the sole origin of that value.
