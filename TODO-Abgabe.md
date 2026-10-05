@@ -179,7 +179,7 @@ Xaron 188, Carlos-Ku9 71, Philipp Stiegler 31, alea563-blipp 3 Commits.
 - [ ] OpenBao-HA-Failover zwischen entsiegelten Standbys live testen (in CLAUDE.md als nicht
       verifiziert vermerkt; wird in B3 als Nachweis behauptet).
 - [ ] B4-Negativprobe (falscher `KafkaUser` schreibt auf fremdes Topic → Autorisierungsfehler)
-      einmal tatsächlich ausführen, bevor sie im Screencast gezeigt wird.
+      einmal tatsächlich ausführen, bevor sie im Screencast gezeigt wird (Kommandos: `screencast/SCRIPT.md` Kapitel 8).
 
 ---
 

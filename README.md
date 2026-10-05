@@ -636,8 +636,8 @@ von ArgoCD mitverwaltet (siehe W2). *Tragend, nicht dekorativ:* Die ACLs ändern
 Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller Fehlschreibung) und sind
 damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht nur eine zusätzliche
 Konfigurationsdatei. *Nachweis im Betrieb:* `kubectl get kafkauser -n ticketflow` zeigt die vier
-Nutzer; ein absichtlich falsch konfigurierter
-Test-Producer (z. B. ein `kubectl run`-Pod mit `notification-worker`s Credentials, der versucht
-auf `reservation-requested` zu schreiben) wird von Kafka mit einer Autorisierungs-Exception
-abgelehnt — eine Screencast-taugliche Negativprobe; AKHQ zeigt die Consumer-Groups mit wachsendem/
+Nutzer; ein Test-Producer mit `notification-worker`s echten Credentials (ein `kubectl run`-Pod
+mit dem Strimzi-Kafka-Image, der versucht, auf `reservation-requested` zu schreiben) wird von Kafka
+mit `TopicAuthorizationException` abgelehnt — live gezeigt im Screencast, Kapitel 8 (exakte
+Kommandos in [`screencast/SCRIPT.md`](screencast/SCRIPT.md)); AKHQ zeigt die Consumer-Groups mit wachsendem/
 fallendem Lag live während der Lastdemo (siehe B2 – Autoscaling oben).

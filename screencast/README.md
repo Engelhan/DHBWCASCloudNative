@@ -8,7 +8,11 @@ oder englisch. Pflichtszenen laut Aufgabenstellung:
    gezeigt über `kubectl get pods -w`/`scaledobject` und den Consumer-Lag in AKHQ, kein
    Grafana-Dashboard (siehe Root-`README.md` ## Grenzen).
 
-Beide Szenen live im Terminal, keine vorproduzierten Standbilder oder Folien.
+Zusätzlich je eine kurze Nachweis-Szene für W2 (Drift wird zurückgedreht), B4 (Kafka-ACL-Negativprobe
+mit Strimzi-`KafkaUser`) und B3/W7 (NetworkPolicy, OpenBao). Kapitel, Sprecher, Kommandos und
+Sprechtexte: [`SCRIPT.md`](SCRIPT.md).
+
+Alle Szenen live im Terminal, keine vorproduzierten Standbilder oder Folien.
 
 ## Komprimierung vor dem Commit
 
