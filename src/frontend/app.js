@@ -284,7 +284,10 @@ bookingFormEl.addEventListener("submit", async (event) => {
 });
 
 function setStatus(status, title, detail) {
+  const wasHidden = statusCardEl.hidden;
   statusCardEl.hidden = false;
+  // The card sits above the hall; bring it into view after booking a seat further down.
+  if (wasHidden) statusCardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
   statusIconEl.className = `status-icon ${status}`;
   statusIconEl.textContent = status === "confirmed" ? "✓" : status === "rejected" ? "✕" : "";
   statusTitleEl.textContent = title;

@@ -21,6 +21,16 @@
   </header>
 
   <main>
+    <section id="status-card" class="panel status-card" hidden>
+      <div id="status-icon" class="status-icon" aria-hidden="true"></div>
+      <div>
+        <p id="status-title" class="status-title"></p>
+        <p id="status-message" class="status-detail"></p>
+      </div>
+    </section>
+
+    <div id="error-banner" class="error-banner" hidden role="alert"></div>
+
     <section id="seat-section" class="panel">
       <div class="panel-header">
         <h2>Sitzplatzauswahl</h2>
@@ -46,15 +56,6 @@
       </ul>
     </section>
 
-    <section id="status-card" class="panel status-card" hidden>
-      <div id="status-icon" class="status-icon" aria-hidden="true"></div>
-      <div>
-        <p id="status-title" class="status-title"></p>
-        <p id="status-message" class="status-detail"></p>
-      </div>
-    </section>
-
-    <div id="error-banner" class="error-banner" hidden role="alert"></div>
   </main>
 
   <dialog id="booking-dialog">
