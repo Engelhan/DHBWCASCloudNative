@@ -35,13 +35,20 @@ elif [[ "$API_URL" =~ ://(localhost|127\.0\.0\.1)(:|/|$) ]]; then
   API_URL="${API_URL/127.0.0.1/host.docker.internal}"
 fi
 
+# handleSummary writes summary-<timestamp>.json here; run as the calling user so it owns the file.
+RESULTS_DIR="$SCRIPT_DIR/results"
+mkdir -p "$RESULTS_DIR"
+
 echo "k6 ($K6_IMAGE) -> $API_URL, event $EVENT_ID, $VUS VUs for $DURATION"
 
 # MSYS_NO_PATHCONV keeps Git Bash from rewriting /scripts; --ulimit for 1000+ VU connections.
 MSYS_NO_PATHCONV=1 exec sudo docker run --rm -i \
   --ulimit nofile=65536:65536 \
   "${network_args[@]}" \
+  --user "$(id -u):$(id -g)" \
   -v "$SCRIPT_DIR":/scripts:ro \
+  -v "$RESULTS_DIR":/results \
+  -e SUMMARY_DIR=/results \
   -e API_URL="$API_URL" \
   -e EVENT_ID="$EVENT_ID" \
   -e VUS="$VUS" \

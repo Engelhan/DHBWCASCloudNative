@@ -48,3 +48,6 @@ Thumbs.db
 
 # Claude Code local session state
 .claude/
+
+# Load test results
+src/load-generator/results/

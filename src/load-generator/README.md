@@ -64,6 +64,19 @@ reagiert (siehe `charts/reservation-worker`, Bonus B2).
 
 ## Ergebnisse einordnen
 
+Am Ende gibt `handleSummary()` statt der k6-Standardausgabe eine kompakte Auswertung aus:
+
+- **Durchsatz:** Anzahl Reservierungsanfragen und Requests/s, übertragene Datenmenge.
+- **Ergebnisse:** Anteil `202`/`409`/sonstige und die Fehlerrate (`http_req_failed` zählt dank
+  `expectedStatuses(200, 202, 409)` nur echte Fehler: 5xx, Timeouts, unerwartete Statuscodes).
+- **Latenz:** avg/min/med/p90/p95/p99/max für alle Reservierungen, getrennt nach `202` und `409`,
+  plus TTFB (reine Serverzeit), Verbindungs- und TLS-Aufbau. Die `setup()`-Abfragen der
+  Sitzplatzlisten fließen nicht in diese Werte ein (eigene `Trend`-Metriken).
+- **Thresholds** mit PASS/FAIL.
+
+Die vollständige k6-Summary landet zusätzlich als `results/summary-<Zeitstempel>.json`
+(per `run.sh`; bei direktem `k6 run` im aktuellen Verzeichnis, steuerbar über `SUMMARY_DIR`).
+
 k6 zählt `202`/`409` als Erfolg (siehe `options.thresholds`), da ein abgelehnter Sitzplatz ein
 korrektes, erwartetes Ergebnis des Flash-Sale-Szenarios ist, kein Fehler des Systems. Die
 eigentliche Kapazitätsaussage (wie viele Reservierungen/Sekunde `reservation-worker` verarbeiten
