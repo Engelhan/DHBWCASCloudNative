@@ -24,7 +24,7 @@ permitted external dependencies). The full graded spec is in `2026_07_23_Aufgabe
 **The root `README.md` is itself a graded deliverable** with a fixed, mandatory section order
 (`## Problem`, `## Architektur`, `## Betrieb`, `## Entscheidungen`, `## Grenzen`, optionally
 `## Bonus`). Do not rename, reorder, or remove these H2 headings. `## Entscheidungen` requires
-one paragraph per mandatory/chosen topic (P1–P7, plus the two chosen elective topics) with
+one paragraph per mandatory/chosen topic (P1–P5, plus the one graded elective topic, W2) with
 *Wahl* / *Alternative* / *Begründung* — always tie the reasoning to the domain (flash-sale ticket
 demand), not to lecture content, per the grading rubric.
 
@@ -32,11 +32,11 @@ demand), not to lecture content, per the grading rubric.
 structure — check that file, not just this section, before trusting anything below about P6/P7/
 elective count.** Key deltas from V1: only **P1–P5** are mandatory now (P6 Skalierbarkeit/P7
 Observability dropped as Pflichtthemen, moved to optional bonus B1 Observability/B2 Autoscaling);
-Teil B now needs only **one** elective topic (10 points total), not two. Team has already
-implemented work matching three electives (W1 Packaging, W2 GitOps, W7 Cluster-Härtung via
-OpenBao) — which one counts as the graded Teil-B topic is an **open team decision** (see root
-`TODO-Abgabe.md` (the former README `## ToDo`, moved there 2026-10-04) and the `TODO` markers in `## Entscheidungen`/`## Bonus`), not
-resolved here. Don't assume W1+W2 are still "the" chosen pair — that was the V1 framing.
+Teil B now needs only **one** elective topic (10 points total), not two. **Team decision
+(2026-10-05): W2 GitOps is the graded Teil-B topic** (its paragraph in `## Entscheidungen`), **W7
+Cluster-Härtung (NetworkPolicies + OpenBao) is claimed additionally as bonus B3 "Weiteres
+Wahlthema"** in `## Bonus`. W1 Packaging is no longer claimed (its Helm/Kustomize reasoning lives on as
+"P3 – Ergänzung: Packaging mit Helm" in `## Entscheidungen`, not as a W-topic). Don't reintroduce W1 into `## Entscheidungen`.
 
 ## Domain model (why the infra exists)
 

@@ -15,9 +15,9 @@ Legende: 🔴 blockiert Punkte oder macht Teile unbewertbar · 🟠 kostet wahrs
 | Teil A – P3 Requests/Limits, Tags, Config | 10 | erfüllt |
 | Teil A – P4 Platzierung + Nachweis | 10 | umgesetzt, Diagramm aktuell |
 | Teil A – P5 Resilienz | 12 | umgesetzt, **Nachweis fehlt in README/Screencast** |
-| Teil B – Wahlthema | 10 | **Entscheidung offen** (W1, W2 und W7 parallel dokumentiert) |
+| Teil B – Wahlthema | 10 | W2 (GitOps) gewählt, **Nachweis im Screencast fehlt** |
 | Teil C – Doku/Darstellung | 35 | **Screencast fehlt** (5 P.) |
-| Bonus | ≤ 10 | B2/B3/B4 beansprucht; **B2 verlangt Grafana-Dashboard im Screencast** |
+| Bonus | ≤ 10 | B2/B3 (W7)/B4 beansprucht; **B2 verlangt Grafana-Dashboard im Screencast** |
 
 ---
 
@@ -34,27 +34,19 @@ Legende: 🔴 blockiert Punkte oder macht Teile unbewertbar · 🟠 kostet wahrs
 - [ ] **Pflichtszene:** Pod löschen → Anwendung erholt sich → Daten sind noch da
       (z. B. Reservierung anlegen, `reservation-worker`- und Postgres-Pod löschen, Reservierung
       ist danach noch abrufbar)
-- [ ] Szene für das Wahlthema (Teil B: „Wirkung im Betrieb nachgewiesen“, 4 Punkte), z. B. bei
-      W2: `kubectl scale`/`kubectl edit` am Cluster vorbei → ArgoCD dreht es zurück
+- [ ] Szene für das Wahlthema W2 (Teil B: „Wirkung im Betrieb nachgewiesen“, 4 Punkte):
+      `kubectl scale`/`kubectl edit` am Cluster vorbei → ArgoCD dreht es zurück
+- [ ] Szene für B3 (W7): NetworkPolicy-Negativprobe und/oder OpenBao-Failover
 - [ ] Szene für B2: Last erzeugen → Replicas wachsen (siehe Punkt 4)
 - [ ] mit ffmpeg/HandBrake komprimieren, **im Repo ablegen** (kein externer Video-Link erlaubt),
       Gesamt-Repo < 100 MB
 
-### 2. Wahlthema festlegen (Teil B, 10 Punkte)
+### 2. ~~Wahlthema festlegen~~ ✅ erledigt (05.10.)
 
-Die Aufgabenstellung verlangt **genau ein** Wahlthema in `## Entscheidungen`. Aktuell stehen dort
-W1 (Packaging) **und** W2 (GitOps), zusätzlich W7 (Cluster-Härtung) als B3 im Bonus; dazu kommen
-die `TODO`-Kästen in der README und der offene Punkt „B4 → Entscheidung W1 oder W7“ in `## ToDo`.
-
-- [ ] Team-Entscheidung treffen. Alle drei sind umgesetzt; Kriterien sind „Ressourcen korrekt“ (4),
-      „Wirkung im Betrieb nachgewiesen“ (4), „fachlich begründet“ (2):
-  - W1: Nachweis ist eher statisch (Schema-Fehler bei `helm lint`, dev/prod-Umschaltung)
-  - W2: Drift-Rückdrehen lässt sich live gut zeigen
-  - W7: NetworkPolicy-Negativprobe + OpenBao-Failover lassen sich live zeigen
-- [ ] Das gewählte Thema bleibt in `## Entscheidungen`, ein zweites kann als **B3 „Weiteres
-      Wahlthema“** in den Bonus (nur mit vollem Nachweis im Betrieb), das dritte entfällt aus dem
-      Bonus (eine Technologie zählt nur einmal).
-- [ ] Beide `TODO`-Kästen in `## Entscheidungen` und den Kasten in `## Bonus` entfernen.
+Entscheidung: **W2 (GitOps)** ist das gewertete Wahlthema in `## Entscheidungen`, **W7
+(Cluster-Härtung)** wird zusätzlich als **B3 „Weiteres Wahlthema“** im Bonus beansprucht. W1
+(Packaging) entfällt als Thema, die Begründung steht jetzt als „P3 – Ergänzung“; die `TODO`-Kästen in `## Entscheidungen` und `## Bonus` sind
+entfernt, W2 hat einen „*Nachweis im Betrieb*“-Satz.
 
 ### 3. ~~README-Struktur: `## ToDo` muss raus~~ ✅ erledigt (04.10.)
 
@@ -104,7 +96,8 @@ Teil A verlangt je Pflichtthema „im Betrieb nachgewiesen“. P4, B2, B3 und B4
       Primary löschen → Failover, Daten noch da).
 - [ ] **P1/P3:** kurzer Nachweis (Images mit SHA-Tag in `kubectl get pods -o jsonpath=…image`,
       ConfigMap/Secret-Referenzen).
-- [ ] **Gewähltes Wahlthema:** Nachweis-Kommandos, passend zur Screencast-Szene.
+- [ ] **W2:** Nachweis-Kommandos stehen in der README, einmal live ausprobieren
+      (Drift-Rückdrehen dauert je nach ArgoCD-Reconcile-Intervall).
 
 ### 7. ~~Diagramme an den aktuellen Stand anpassen~~ ✅ erledigt (04.10.)
 
@@ -162,7 +155,7 @@ ist privat.
 - [ ] README einmal komplett Korrektur lesen (Mischung aus Umlauten und `ae/oe/ue` in
       Code-Kommentaren, sehr lange Sätze in P4/W2/B3).
 - [ ] Bonus-Nummerierung prüfen: Die README nutzt B2 (Autoscaling), B3 (W7) und B4 (Kafka/Strimzi)
-      passend zur V2-Tabelle; nach der Wahlthema-Entscheidung (Punkt 2) erneut abgleichen.
+      passend zur V2-Tabelle.
 
 ### 13. Nachvollziehbarkeit für Fremde (Teil C, 4 Punkte)
 
@@ -209,7 +202,7 @@ deckt alle drei Fragen ab).
 
 **Entscheidungen:**
 
-- [ ] „B4 → Entscheidung welches Wahlthema wir nehmen W1 oder W7“ – siehe Punkt 2
+- [x] „B4 → Entscheidung welches Wahlthema wir nehmen W1 oder W7“ – W2 als Wahlthema, W7 als B3, siehe Punkt 2
 
 **Screencast:**
 
@@ -223,7 +216,7 @@ deckt alle drei Fragen ab).
       formulieren, Abweichung diskutieren – passt zur Pflichtszene „Pod löschen“
 - [ ] Helm-Charts packagen/veröffentlichen (B8 „Wiederverwendbarer Baustein“, bis 5 P.):
       verlangt ein veröffentlichtes, für Dritte dokumentiertes Chart – bisher nur intern genutzt.
-      Achtung: W1 (Packaging) und B8 zählen nicht doppelt für dieselbe Technologie.
+      W1 (Packaging) wird nicht beansprucht, eine Überschneidung mit B8 gibt es also nicht.
 
 ## Außerhalb dieser Aufgabenstellung
 

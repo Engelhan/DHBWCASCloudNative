@@ -276,7 +276,23 @@ Images werden mit dem Git-SHA statt `:latest` getaggt, DB-Zugangsdaten/Kafka-Boo
 kommen aus ConfigMap/Secret. *Alternative:* Werte im Image hart kodieren oder `:latest`
 verwenden. *Begründung:* `:latest` macht Rollbacks unmöglich, weil unklar bleibt, welches Image zu
 einem Zeitpunkt tatsächlich lief; Secrets im Image wären sowohl in der Registry einsehbar als auch
-nicht pro Umgebung (dev/prod, siehe W1) austauschbar, ohne das Image neu zu bauen.
+nicht pro Umgebung (dev/prod, siehe P3 – Ergänzung) austauschbar, ohne das Image neu zu bauen.
+
+**P3 – Ergänzung: Packaging mit Helm.** *Wahl:* ein Chart je Komponente, alle nach demselben
+verbindlichen Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für
+Applikations-Charts) mit `values-dev.yaml`, `values-prod.yaml` und `values.schema.json`;
+übergreifende Werte (Image-Registry/-Tag, DNS-Zone, Umgebung) stehen einmalig in
+[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) und werden von ArgoCD per Multi-Source
+`$values` in jeden Chart gereicht. *Alternative:* Kustomize mit Base+Overlays. *Begründung:*
+Kustomize kennt kein Werte-Schema — ein vergessener oder falsch typisierter Wert (etwa eine
+String- statt Int-Replica-Zahl, oder ein leerer Image-Tag) fiele erst zur Laufzeit im Cluster auf.
+Genau das ist hier schon einmal passiert: `notification-worker` lag mit leerem `image.tag` im
+Repo und war ohne `--set` gar nicht deploybar. Mit Helm+`values.schema.json` schlägt
+`helm lint`/`helm template` vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder
+Strimzi-`Kafka`-Ressource überhaupt angewendet wird — bei zustandsbehafteten Custom Resources ist
+das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, dass das Umschalten
+von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets) eine
+einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
 
 **P4 – Scheduling und Platzierung.** *Wahl:* Jeder Worker trägt ein Node-Label
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
@@ -357,30 +373,7 @@ keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verur
 > 23.06.: "ja, zumindest dokumentieren"). Observability (Dashboard/Alert-Regel) ist nicht
 > Bonus-reif, siehe `## Grenzen`.
 
-> `TODO` (Team-Entscheidung offen, siehe `TODO-Abgabe.md` Punkt 2, "B4 -> Entscheidung welches Wahlthema
-> wir nehmen W1 oder W7"): V2 zählt für Teil B (10 Punkte) nur **ein** Wahlthema. Aktuell stehen
-> hier noch W1 und W2 nebeneinander, zusätzlich ist W7 (Cluster-Härtung/OpenBao) weit
-> fortgeschritten in `## Bonus` B3 dokumentiert. Sobald entschieden: das gewählte Thema bleibt
-> hier als einziger Absatz, die anderen wandern (mit vollem Nachweis) nach `## Bonus` B3
-> ("Weiteres Wahlthema") oder fallen weg.
-
-**W1 – Packaging (Helm).** *Wahl:* ein Chart je Komponente, alle nach demselben verbindlichen
-Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für Applikations-Charts) mit
-`values-dev.yaml`, `values-prod.yaml` und `values.schema.json`; übergreifende Werte
-(Image-Registry/-Tag, DNS-Zone, Umgebung) stehen einmalig in
-[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) und werden von ArgoCD per Multi-Source
-`$values` in jeden Chart gereicht. *Alternative:* Kustomize mit Base+Overlays. *Begründung:*
-Kustomize kennt kein Werte-Schema — ein vergessener oder falsch typisierter Wert (etwa eine
-String- statt Int-Replica-Zahl, oder ein leerer Image-Tag) fiele erst zur Laufzeit im Cluster auf.
-Genau das ist hier schon einmal passiert: `notification-worker` lag mit leerem `image.tag` im
-Repo und war ohne `--set` gar nicht deploybar. Mit Helm+`values.schema.json` schlägt
-`helm lint`/`helm template` vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder
-Strimzi-`Kafka`-Ressource überhaupt angewendet wird — bei zustandsbehafteten Custom Resources ist
-das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, dass das Umschalten
-von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets) eine
-einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
-
-**W2 – GitOps.** *Wahl:* ArgoCD mit zwei gestuften `ApplicationSet`s (je eine Matrix aus
+**W2 – GitOps (gewähltes Wahlthema, Teil B).** *Wahl:* ArgoCD mit zwei gestuften `ApplicationSet`s (je eine Matrix aus
 git-files- und list-Generator; Plattform zuerst, Anwendung erst wenn die Plattform vollständig
 Synced/Healthy ist), Auto-Sync und Self-Heal.
 *Alternative:* reines `kubectl apply`/eine CI-Pipeline ohne Cluster-seitigen Agenten.
@@ -399,6 +392,12 @@ man von echten Fehlern nicht unterscheiden kann. ArgoCD-Sync-Waves helfen hier n
 nicht auf von einem ApplicationSet erzeugte Applications), Progressive Syncs würden Self-Heal
 abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
 `kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
+*Nachweis im Betrieb:* Drift am Cluster vorbei erzeugen, z. B. `kubectl -n ticketflow scale
+deploy ticketflow-app-catalog-api --replicas=5` — ArgoCD erkennt die Abweichung zum Git-Stand und
+setzt per Self-Heal wieder auf 2 Replicas zurück (`kubectl -n ticketflow get deploy -w`,
+`kubectl -n argocd get app ticketflow-app`). Umgekehrt landet eine Änderung erst per Commit+Push
+im Cluster; beim frischen Aufbau zeigt `gitops_rollout`, wie die Anwendungs-Stufe erst nach der
+grünen Plattform-Stufe angewendet wird.
 
 ## Grenzen
 
@@ -451,13 +450,10 @@ abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). 
 
 ## Bonus
 
-> `TODO`: Nummerierung folgt der Bonus-Tabelle in Aufgabenstellung V2 (B1 Observability, B2
-> Autoscaling, B3 Weiteres Wahlthema, B4 Neue Technologie, ...). B3 (W7 Cluster-Härtung) steht
-> hier nur vorläufig, solange die Team-Entscheidung "W1 oder W7 als Haupt-Wahlthema" offen ist
-> (siehe `TODO-Abgabe.md` und `## Entscheidungen`) — falls W7 gewählt wird, wandert dieser Absatz nach
-> `## Entscheidungen` und ein anderes Thema rückt an seine Stelle. Für B3/B4 gilt zusätzlich:
-> "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe" — Verweise auf Dateien werden
-> ergänzt/geprüft, sobald der Nachweis live existiert.
+> Nummerierung nach der Bonus-Tabelle der Aufgabenstellung V2 (B1 Observability, B2
+> Autoscaling, B3 Weiteres Wahlthema, B4 Neue Technologie, ...). Das gewertete Wahlthema für
+> Teil B ist W2 (GitOps, siehe `## Entscheidungen`); W7 (Cluster-Härtung) wird zusätzlich als B3
+> beansprucht. Für B3/B4 gilt: "ein erfüllter Haken allein reicht nicht, es zählt die Tiefe".
 
 **B2 – Autoscaling: KEDA auf Kafka-Consumer-Lag.** *Was umgesetzt wurde:* KEDA (`charts/keda`,
 Operator; `ScaledObject`/`TriggerAuthentication` in

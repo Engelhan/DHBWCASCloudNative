@@ -4,7 +4,7 @@ Provisions nothing but the resource layer on DHBWCloud via the **OpenStack provi
 (`terraform-provider-openstack/openstack`). No Kubernetes and no app configuration here – that is
 handled by [`../ansible/`](../ansible/). There is deliberately **one** environment: the lab has no
 productive parallel operation, so a second Terraform workspace/directory tree would just be
-unjustified extra effort. (The `values-dev.yaml`/`values-prod.yaml` required by W1 refer to the
+unjustified extra effort. (The `values-dev.yaml`/`values-prod.yaml` files refer to the
 Helm charts, not to the infrastructure.)
 
 ## Resources

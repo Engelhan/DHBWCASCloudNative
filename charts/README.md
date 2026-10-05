@@ -1,4 +1,4 @@
-# charts/ – Helm-Packaging (W1)
+# charts/ – Helm-Packaging
 
 ## Muster für Applikations-Charts (verbindlich)
 
