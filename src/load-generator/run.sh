@@ -22,7 +22,7 @@ fi
 K6_IMAGE="${K6_IMAGE:-grafana/k6:2.3.0}"
 EVENT_ID="${EVENT_ID:-all}"
 VUS="${VUS:-1000}"
-DURATION="${DURATION:-3m}"
+DURATION="${DURATION:-1m}"
 HOT_SEAT_RATIO="${HOT_SEAT_RATIO:-0.2}"
 
 network_args=()
