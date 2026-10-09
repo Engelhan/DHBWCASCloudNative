@@ -55,14 +55,14 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
    kein Grafana-Dashboard, siehe `## Grenzen`).
 
-**Pod-Verteilung im laufenden Cluster – ein Beispiel** (realer Abzug vom 04.10.2026, dev-Profil,
+**Pod-Verteilung im laufenden Cluster – ein Beispiel** (realer Abzug vom 09.10.2026, dev-Profil,
 aus `kubectl get pods -A -o wide`). Welcher Pod auf welchem Node landet, ändert sich bei jedem
 Neustart oder Rescheduling; fest sind nur die Platzierungsregeln, die das Bild sichtbar macht:
 
 ![Pod-Verteilung auf die Nodes](docs/architecture/pod-distribution.drawio.svg)
 
 Kafka-Broker/-Controller und OpenBao liegen erzwungen je einmal pro simulierter Region,
-Postgres-Primary und -Replica in verschiedenen Regionen und jeder weitere Dienst läuft mit
+die drei App-Postgres-Pods (Primary + zwei Replicas) ebenso, und jeder weitere Dienst läuft mit
 mindestens zwei Pods in zwei Regionen (siehe `## Entscheidungen`, P4). Auf der getainteten
 Control-Plane laufen nur k3s' eigene Komponenten. Weitere Screenshots folgen in
 [`docs/architecture/`](docs/architecture/).

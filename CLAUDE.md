@@ -1259,9 +1259,9 @@ commands here once these gaps close instead of leaving this section stale.
   now gets `node-role.kubernetes.io/control-plane:NoSchedule`** (`node_labels` role, before ArgoCD) —
   the exact taint k3s' bundled components already tolerate. NoSchedule evicts nothing: on an existing
   cluster the pods already on the control plane (openbao-postgres primary, ESO webhook/cert-controller,
-  Longhorn DaemonSet pods) must be moved once by hand (switchover the CNPG primary first). Not applied
-  to the live cluster yet. `docs/architecture/pod-distribution.drawio.svg` shows the state *before*
-  this change.
+  Longhorn DaemonSet pods) must be moved once by hand (switchover the CNPG primary first). Verified live
+  2026-10-09 (control plane carries only k3s pods);
+  `docs/architecture/pod-distribution.drawio.svg` is a live snapshot from 2026-10-09.
 - **2026-10-05: `catalog-api` reads from the CNPG read replicas** (`<db>-postgres-cluster-ro`,
   `charts/ticketflow-app` `databaseHost` helper); `reservation-worker` stays on `-rw` and is now the
   **only** DB writer and schema owner — the demo seed moved from catalog-api's deleted
