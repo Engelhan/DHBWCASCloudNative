@@ -33,9 +33,11 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    [`infra/terraform/`](infra/terraform/). Jeder Worker erhält eine virtuell simulierte
    Regions-Metadata (`region-a`/`region-b`/`region-c`), da die DHBWCloud real nur eine
    Region/AZ bereitstellt.
+
 2. Ansible konfiguriert die VMs, installiert k3s (Server auf der Control-Plane, Agents auf den
    Workern), übernimmt die simulierte Region als Kubernetes-Node-Label
    (`topology.ticketflow/region`) und bootstrapt ArgoCD, siehe [`infra/ansible/`](infra/ansible/).
+
 3. ArgoCD übernimmt ab hier per GitOps den Rest: zwei `ApplicationSets`
    ([`gitops/applicationsets/`](gitops/applicationsets/)) erzeugen gestuft zusammen alle 21
    Applications. Zuerst die Plattform mit Cluster-Addons (Longhorn, cert-manager,
@@ -45,11 +47,15 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
    aus der zentralen [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml), siehe
    [`gitops/`](gitops/).
+
 4. `catalog-api` nimmt Reservierungsanfragen entgegen und veröffentlicht sie als Event auf Kafka,
    statt synchron in die Datenbank zu schreiben.
+
 5. `reservation-worker` konsumiert diese Events, sperrt den Sitzplatz transaktional in CNPG-Postgres
    und veröffentlicht das Ergebnis (bestätigt/abgelehnt) wieder auf Kafka.
+
 6. `notification-worker` konsumiert das Ergebnis und simuliert eine Bestätigungs-Benachrichtigung.
+
 7. Der `load-generator` erzeugt künstlich die namensgebende Lastspitze. KEDA reagiert auf den
    dadurch wachsenden Kafka-Consumer-Lag und skaliert den `reservation-worker` hoch. Dies ist sichtbar über
    `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
@@ -81,6 +87,7 @@ Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
 
 1. **Repo forken** unter dem eigenen GitHub-Account, **privat** (siehe
    [`gitops/README.md`](gitops/README.md) ## Privates Repo).
+
 2. **Python-venv** für Ansible anlegen (muss aus WSL/Linux laufen, nicht aus nativem Windows)
    (`ansible-core` scheitert dort mit `WinError 87`):
    ```bash
@@ -89,8 +96,10 @@ Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
    ```
 3. **SSH-Keypair für die VMs**: `~/.ssh/ticketflow_dhbwcloud{,.pub}` (Terraform importiert den
    Public Key; Pfade sind über `ssh_public_key_path`/`ssh_private_key_path` änderbar).
+
 4. **DNS-Zone registrieren** auf `self-service.dhbw.cloud` mit RFC2136-Freigabe. Notiert werden
    Zonenname, TSIG-Key-**Name** und TSIG-Secret-**Wert**.
+
 5. **ArgoCD-Deploy-Key erzeugen** und den Public Key im eigenen Fork unter *Settings → Deploy keys*
    als **Read-only** eintragen. Ohne ihn kann ArgoCD das private Repo nicht klonen und alle
    Applications bleiben `Unknown`:
@@ -102,9 +111,11 @@ Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
 6. **Images bauen lassen**: Workflow `build-images` in *Actions* einmal manuell starten
    (`workflow_dispatch`). Ein frischer Fork hat sonst noch keine Images, und alle vier Services
    landen im `ImagePullBackOff`.
+
 7. **Die vier ghcr.io-Packages auf „Public" stellen** (GitHub → Packages → jeweils *Package
    settings*). Der eingebaute `GITHUB_TOKEN` kann dies nicht selbst setzen. Bis dahin scheitert der
    Pull trotz korrektem Tag.
+
 8. **DHBW-Netz/VPN**: `certificates.dhbw.cloud` (ACME) ist nur von dort erreichbar.
 
 ### Konfigurieren
@@ -495,7 +506,7 @@ Replica-Zahl. Ohne Grafana-Dashboard (siehe
 `## Grenzen`) die Wirkung sieht man stattdessen live über den wachsenden/fallenden Consumer-Lag in AKHQ.
 
 **B3 – Weiteres Wahlthema: W7 Cluster-Härtung.** 
-*Umgesetzt (NetworkPolicy-Hälfte):* Jeder
+*Was umgesetzt wurde (NetworkPolicy-Hälfte):* Jeder
 Namespace startet mit **default-deny für Ingress und Egress**. Danach ist jede einzelne Verbindung explizit
 erlaubt, Komponente für Komponente (`charts/network-policies`, ~80 Policies, eine
 Verkehrsmatrix an einer Stelle). Beispiele für die Enge: der anonyme Kafka-Listener 9093 nimmt
@@ -520,7 +531,7 @@ Live-Cluster abgeleitet (Webhooks, APIServices, Monitor-Ziele, Ingress-Backends,
 mitgeschnittene offene Verbindungen) und vor dem Rollout gegen alle diese Flows simuliert, siehe
 `charts/README.md` ## network-policies.
 
-*Umgesetzt (Secret-Vault-Hälfte):* Applikations-Secrets, die vorher chart-eigen/hardcodiert im
+*Was umgesetzt wurde (Secret-Vault-Hälfte):* Applikations-Secrets, die vorher chart-eigen/hardcodiert im
 Repo lagen (AKHQs Kafka-SASL-Passwort, AKHQs Basic-Auth-Passwort-Hash und JWT-Schlüssel,
 `notification-worker`s SMTP-/Kafka-mTLS-Platzhalter), werden jetzt über **OpenBao**
 (HashiCorp-Vault-Fork, `charts/openbao`) verwaltet (eigener, hochverfügbarer Secret-Vault mit
