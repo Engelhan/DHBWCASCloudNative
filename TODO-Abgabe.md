@@ -67,13 +67,13 @@ bewertbar.“ Im Repo ist kein Neuaufbau seit dem 04.10. dokumentiert.
 
 ### 6. Nachweise im Betrieb in `## Entscheidungen` ergänzen
 
-P4, W2, B2, B3 und B4 haben einen „*Nachweis im Betrieb*“-Satz, **P1, P3 und P5 nicht**.
+Für P1, P3 und P5 am 12.10. ergänzt, damit hat jetzt jedes Thema einen
+„*Nachweis im Betrieb*“-Satz. Die Kommandos sind nur gegen die Charts geprüft, **nicht live**.
 
-- [ ] **P5:** konkrete Kommandos für Pod-Löschung und Rolling Update ohne Ausfall (z. B.
-      `kubectl rollout restart` während eines Lasttests, k6 zeigt keine Fehler; CNPG-Primary
-      löschen → Failover, Reservierung noch abrufbar).
-- [ ] **P1/P3:** kurzer Nachweis (Image-Tags per `kubectl get pods -o jsonpath=…image`,
-      ConfigMap/Secret-Referenzen).
+- [ ] Am 13.10. gemeinsam am Cluster ausführen und README bei Abweichungen anpassen:
+      **P5** (Worker- + Postgres-Primary-Pod löschen → Reservierung noch `confirmed`;
+      `rollout restart` von catalog-api während `run.sh` → keine `5xx`; Broker-Pod löschen),
+      **P1** (AKHQ-Consumer-Groups), **P3** (Image-Spalte, Deployment-/ConfigMap-YAML).
 
 ### 7. ~~Diagramme an den aktuellen Stand anpassen~~ ✅ erledigt (09.10.)
 

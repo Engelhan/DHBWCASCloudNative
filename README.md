@@ -201,6 +201,14 @@ Toolchain wie im `reservation-worker` zum Einsatz kommt und das Image im Flash-S
 klein/schnell startend bleibt. Eine weitere Alternative wäre Python + FastAPI (schnelleres Prototyping, aber
 größeres Image und eine zweite Toolchain neben Go).
 
+*Nachweis im Betrieb:* `kubectl -n ticketflow get deploy,cluster` zeigt die eigenen Services
+neben dem CNPG-Cluster, `kubectl -n kafka get kafka,kafkanodepool` das Strimzi-Kafka. Eine Reservierung über das Frontend
+(oder `POST /events/{id}/reservations`) antwortet sofort mit `202` und `status: "pending"`.
+Wenige Augenblicke später liefert `GET /reservations/{id}` `confirmed` bzw. `rejected`, ohne dass
+die API je in Postgres geschrieben hat. In AKHQ hängen am Topic `reservation-requested` die
+Consumer-Group `reservation-worker` und am Topic `reservation-result` die Consumer-Group
+`notification-worker`. Ein Ereignis durchläuft also drei unabhängige Dienste über Kafka.
+
 **P1 – Gemeinsame Datenbank für `catalog-api` und `reservation-worker`.** 
 
 *Wahl:* Beide Services nutzen dieselbe CNPG-Datenbank (`ticketflow`) mit demselben, von CNPG generierten
@@ -293,6 +301,15 @@ Kafka-Konsum und kurze Log-/SMTP-Aufrufe macht, keine CPU-intensive Verarbeitung
 `reservation-worker`, siehe [`charts/notification-worker/values.yaml`](charts/notification-worker/values.yaml))).
 Images werden mit dem Git-SHA statt `:latest` getaggt, DB-Zugangsdaten/Kafka-Bootstrap-Server
 kommen aus ConfigMap/Secret. 
+
+*Nachweis im Betrieb:* `kubectl -n ticketflow get pods -o
+custom-columns=POD:.metadata.name,IMAGE:.spec.containers[*].image` zeigt für jeden eigenen
+Service ein Image mit dem Git-SHA aus [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml)
+(`imageTag`), nirgends `:latest`. `kubectl -n ticketflow get deploy ticketflow-app-catalog-api -o
+yaml` zeigt die gesetzten `resources` sowie `envFrom: configMapRef` und die `secretKeyRef`s
+auf das von CNPG erzeugte Secret `postgres-postgres-cluster-app` und das von Strimzi erzeugte
+Kafka-Secret. `kubectl -n ticketflow get configmap ticketflow-app-catalog-api -o yaml` zeigt
+Kafka-Bootstrap-Server, Topics und DB-Host als reine Konfiguration ohne Passwörter.
 
 *Alternative:* Werte im Image hart kodieren oder `:latest` verwenden. 
 
@@ -393,6 +410,26 @@ Reservierungen an. PVCs mit `deleteClaim: false` überleben jeden Pod-Neustart.
 `reservation_id`: Stirbt ein Pod mitten in der Verarbeitung, liefert Kafka die Nachricht erneut aus,
 ohne dass ein Sitzplatz doppelt vergeben wird. Sein PDB ist `maxUnavailable: 1` statt eines
 festen `minAvailable`, weil KEDA die Replica-Zahl zwischen 2 und 10 verändert.
+
+*Nachweis im Betrieb:*
+1. **Pod-Verlust ohne Datenverlust:** eine Reservierung anlegen, bis sie `confirmed` ist. Dann
+   `kubectl -n ticketflow delete pod -l app.kubernetes.io/name=reservation-worker` und den
+   Postgres-Primary löschen (`kubectl -n ticketflow get cluster postgres-postgres-cluster` zeigt
+   ihn in der Spalte `PRIMARY`, dann `kubectl -n ticketflow delete pod <primary>`). CNPG befördert
+   eine Replica zum neuen Primary und die Spalte `PRIMARY` wechselt. Die Deployments starten neue
+   Pods. `GET /reservations/{id}` liefert danach weiter `confirmed`, und der Sitzplatz bleibt in
+   der Seat-Map belegt.
+2. **Rolling Update ohne Ausfall:** während `src/load-generator/run.sh` läuft,
+   `kubectl -n ticketflow rollout restart deploy ticketflow-app-catalog-api`. Bei zwei Replicas
+   startet die Standard-Strategie `RollingUpdate` erst einen zusätzlichen Pod (`maxSurge` 25 %,
+   aufgerundet 1) und nimmt keinen alten weg, bevor der neue bereit ist (`maxUnavailable` 25 %,
+   abgerundet 0). Die Readiness-Probe lässt neue Pods erst in den Service, wenn DB und Kafka
+   antworten. Die k6-Zusammenfassung zeigt deshalb nur `202`/`409` und keine Verbindungsfehler
+   oder `5xx`. Das PDB (`minAvailable: 1`) sichert dasselbe für Node-Drains ab.
+3. **Kafka-Broker-Verlust:** einen Broker-Pod löschen (`kubectl -n kafka get pods -l
+   strimzi.io/pool-name=broker`, dann `kubectl -n kafka delete pod <broker>`). Mit RF 3
+   und `min.insync.replicas: 2` nehmen die beiden anderen Broker weiter an, neue Reservierungen
+   laufen ohne Fehler durch. Strimzi startet den Broker mit seinem bestehenden PVC neu.
 
 *Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
 
