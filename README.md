@@ -3,7 +3,7 @@
 TicketFlow ist eine cloud-native Ticketverkaufsplattform für Live-Events.
 
 
-## Problemstellung
+## Problem
 
 Beim Vorverkauf populärer Events (z.B. Konzert, Fußballspiel) starten tausende Nutzer innerhalb
 weniger Sekunden denselben Kaufversuch für eine kleine, feste Anzahl an Plätzen. Ein klassischer
@@ -441,18 +441,27 @@ Read-Model.
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap. Ein `terraform apply` gefolgt von einem
 `ansible-playbook site.yml` bringt den kompletten Stack hoch.
 
-*Alternative:* manuell im
-DHBWCloud-Portal angelegte VMs, oder ein anderes IaC-Werkzeug (z. B. Pulumi) statt der
-vorgeschlagenen Kombination.
+*Alternative:* nur Terraform, ohne Ansible. k3s würde per `cloud-init` (`user_data` der VMs)
+installiert, die Worker träten mit einem von Terraform erzeugten Join-Token bei, und ein einziges
+`terraform apply` brächte alles hoch.
 
-*Begründung:* Ein Portal-Klick wäre schneller, ließe sich aber nicht
-reproduzieren und zählt laut Aufgabenstellung explizit nicht als Nachweis ("kein Klick im
-Portal"). Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen. Terraform + Ansible trennt
-zusätzlich sauber "Ressourcen existieren" (Terraform, siehe
-[`infra/terraform/`](infra/terraform/)) von "Ressourcen sind konfiguriert" (Ansible, siehe
-[`infra/ansible/`](infra/ansible/)). Ein einzelnes Werkzeug für beides würde diese Trennung
-verwischen und schwerer nachvollziehbar machen, welcher Schritt für einen fehlgeschlagenen
-Bootstrap verantwortlich ist.
+*Begründung:* `cloud-init` läuft beim ersten Boot einmal und ohne Rückmeldung.
+`terraform apply` meldet „fertig“, sobald die VMs existieren, nicht wenn k3s läuft. Ob ein Worker
+beigetreten ist, sähe man nur per SSH im Log der VM. Ansible wartet dagegen aktiv:
+[`k3s_agent`](infra/ansible/roles/k3s_agent/tasks/main.yml) erst, bis jeder Worker `Ready` ist,
+[`gitops_rollout`](infra/ansible/roles/gitops_rollout/tasks/stage.yml) dann, bis jede Application
+*Synced/Healthy* ist. Bricht es ab, nennt es die rote Stufe und kann gefahrlos erneut laufen, denn
+das Playbook ist idempotent und `cloud-init` liefe ein zweites Mal gar nicht. Für TicketFlow zählt
+genau das. Der Vorverkaufsstart ist ein fester Termin, und vorher muss belegt sein, dass alle drei
+Regionen im Cluster sind. Sonst greifen die harten Platzierungsregeln aus P4 nicht, und
+Kafka-Broker bleiben `Pending`. *Trade-off:* zwei Werkzeuge und zwei Befehle statt einem, dazu ein
+Python-Venv auf dem Client. Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen.
+
+*Abgrenzung:* Terraform legt kein eigenes Netz und keine eigene Security Group an. Die VMs hängen
+direkt am vorgegebenen Projektnetz `DHBWV6`, das bereits extern routbar ist. Ein eigenes Netz mit
+Router und Floating IPs brächte nur eine NAT-Schicht ohne Nutzen für die Anwendung. Dafür setzt
+der Aufbau voraus, dass die Default-Security-Group die Ports aus `### Voraussetzungen` öffnet
+(siehe `## Grenzen`).
 
 *Nachweis im Betrieb:* Der komplette Aufbau unter `## Betrieb` braucht außer den Zugängen aus
 Phase 1 keinen Schritt im Portal. Nach `terraform apply` meldet ein erneutes `terraform plan`
@@ -472,11 +481,33 @@ Kafka-Konsum und kurze Log-/SMTP-Aufrufe macht, keine CPU-intensive Verarbeitung
 Images werden mit dem Git-SHA statt `:latest` getaggt, DB-Zugangsdaten/Kafka-Bootstrap-Server
 kommen aus ConfigMap/Secret.
 
-*Alternative:* Werte im Image hart kodieren oder `:latest` verwenden.
+*Alternative 1 (Image-Referenz):* Pinning per Digest (`image@sha256:…`) statt eines Git-SHA-Tags.
+*Begründung:* Ein Digest ist unveränderlich, ein Tag könnte theoretisch neu gepusht werden. Der
+Short-SHA ist dagegen lesbar und führt direkt zum Commit: Wer im Vorverkauf ein fehlerhaftes
+Verhalten sieht, findet über `imageTag` in `cluster.yaml` den Code-Stand. Ein Rollback ist ein
+`git revert` dieser einen Zeile. *Trade-off:* Wir verlassen uns darauf, dass die CI einen SHA-Tag
+nie überschreibt. Das gilt, weil jeder Build einen neuen Commit-SHA hat. Die CI pusht zusätzlich
+`:latest` als Komfort-Tag für lokales `docker run`. Kein Chart verwendet ihn, und
+`values.schema.json` lehnt ihn ab.
 
-*Begründung:* `:latest` macht Rollbacks unmöglich, weil unklar bleibt, welches Image zu
-einem Zeitpunkt tatsächlich lief. Secrets im Image wären sowohl in der Registry einsehbar als auch
-nicht pro Umgebung (dev/prod, siehe Packaging mit Helm unten) austauschbar, ohne das Image neu zu bauen.
+*Alternative 2 (Konfiguration):* Die ConfigMap als Datei mounten und im laufenden Prozess neu
+laden, statt sie per `envFrom` als Umgebungsvariablen zu lesen. *Begründung:* Hot-Reload
+bräuchte in jedem Service einen Datei-Watcher. Zudem liefen während einer Änderung alte und neue
+Konfiguration gleichzeitig, z. B. bei einem neuen Topic-Namen mitten im Flash-Sale. Mit `envFrom`
+kommt eine geänderte Konfiguration nur über ein Rolling Update an, Pod für Pod und abgesichert
+durch die Readiness-Probe. *Trade-off:* Jede Konfigurationsänderung bedeutet Pod-Neustarts.
+Secrets im Image kommen nicht in Frage: Sie wären in der Registry lesbar und je Umgebung nicht
+austauschbar.
+
+*Requests/Limits:* Die eigenen Services sind bewusst *Burstable* (Request < Limit), z. B.
+`reservation-worker` mit 25m/48Mi Request und 250m/128Mi Limit. Die Alternative wäre
+*Guaranteed* (Request = Limit). Damit bekäme jedes der bis zu zehn KEDA-Replicas seine Spitzenlast
+fest reserviert, und auf drei Workern fände der Scheduler dann früher keinen Platz mehr. Der
+Trade-off: Unter gleichzeitiger Spitzenlast aller Pods kann ein Node beim Speicher überbucht
+werden, und der Kernel beendet dann einen Pod per OOM-Kill. Bei einem zustandslosen Worker ist das
+verkraftbar, denn Kafka liefert die unbestätigte Nachricht erneut aus (P5). Bei einem Broker wäre
+es das nicht. Deshalb setzt Kafka beim Speicher Request = Limit (siehe P4) und lässt nur die CPU
+burstfähig, weil eine gedrosselte CPU bremst, aber keinen Zustand verliert.
 
 *Nachweis im Betrieb:* `kubectl -n ticketflow get pods -o
 custom-columns=POD:.metadata.name,IMAGE:.spec.containers[*].image` zeigt für jeden eigenen
@@ -528,9 +559,9 @@ dreifach vor und verlangt zwei bestätigte Kopien (`min.insync.replicas: 2`). L�
 derselben Region, würde deren Ausfall genau diese Mehrheit mitnehmen und `catalog-api` müsste
 Reservierungen abweisen. Requests/Limits sind je Chart hergeleitet statt geschätzt: Kafka-Broker
 1Gi Memory (Request = Limit, weil ein OOM-Kill bei einem zustandsbehafteten Broker Log-Recovery und
-Leader-Wechsel auslöst) bei explizit 512m JVM-Heap. Kafka hält Nachrichten im OS-Page-Cache, nicht
-im Heap, `reservation-worker` hat nur 25m CPU/48Mi, weil er I/O-gebunden auf Postgres wartet und KEDA
-bis zu zehn Kopien gleichzeitig einplant. Die Rechnung steht jeweils als Kommentar in
+Leader-Wechsel auslöst) bei explizit 512m JVM-Heap, denn Kafka hält Nachrichten im OS-Page-Cache, nicht
+im Heap. `reservation-worker` fordert nur 25m CPU/48Mi an, weil er I/O-gebunden auf Postgres wartet
+und KEDA bis zu zehn Kopien gleichzeitig einplant. Die Rechnung steht jeweils als Kommentar in
 [`charts/kafka-cluster/values.yaml`](charts/kafka-cluster/values.yaml) und
 [`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml).
 
@@ -563,6 +594,18 @@ komplett verschwinden lassen. Ein einzelner Storage-Node wäre selbst wieder ein
 Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (Ausfallsicherheit
 beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
+*Warum ein Regions-Label und nicht `kubernetes.io/hostname`:* Heute gibt es genau einen Worker pro
+Region, beide Schlüssel würden also dieselbe Verteilung ergeben. Sie unterscheiden sich, sobald
+ein Worker dazukommt. Ein Ticketanbieter skaliert vor einem großen Vorverkauf die Nodes hoch,
+nicht die Regionen. Mit einer Regel auf den Hostnamen dürften dann zwei Kafka-Broker auf zwei
+Nodes derselben Region landen, und ein Ausfall dieser Region (Strom, Rack, Uplink) nähme beide und
+damit die `min.insync.replicas`-Mehrheit mit. Das Label modelliert den Fehlerbereich, nicht die
+Maschine. Ein weiterer Worker bekommt in `worker_regions` einfach eine bestehende Region, und alle
+Regeln gelten unverändert weiter. *Trade-off:* Die Regionen sind auf der DHBWCloud simuliert, die
+Regel schützt hier real nur vor dem Ausfall einzelner VMs. Außerdem macht `DoNotSchedule` bei nur
+drei Regionen eine Region zum Engpass: Ist ein Worker voll, bleiben neue Replicas `Pending`, statt
+auf einen anderen Worker auszuweichen.
+
 *Nachweis im Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
 `kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
 Controller pro Region, `kubectl -n ticketflow get pods -l app.kubernetes.io/component=catalog-api -o wide`
@@ -584,12 +627,26 @@ Reservierungen an. PVCs mit `deleteClaim: false` überleben jeden Pod-Neustart.
 ohne dass ein Sitzplatz doppelt vergeben wird. Sein PDB ist `maxUnavailable: 1` statt eines
 festen `minAvailable`, weil KEDA die Replica-Zahl zwischen 2 und 10 verändert.
 
-*Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
+*Alternative:* Ausfallsicherheit auf Speicherebene statt in der Datenbank. Eine einzelne
+Postgres-Instanz läge auf einem Longhorn-Volume mit drei Replicas (`numberOfReplicas: 3`). Fällt ihr
+Node aus, startet Kubernetes den Pod auf einem anderen Node neu, und Longhorn hängt dort eine
+intakte Kopie des Volumes ein.
 
-*Begründung:* `emptyDir` und ein Single-Instance-Postgres wären einfacher aufzusetzen, aber jeder
-Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich löschen statt sie
-nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten. Ein Pod-Verlust darf
-keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
+*Begründung:* Auch damit gingen keine Daten verloren. Der Ticketverkauf stünde aber still, bis der
+Ausfall erkannt ist (Node `NotReady` und Pod-Eviction, mit Kubernetes-Standardwerten mehrere
+Minuten), das Volume umgehängt ist und Postgres per Crash-Recovery wieder hochgefahren ist. Im
+Vorverkauf sind ein paar Minuten ohne Buchung genau der Zeitraum, in dem fast alle Plätze vergeben
+werden. Mit CNPGs Streaming-Replikation steht auf zwei anderen Nodes bereits eine laufende
+Replica. Der Failover ist eine Beförderung, kein Neustart, und `catalog-api` liest während dessen
+weiter von der verbleibenden Replica. *Trade-off:* drei Postgres-Pods mit je 2Gi Memory-Request
+statt einem. Außerdem ist die Replikation asynchron. Ein Commit, der beim ungeplanten Ausfall
+des Primary noch nicht auf der Replica angekommen war, geht verloren, und zwar typischerweise nur die
+letzten Millisekunden (siehe `## Grenzen`). Bei einem geplanten Switchover (Rolling Update von
+Postgres) wartet CNPG, bis die Replica aufgeholt hat, dort tritt das nicht auf. Synchrone
+Replikation würde die Lücke schließen, aber jede Buchung um einen Netzwerk-Roundtrip verlängern,
+und das genau am Engpass des Flash-Sales. Longhorn bleibt bei einer Replica
+(siehe `## Grenzen`), denn eine zweite Replikationsebene unter einer schon replizierten Datenbank
+würde jeden Write ein weiteres Mal über das Netz schicken.
 
 *Nachweis im Betrieb:*
 1. **Pod-Verlust ohne Datenverlust:** eine Reservierung anlegen, bis sie `confirmed` ist. Dann
@@ -617,23 +674,35 @@ keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verur
 git-files- und list-Generator. Plattform zuerst, Anwendung erst wenn die Plattform vollständig
 Synced/Healthy ist), Auto-Sync und Self-Heal.
 
-*Alternative:* reines `kubectl apply`/eine CI-Pipeline ohne Cluster-seitigen Agenten.
+*Alternative:* Push-basiertes Deployment aus der CI. Der GitHub-Actions-Workflow, der ohnehin die
+Images baut, würde nach dem Build `helm upgrade` gegen den Cluster ausführen, ohne einen Agenten im
+Cluster.
 
-*Begründung:* Ansible bootstrappt nur so viel, dass ArgoCD läuft. Alles danach (Operatoren,
-Kafka, Postgres, App) kommt aus Git. Der Trade-off: eine reine CI-Pipeline hätte keinen laufenden
-Agenten im Cluster, der Drift erkennt, eine manuell (z. B. während eines Incidents) geänderte
-Replica-Zahl bliebe bestehen, bis zufällig die nächste Pipeline läuft, statt automatisch per
-Self-Heal zurückgedreht zu werden. ApplicationSets statt einzelner `Application`-Dateien
-(App-of-Apps) sind dabei bewusst gewählt: vorher stand die Repo-URL 20-mal im Repo, und ein Fork,
-der eine Stelle übersah, bekam ein Deployment, das still gegen das Original-Repo lief. Die
-Zweiteilung kommt aus dem Lastpfad: `catalog-api` und `reservation-worker` melden sich erst
-bereit, wenn Postgres, Kafka und die Schema-Registry antworten und die brauchen ihrerseits
-StorageClass, Operatoren und Secrets aus dem Vault. Erst wenn diese Plattform nachweislich grün ist,
-startet die Anwendung. Statt dass ein frischer Cluster minutenlang in Fehlschleifen läuft, die
-man von echten Fehlern nicht unterscheiden kann. ArgoCD-Sync-Waves helfen hier nicht (sie wirken
-nicht auf von einem ApplicationSet erzeugte Applications), Progressive Syncs würden Self-Heal
-abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
-`kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
+*Begründung:* Ein Vorverkauf wird vorab vorbereitet: Profil `prod`, Replica-Zahlen, KEDA-Grenzen.
+Bis zum Verkaufsstart muss der Cluster genau diesen geprüften Stand haben. Eine Push-Pipeline
+prüft das nur in dem Moment, in dem sie läuft. Eine Änderung danach, z. B. eine während der
+Vorbereitung per `kubectl` heruntergesetzte Replica-Zahl, bliebe unbemerkt bis zum nächsten Push,
+im schlimmsten Fall bis in die Lastspitze. ArgoCD vergleicht dagegen laufend und dreht solche
+Abweichungen per Self-Heal zurück. Hinzu kommt: Push-Deployment bräuchte eine Kubeconfig mit
+Cluster-Admin-Rechten als GitHub-Secret. ArgoCD zieht dagegen von innen und braucht nur einen
+Read-only-Deploy-Key. Ein kompromittiertes GitHub-Konto kann den Cluster so nur über einen
+sichtbaren Commit verändern. *Trade-off:* Self-Heal
+gilt auch im Notfall. Wer mitten im Flash-Sale per `kubectl` eingreift, wird von ArgoCD
+zurückgesetzt, jede Notmaßnahme muss also über einen Commit laufen. Die einzige Ausnahme ist die
+Replica-Zahl des `reservation-worker`. Die regelt KEDA, deshalb ignoriert ArgoCD sie
+(`ignoreDifferences`, siehe B2).
+
+Ansible bootstrappt nur so viel, dass ArgoCD läuft. Alles danach (Operatoren, Kafka, Postgres,
+App) kommt aus Git. ApplicationSets statt einzelner `Application`-Dateien (App-of-Apps) sind
+bewusst gewählt: Vorher stand die Repo-URL 20-mal im Repo, und ein Fork, der eine Stelle übersah,
+bekam ein Deployment, das still gegen das Original-Repo lief. Die Zweiteilung kommt aus dem
+Lastpfad: `catalog-api` und `reservation-worker` melden sich erst bereit, wenn Postgres, Kafka und
+die Schema-Registry antworten, und die brauchen ihrerseits StorageClass, Operatoren und Secrets aus
+dem Vault. Deshalb startet die Anwendung erst, wenn diese Plattform nachweislich grün ist. So läuft
+ein frischer Cluster nicht minutenlang in Fehlschleifen, die man von echten Fehlern nicht
+unterscheiden kann. ArgoCD-Sync-Waves helfen hier nicht, weil sie nicht auf von einem
+ApplicationSet erzeugte Applications wirken. Progressive Syncs würden Self-Heal abschalten (siehe
+[`gitops/README.md`](gitops/README.md) ## Gestufter Rollout).
 
 *Nachweis im Betrieb:* Drift am Cluster vorbei erzeugen, z. B. `kubectl -n ticketflow scale
 deploy ticketflow-app-catalog-api --replicas=5` — ArgoCD erkennt die Abweichung zum Git-Stand und
@@ -665,8 +734,30 @@ angepasst:
   Buchungsdurchsatz und `catalog-api` liest von den Replicas. Erst wenn beide gleichzeitig
   fehlen, ist die API nicht bereit (Abwägung siehe `## Entscheidungen`, P1 – Gemeinsame
   Datenbank).
-- Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit. Daher sind CNPG- und Kafka-Replikation
-  klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
+- **Gemessen und erwartet unter Last.** Der im Screencast gezeigte Lauf (`run.sh`, 1000 virtuelle
+  Nutzer, 75 s, dev-Profil) erzeugte rund 381.000 Reservierungsanfragen, also etwa 5.000 pro
+  Sekunde. 11,7 % wurden mit `202` angenommen, 88,3 % mit `409` abgewiesen, weil der Platz schon
+  vergeben war. Es gab keine `5xx` und keine Timeouts, p95 lag bei 389 ms, p99 bei 502 ms. KEDA
+  skalierte den `reservation-worker` dabei von 2 auf 10 Pods. Die Last kam von einem einzigen
+  Client über VPN, der Wert ist also eher eine Untergrenze dessen, was der Cluster annimmt, und
+  keine gemessene Obergrenze. Bei echter, deutlich höherer Last erwarten wir den Engpass nicht in
+  der API, sondern in der Verarbeitung. Mehr als 10 Worker-Pods (`maxReplicaCount`, 2 Partitionen
+  je Pod) gibt es nicht, und alle schreiben auf den einen Postgres-Primary. Die Annahme bleibt
+  schnell, weil Kafka puffert. Die Zeit bis zur Bestätigung `confirmed`/`rejected` wächst aber
+  mit dem Rückstand. Weiter skalieren ließe sich nur über mehr Partitionen und eine Aufteilung der
+  Sitzplätze auf mehrere Datenbanken (z. B. je Event), nicht über mehr Pods.
+- **Datenverlust beim ungeplanten Failover.** Die Postgres-Replikation ist asynchron. Stirbt der
+  Primary, bevor eine bereits bestätigte Buchung auf der Replica angekommen ist, fehlt sie nach
+  dem Failover in der Datenbank. Den Kafka-Offset hat der Worker aber schon bestätigt, und das
+  Ergebnis-Event ist schon versendet. Das Fenster liegt bei normaler Replikation im
+  Millisekundenbereich, ist aber nicht null. Abhilfe wäre synchrone Replikation in CNPG, auf
+  Kosten der Latenz jeder Buchung (siehe P5).
+- **Security Group nicht im Code.** Terraform nutzt die Default-Security-Group des Projekts und
+  verwaltet keine eigene. Sie muss die Ports aus `### Voraussetzungen` bereits erlauben. Ein
+  Projekt mit restriktiverer Default-SG braucht dort eine Anpassung, die nicht aus dem Repo kommt.
+- Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit. Daher sind CNPG- und
+  Kafka-Replikation auf drei Kopien in drei simulierten Regionen ausgelegt, nicht auf mehrere
+  echte Rechenzentren.
 - Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway). `notification-worker` kann
   optional per SMTP echte E-Mails versenden, fällt aber standardmäßig (kein SMTP-Relay im
   Demo-Betrieb konfiguriert) auf reine Log-Ausgabe statt echtem E-Mail/SMS-Versand zurück.
@@ -767,24 +858,27 @@ mitgeschnittene offene Verbindungen) und vor dem Rollout gegen alle diese Flows 
 
 *Was umgesetzt wurde (Secret-Vault-Hälfte):* Applikations-Secrets, die vorher chart-eigen/hardcodiert im
 Repo lagen (AKHQs Kafka-SASL-Passwort, AKHQs Basic-Auth-Passwort-Hash und JWT-Schlüssel,
-`notification-worker`s SMTP-/Kafka-mTLS-Platzhalter), werden jetzt über **OpenBao**
-(HashiCorp-Vault-Fork, `charts/openbao`) verwaltet (eigener, hochverfügbarer Secret-Vault mit
-**PostgreSQL als Storage-Backend** (`charts/openbao-postgres`, `ha_enabled = "true"`, 3
-OpenBao-Replicas über die drei simulierten Regionen verteilt, P4)) und per **External Secrets
-Operator** (`charts/external-secrets-operator` + `charts/openbao-secretstore`) als native
-Kubernetes-`Secrets` synchronisiert. Die Deployments lesen sie unverändert per
+`notification-worker`s SMTP-/Kafka-mTLS-Platzhalter), verwaltet jetzt **OpenBao**, ein Fork von
+HashiCorp Vault (`charts/openbao`). OpenBao läuft hochverfügbar mit drei Replicas über die drei
+simulierten Regionen (P4) und nutzt **PostgreSQL als Storage-Backend** (`charts/openbao-postgres`,
+`ha_enabled = "true"`). Der **External Secrets Operator** (`charts/external-secrets-operator` und
+`charts/openbao-secretstore`) synchronisiert die Werte als native Kubernetes-`Secrets`. Die Deployments lesen sie unverändert per
 `secretKeyRef`/`envFrom`. Das Postgres-App-Credential steht nicht mehr im Repo: CNPG generiert
-es selbst, `catalog-api`/`reservation-worker` lesen es direkt aus dem CNPG-Secret. Init/Unseal/KV-Seeding
-laufen vollständig GitOps-nativ über einen Helm-Hook-Job in `charts/openbao`
-(`templates/bootstrap-job.yaml`, analog zum bestehenden Apicurio-Schema-Registrierungs-Job in
-`charts/kafka-cluster`) statt über eine zusätzliche Ansible-Rolle — passt zu P2 ("ein Ablauf
-bringt alles hoch") und W2, kein manueller Zusatzschritt außer der empfohlenen einmaligen
-Sicherung von `openbao-unseal-keys` nach dem ersten Sync (`kubectl -n openbao get secret
-openbao-unseal-keys -o yaml`). Bewusste Vereinfachung: Shamir-Schlüssel-Schwelle `1-von-1` statt
-z. B. `3-von-5` — für ein Laborsetup ohne mehrere vertrauenswürdige Operator:innen wäre eine echte
-Schlüsselverteilung Overhead ohne Sicherheitsgewinn. Der Auto-Unseal-Sidecar (pollt lokal `bao
-status`, entsiegelt bei Bedarf automatisch aus einem gemounteten Secret) muss dadurch nur einen
-Key statt eines Schwellenwerts koordinieren.
+es selbst, `catalog-api`/`reservation-worker` lesen es direkt aus dem CNPG-Secret.
+
+Initialisieren, Entsiegeln und das Befüllen der KV-Pfade übernimmt ein Helm-Hook-Job in
+`charts/openbao` (`templates/bootstrap-job.yaml`), nach demselben Muster wie der
+Schema-Registrierungs-Job in `charts/kafka-cluster`. Damit kommt OpenBao wie alles andere über
+ArgoCD hoch, ohne zusätzliche Ansible-Rolle (P2, W2). Manuell bleibt nur die empfohlene einmalige
+Sicherung von `openbao-unseal-keys` nach dem ersten Sync.
+
+*Bewusste Vereinfachung:* Die Shamir-Schwelle ist `1-von-1` statt z. B. `3-von-5`. Eine echte
+Schlüsselverteilung setzt mehrere unabhängige Verantwortliche voraus, die im Laborbetrieb fehlen.
+Der Auto-Unseal-Sidecar fragt lokal `bao status` ab und entsiegelt bei Bedarf mit dem Schlüssel
+aus einem gemounteten Secret. Der Preis: Unseal-Key und Root-Token liegen als Kubernetes-Secret im
+selben Cluster. Wer Lesezugriff auf den Namespace `openbao` hat, hat damit auch Zugriff auf die
+Vault. In Produktion gehörten der Unseal-Key in ein externes KMS und das Root-Token nach dem
+Bootstrap widerrufen.
 
 Secrets fließen auch in die umgekehrte Richtung: ein `PushSecret` (ESOs Gegenstück zu
 `ExternalSecret`, K8s → Vault statt Vault → K8s) spiegelt die von Strimzi (alle vier
@@ -799,16 +893,18 @@ ihr eigenes Bootstrap-Passwort nicht enthalten, bevor sie damit entsiegelt ist.
 *Alternative:* SOPS (age-Backend), verschlüsselte Dateien direkt im Repo eingecheckt, von Ansible
 zur Laufzeit entschlüsselt, oder Sealed Secrets (Controller-basiert).
 
-*Begründung:* SOPS ist für ein Laborsetup mit überschaubarer Secret-Zahl einfacher, aber statisch.
-Jede Rotation ist ein Git-Commit und es gibt keinen zentralen Ort, an dem ein Angreifer, der ein
-einzelnes Deployment kompromittiert, nicht auch gleich den Git-Verlauf mit allen historischen
-Chiffretext-Versionen einsehen könnte (SOPS entschlüsselt zwar zur Laufzeit, aber der
-Chiffretext-Verlauf bleibt für jeden mit Repo-Zugriff und dem age-Key entschlüsselbar). Sealed
-Secrets bräuchte einen zusätzlichen, selbst zu betreibenden zustandsbehafteten Controller nur für
-diesen einen Zweck. Ein eigener Vault-Dienst ist für dieses Laborsetup baustellenintensiver (3
-zusätzliche Replicas + eigene Postgres-HA-Instanz + Bootstrap-Job), liefert dafür aber echte
-Rotation ohne Git-Commit, eine zentrale Audit-Fläche und, passend zur Domäne dieses Projekts,
-echte Hochverfügbarkeit über dieselben simulierten Regionen wie bei Kafka und CNPG.
+*Begründung:* SOPS ist bei einer überschaubaren Zahl an Secrets einfacher, aber statisch. Jede
+Rotation ist ein Git-Commit, und der gesamte Chiffretext-Verlauf bleibt für jeden mit Repo-Zugriff
+und dem age-Key entschlüsselbar, auch alte, längst rotierte Werte. Sealed Secrets bräuchte einen
+zusätzlichen Controller nur für diesen einen Zweck und hätte dasselbe Rotationsproblem. Vor allem
+decken beide nur Secrets ab, die *wir* erzeugen. Die meisten Zugangsdaten im Cluster erzeugen aber
+Strimzi und CNPG zur Laufzeit, und die tauchen in keinem Repo auf. Nur ein Vault kann sie per
+`PushSecret` an einer Stelle zusammenführen. *Trade-off:* Ein eigener Vault-Dienst ist deutlich
+aufwendiger: drei zusätzliche Replicas, eine eigene Postgres-HA-Instanz und ein Bootstrap-Job.
+Dafür gibt es Rotation ohne Git-Commit, eine zentrale Audit-Fläche und Hochverfügbarkeit über
+dieselben simulierten Regionen wie bei Kafka und CNPG. Ein versiegelter Vault hält den
+Ticketverkauf trotzdem nicht an, weil die Anwendung ihre Zugangsdaten direkt aus den
+Operator-Secrets liest.
 
 *Zugriff (Login):* das Root-Token ist das einzige Anmeldemittel für Menschen. Es gibt bewusst
 keine Benutzername/Passwort-Auth-Methode (userpass/LDAP), nur den Shamir-Root-Token und
@@ -880,6 +976,12 @@ sofort mit einer `TopicAuthorizationException` abgelehnt zu werden. Händische
 `kafka-acls.sh`-Aufrufe wären nicht GitOps-versioniert und müssten bei jedem Cluster-Rebuild
 manuell wiederholt werden. `KafkaUser` als Custom Resource kommt wie alles andere aus Git und wird
 von ArgoCD mitverwaltet (siehe W2).
+
+*Abgrenzung:* Für P1 genügt ein Kafka-Cluster, der Nachrichten transportiert. B4 beansprucht nur
+das, was darüber hinausgeht: User Operator, SCRAM, ACLs je Client, die Trennung der Namespaces und
+der ausdrücklich hart verteilte KRaft-Betrieb (P4). Die NetworkPolicies aus B3 begrenzen, *wer*
+den Broker erreicht (L3/L4). Die ACLs hier begrenzen, *was* ein authentifizierter Client auf
+welchem Topic tun darf. Es sind also zwei unabhängige Schutzebenen mit verschiedenen Technologien.
 
 *Tragend, nicht dekorativ:* Die ACLs ändern das tatsächliche
 Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller Fehlschreibung) und sind
