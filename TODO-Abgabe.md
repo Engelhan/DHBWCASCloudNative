@@ -1,7 +1,7 @@
 # Offene Punkte bis zur Abgabe
 
 Abgleich des Repos mit der Aufgabenstellung V2 (`2026_07_23_Aufgabenstellung - v2.pdf`),
-Stand 12.10.2026 (`main` @ `800862a`). Sortiert nach Auswirkung auf die Bewertung. Datei vor der
+Stand 13.10.2026 (`main` @ `d78cad0` + README-Korrekturen vom 13.10.). Sortiert nach Auswirkung auf die Bewertung. Datei vor der
 Abgabe löschen.
 
 Legende: 🔴 blockiert Punkte oder macht Teile unbewertbar · 🟠 kostet wahrscheinlich Punkte ·
@@ -12,12 +12,12 @@ Legende: 🔴 blockiert Punkte oder macht Teile unbewertbar · 🟠 kostet wahrs
 | Bereich | Punkte | Stand |
 |---|---|---|
 | Teil A – P1 Anwendung/Domäne | 8 | erfüllt |
-| Teil A – P2 IaC, frisches Projekt | 15 | umgesetzt, ❓ **Test auf frischem Projekt** |
+| Teil A – P2 IaC, frisches Projekt | 15 | umgesetzt, Nachweis-Satz in README, ❓ **Test auf frischem Projekt** |
 | Teil A – P3 Requests/Limits, Tags, Config | 10 | erfüllt |
 | Teil A – P4 Platzierung + Nachweis | 10 | erfüllt, Diagramm vom 09.10. aus dem Live-Cluster |
-| Teil A – P5 Resilienz | 12 | umgesetzt, **Nachweis-Satz fehlt in README** |
+| Teil A – P5 Resilienz | 12 | umgesetzt, Nachweis-Satz in README (noch nicht live geprüft) |
 | Teil B – Wahlthema | 10 | W2 (GitOps), Nachweis-Satz in README vorhanden |
-| Teil C – Doku/Darstellung | 35 | Screencast liegt vor, README am 10.10. final gelesen |
+| Teil C – Doku/Darstellung | 35 | Screencast liegt vor, README am 10.10. final gelesen, Unter-READMEs am 13.10. bereinigt |
 | Bonus | ≤ 10 | B2/B3 (W7)/B4 beansprucht; **B2 ohne Grafana-Dashboard** |
 
 ---
@@ -49,8 +49,10 @@ Abschnitt 6.3: „Wenn Sie den Bonus B1 oder B2 beanspruchen: Last erzeugen, Rep
 **Wirkung im Grafana-Dashboard zeigen**“. Es gibt weiterhin keinen Observability-Stack; die README
 zeigt die Wirkung über `kubectl get scaledobject,hpa` und weist auf das fehlende Dashboard hin.
 
-- [ ] Entscheidung festhalten: Stack wird **nicht** wieder aufgebaut (bei Stand 12.10. die
-      realistische Option) → geringere B2-Punkte bewusst in Kauf nehmen.
+- [x] Verweise „kein Grafana-Dashboard, siehe `## Grenzen`“ entfernt; der fehlende Stack wird
+      direkt an den Stellen (Architektur, Betrieb, B2) benannt, nicht in `## Grenzen`.
+- [ ] Im Team bestätigen: Stack wird **nicht** wieder aufgebaut → geringere B2-Punkte bewusst in
+      Kauf nehmen.
 
 ### 5. P2: kompletter Aufbau auf einem frischen Projekt testen (15 Punkte, sonst A+B unbewertbar)
 
@@ -67,13 +69,15 @@ bewertbar.“ Im Repo ist kein Neuaufbau seit dem 04.10. dokumentiert.
 
 ### 6. Nachweise im Betrieb in `## Entscheidungen` ergänzen
 
-Für P1, P3 und P5 am 12.10. ergänzt, damit hat jetzt jedes Thema einen
-„*Nachweis im Betrieb*“-Satz. Die Kommandos sind nur gegen die Charts geprüft, **nicht live**.
+Für P1, P3 und P5 am 12.10., für P2 am 13.10. ergänzt, damit hat jetzt jedes Thema einen
+„*Nachweis im Betrieb*“-Satz. Die Reihenfolge ist überall Wahl → Alternative → Begründung →
+Nachweis. Die Kommandos sind nur gegen die Charts geprüft, **nicht live**.
 
 - [ ] Am 13.10. gemeinsam am Cluster ausführen und README bei Abweichungen anpassen:
       **P5** (Worker- + Postgres-Primary-Pod löschen → Reservierung noch `confirmed`;
       `rollout restart` von catalog-api während `run.sh` → keine `5xx`; Broker-Pod löschen),
-      **P1** (AKHQ-Consumer-Groups), **P3** (Image-Spalte, Deployment-/ConfigMap-YAML).
+      **P1** (AKHQ-Consumer-Groups), **P3** (Image-Spalte, Deployment-/ConfigMap-YAML),
+      **P2** (`terraform plan` nach dem Apply meldet `No changes`).
 
 ### 7. ~~Diagramme an den aktuellen Stand anpassen~~ ✅ erledigt (09.10.)
 
@@ -91,15 +95,16 @@ Der `TODO`-Hinweis ist aus der README entfernt, es stehen aber weiterhin **keine
 
 ### 9. Fremden Code in `## Entscheidungen` benennen (Abschnitt 9, Formales)
 
-„Fremder Code ist erlaubt, wenn er in `## Entscheidungen` als solcher benannt wird.“ In der README
-ist **noch nichts** davon benannt:
+„Fremder Code ist erlaubt, wenn er in `## Entscheidungen` als solcher benannt wird.“ Am 13.10.
+als Absatz **„Übernommener Code“** am Ende von `## Entscheidungen` ergänzt:
 
-- [ ] Addon-Konfiguration portiert aus `pfisterer/k3s-dhbw-cloud-role` (Longhorn, cert-manager,
-      external-dns; siehe `gitops/README.md`)
-- [ ] JMX-Exporter-Regeln (`charts/kafka-cluster/templates/messaging/kafka-metrics-configmap.yaml`)
-      aus den Strimzi-Beispielen bzw. einer Referenzkonfiguration (Carlos)
-- [ ] AKHQ-RBAC-Rollen aus AKHQs `application.example.yml` (Carlos)
-- [ ] ggf. weitere übernommene Snippets (Team fragen)
+- [x] Addon-Konfiguration portiert aus `pfisterer/k3s-dhbw-cloud-role` (Longhorn, cert-manager,
+      external-dns)
+- [x] JMX-Exporter-Regeln aus dem Strimzi-Metrics-Beispiel
+- [x] AKHQ-RBAC-Rollen aus AKHQs `application.example.yml`
+- [x] NetworkPolicy-Vorgaben aus CNPG-/Strimzi-Doku
+- [ ] Carlos bestätigt die Herkunft von JMX-Regeln und AKHQ-Rollen; Team fragt nach weiteren
+      übernommenen Snippets
 
 ### 10. ~~Lokale Commits mit dem Remote zusammenführen und pushen~~ ✅ erledigt
 
@@ -126,8 +131,8 @@ README final gelesen (Carlos, 10.10.), Bonus-Bezeichnungen vereinheitlicht (Phil
 ### 13. Nachvollziehbarkeit für Fremde (Teil C, 4 Punkte)
 
 - [ ] `## Betrieb` einmal von jemandem durchgehen lassen, der das Projekt nicht kennt.
-- [ ] Manuelle Vorbedingungen ehrlich kennzeichnen: DNS-Zone im Self-Service-Portal, ghcr.io-
-      Packages auf „Public“, Deploy-Key bei GitHub.
+- [x] Manuelle Vorbedingungen gekennzeichnet: `## Betrieb` Phase 1 („lassen sich nicht aus dem
+      Repo heraus automatisieren“) und Schritt 11 (ghcr.io-Packages auf „Public“).
 
 ### 14. Commit-Verlauf / Beiträge
 
@@ -138,8 +143,7 @@ Aktuelle Verteilung: Xaron 207, Carlos-Ku9 75, Philipp Stiegler 32, alea563-blip
 
 ### 15. Offene technische Punkte aus der Doku
 
-- [ ] Dediziertes ArgoCD-`AppProject` statt `project: default` (weiterhin `TODO` in
-      `gitops/README.md`) – bei Stand 12.10. eher in `## Grenzen` erwähnen statt umsetzen.
+- [x] ArgoCD-`AppProject`: nicht umgesetzt, `project: default` steht jetzt in `## Grenzen`.
 - [ ] ❓ OpenBao-HA-Failover zwischen entsiegelten Standbys live getestet? (in B3 als Nachweis
       behauptet)
 - [ ] ❓ B4-Negativprobe (falscher `KafkaUser` schreibt auf fremdes Topic → Autorisierungsfehler)
@@ -171,6 +175,15 @@ Aktuelle Verteilung: Xaron 207, Carlos-Ku9 75, Philipp Stiegler 32, alea563-blip
 - Observability mit OpenTelemetry (B1) – Stack entfernt, siehe Punkt 4
 - Chaos-Experiment (B7)
 - Helm-Charts veröffentlichen (B8)
+
+### 16. ~~READMEs bereinigen~~ ✅ erledigt (13.10.)
+
+- Verweise auf die gelöschte `CLAUDE.md` (7×) durch Inhalt bzw. gültige Verweise ersetzt
+- Bonus-Nummern in Unter-READMEs, Chart-Kommentaren und ApplicationSets an die Root-README
+  angeglichen (OpenBao/NetworkPolicies = B3, KafkaUser/ACLs = B4)
+- Tote Querverweise („P1/P3 – Ergänzung“, `## GitOps secrets`), veraltete Migrationsabschnitte
+  (App-of-Apps, Kafka 1→3 Broker), „P6“, „Screenshots folgen“, Lastgenerator-Dauer korrigiert
+- ae/oe/ue-Schreibweisen und Grammatikfehler in der Root-README behoben
 
 ## Außerhalb dieser Aufgabenstellung
 
