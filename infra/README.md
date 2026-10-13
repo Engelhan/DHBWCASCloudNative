@@ -1,17 +1,18 @@
 # infra/ – Infrastructure as Code (P2)
 
-Two tools with clearly separated responsibilities:
+Zwei Werkzeuge mit klar getrennten Verantwortlichkeiten:
 
-- [`terraform/`](terraform/): creates *resources* on DHBWCloud (OpenStack) – a keypair and VMs on
-  the existing `DHBWV6` network. No own network/router, no own security group, no software setup
-  inside the VMs.
-- [`ansible/`](ansible/): *configures* those VMs – base hardening, k3s installation
-  (server/agents), node labels and the control-plane taint for the placement decision (P4,
-  simulated regions), ArgoCD bootstrap, and the staged rollout of the ApplicationSets. From there
-  on, [`gitops/`](../gitops/) takes over.
+- [`terraform/`](terraform/): erstellt *Ressourcen* auf DHBWCloud (OpenStack) – einen
+  SSH-Keypair und VMs im bereits vorhandenen Netzwerk `DHBWV6`. Es werden kein eigenes Netzwerk,
+  kein eigener Router, keine eigene Security Group und keine Softwareinstallation innerhalb der
+  VMs erzeugt.
+- [`ansible/`](ansible/): *konfiguriert* diese VMs – Basis-Hardening, Installation von k3s
+  (Server/Agents), Node-Labels und das Taint des Control Plane Nodes für die Platzierungslogik
+  (P4, simulierte Regionen), Bootstrap von ArgoCD sowie den gestuften Rollout der
+  ApplicationSets. Danach übernimmt [`gitops/`](../gitops/).
 
-Order: `terraform apply` → Terraform writes the Ansible inventory (IPs) →
-`ansible-playbook playbooks/site.yml` → cluster + ArgoCD are up, the ApplicationSets from
-`gitops/applicationsets/` are rolled out stage by stage.
+Reihenfolge: `terraform apply` → Terraform schreibt das Ansible-Inventory mit den IPs →
+`ansible-playbook playbooks/site.yml` → Cluster und ArgoCD sind hoch und die ApplicationSets aus
+`gitops/applicationsets/` werden stufenweise angewendet.
 
-None of these steps is a manual click in the DHBWCloud portal (requirement P2).
+Keiner dieser Schritte erfolgt per Hand im DHBWCloud-Portal (Anforderung P2).
