@@ -1,4 +1,4 @@
-# P6: KEDA operator only; the ScaledObject lives in charts/reservation-worker.
+# B2: KEDA operator only; the ScaledObject lives in charts/reservation-worker.
 # Upstream values (dependency alias).
 keda:
   # P4: two replicas per component, hard-spread across regions (labels = upstream pod labels).

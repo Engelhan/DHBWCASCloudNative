@@ -35,6 +35,6 @@ variable "worker_regions" {
 
   validation {
     condition     = length(var.worker_regions) >= 2
-    error_message = "worker_regions must have at least 2 entries so that several workers exist (requirement P4/P6)."
+    error_message = "worker_regions must have at least 2 entries so that several workers exist (requirement P4)."
   }
 }

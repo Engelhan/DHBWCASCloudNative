@@ -49,7 +49,7 @@ config:
     username: reservation-worker
     secretName: reservation-worker
 
-  # P6: scale on consumer lag, not CPU.
+  # B2: scale on consumer lag, not CPU.
   # max 10 pods = 2 of the 20 partitions each; the single Postgres primary is the real limit.
   # lagThreshold 10: desired pods = ceil(lag / 10).
   # pollingInterval is inert with minReplicaCount >= 1 (HPA polls every 15s).

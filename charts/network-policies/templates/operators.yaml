@@ -155,7 +155,7 @@ spec:
     {{- include "np.ingress.prometheus" (list $ 8080) | nindent 4 }}
   egress:
     {{- include "np.egress.apiServer" . | nindent 4 }}
-    # Kafka scaler: reads reservation-worker's consumer lag (P6).
+    # Kafka scaler: reads reservation-worker's consumer lag (B2).
     - to:
         {{- include "np.peer.kafkaBrokers" . | nindent 8 }}
       ports:
