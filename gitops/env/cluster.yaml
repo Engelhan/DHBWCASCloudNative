@@ -62,7 +62,7 @@ ticketflow:
   # ghcr.io requires lowercase.
   imageRegistry: ghcr.io/engelhan
   # Written by the bump job in .github/workflows/build-images.yml. Never "latest" (P3).
-  imageTag: "6fb800dd"
+  imageTag: "d37d0c20"
 
   # --- Infrastructure ---
   # Prefix of all OpenStack resource names.
