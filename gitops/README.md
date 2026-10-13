@@ -265,8 +265,6 @@ Namespace-Grenze überschreitet — Details in `charts/kafka-cluster/README.md` 
 Welche `values-<env>.yaml` greift, steuert `ticketflow.environment` (siehe ## dev/prod); im
 aktiven dev-Profil laufen Kafka mit 3 Brokern/3 Controllern und jeder App-Service mit 2 Replicas.
 
-`TODO`: ein dediziertes `AppProject` (Repo-/Namespace-/Ressourcen-Scoping) fehlt noch — alle
-Applications laufen bislang mit `project: default`.
 
 ## OpenBao / Secret-Vault (B1)
 
