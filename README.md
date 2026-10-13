@@ -454,7 +454,7 @@ Ansible wartet dagegen aktiv auf das Ergebnis:
 - [`gitops_rollout`](infra/ansible/roles/gitops_rollout/tasks/stage.yml) wartet danach, bis jede
   Application *Synced/Healthy* ist.
 
-Bricht ein Lauf ab, nennt Ansible die rote Stufe. Das Playbook ist idempotent und kann deshalb
+Bricht ein Lauf ab, nennt Ansible die fehlgeschlagene Stufe. Das Playbook ist idempotent und kann deshalb
 gefahrlos erneut starten. `cloud-init` würde dagegen kein zweites Mal laufen.
 
 Für TicketFlow ist das wichtig, weil der Vorverkaufsstart ein fester Termin ist. Vorher muss
