@@ -15,18 +15,18 @@ kafka-cluster/
 ├── Chart.yaml
 ├── values.yaml              # gemeinsame Basiswerte
 ├── values-dev.yaml          # Lab-Profil: 3 Broker/3 Controller, kleiner Storage
-├── values-prod.yaml         # 3 Broker/3 Controller, groesserer Storage
+├── values-prod.yaml         # 3 Broker/3 Controller, größerer Storage
 ├── values.schema.json       # JSON-Schema: Pflichtfelder, Typen
 ├── files/schemas/            # kanonische JSON-Schemas (reservation-requested, reservation-result)
 └── templates/
     ├── messaging/                         # Strimzi Kafka (KRaft, kein ZooKeeper)
     │   ├── kafka-broker-nodepool.yaml
     │   ├── kafka-controller-nodepool.yaml
-    │   ├── kafka-cluster.yaml              # SCRAM-SHA-512-Auth + authorization: simple (B2)
+    │   ├── kafka-cluster.yaml              # SCRAM-SHA-512-Auth + authorization: simple (B4)
     │   ├── kafka-metrics-configmap.yaml   # JMX-Exporter-Regeln (derzeit scrapt sie kein Prometheus)
     │   ├── kafka-topics.yaml              # aus .Values.kafka.topics generiert
-    │   ├── kafka-users.yaml               # aus .Values.kafka.users generiert (B2, KafkaUser+ACLs)
-    │   └── kafka-user-pushsecrets.yaml    # spiegelt die Strimzi-SCRAM-Secrets nach OpenBao (B1)
+    │   ├── kafka-users.yaml               # aus .Values.kafka.users generiert (B4, KafkaUser+ACLs)
+    │   └── kafka-user-pushsecrets.yaml    # spiegelt die Strimzi-SCRAM-Secrets nach OpenBao (B3)
     └── schema-registry/
         ├── configmap.yaml
         └── register-job.yaml               # registriert files/schemas/* in Apicurio (Helm-Hook)
@@ -43,46 +43,12 @@ kafka-cluster/
 
 Requests/Limits/Heap stehen mit Herleitung in `values.yaml` (`kafka.broker`/`kafka.controller`).
 
-## Umstellung von 1 auf 3 Broker (einmalig, nur Cluster von vor dem 29.09.)
+## Verteilung und Replikation prüfen
 
-Bis 2026-09-29 lief dev mit einem einzigen Broker/Controller. Wer einen so alten Cluster noch
-hat: ein ArgoCD-Sync allein reicht **nicht** vollständig – neue Broker/Controller kommen dazu, aber
-
-- Strimzis Topic Operator kann den `replicationFactor` eines **bestehenden** Topics nur mit Cruise
-  Control ändern (hier nicht deployt) — `reservation-requested`/`reservation-result` blieben bei 1
-  und die `KafkaTopic`s meldeten `NotReady`.
-- `offsets.topic.replication.factor` wirkt nur beim ersten Anlegen von `__consumer_offsets` - das
-  bliebe bei Replication-Factor 1, ein Broker-Verlust würde alle Consumer-Offsets mitnehmen.
-- Ein KRaft-Controller-Quorum lässt sich nicht per `replicas: 1 -> 3` vergrößern wie ein Broker-Pool.
-
-Deshalb Kafka einmal frisch aufsetzen (kein Lastverkehr währenddessen; Reservierungen selbst liegen in
-Postgres und bleiben erhalten, verloren gehen nur noch unverarbeitete Events und die Apicurio-Schemas,
-die der Register-Hook beim Sync neu anlegt):
+P4: ein Broker/Controller je Region; P5: alle Partitionen mit 3 In-Sync-Replicas:
 
 ```bash
 export KUBECONFIG=infra/ansible/kubeconfig
-# 1. Auto-Sync kurz aus. Die Application gehoert der ApplicationSet - ein Patch an ihr allein
-#    wuerde vom ApplicationSet-Controller sofort zurueckgesetzt, deshalb ihn vorher anhalten.
-kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=0
-kubectl -n argocd patch app kafka-cluster --type=merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
-# 2. Kafka-CR + NodePools loeschen (Strimzi raeumt die Pods ab), danach die PVCs (deleteClaim: false)
-kubectl -n kafka delete kafka ticketflow-kafka
-kubectl -n kafka delete kafkanodepool broker controller
-kubectl -n kafka wait --for=delete pod -l strimzi.io/cluster=ticketflow-kafka --timeout=300s
-kubectl -n kafka delete pvc -l strimzi.io/cluster=ticketflow-kafka
-# 3. ApplicationSet-Controller wieder an - er stellt syncPolicy.automated selbst wieder her,
-#    ArgoCD legt den Cluster mit 3+3 Pods und RF 3 neu an
-kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=1
-kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -w
-# 4. Apicurio liest seinen kafkasql-Journal-Topic nur beim Start - danach neu starten, dann die
-#    Clients, damit sie die (neu vergebenen) Schema-globalIds auflösen
-kubectl -n kafka rollout restart deploy -l app.kubernetes.io/name=apicurio
-kubectl -n ticketflow rollout restart deploy   # catalog-api, frontend, beide Worker
-```
-
-Prüfen (P4: ein Broker/Controller je Region; P5: alle Partitionen mit 3 In-Sync-Replicas):
-
-```bash
 kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide
 kubectl get nodes -L topology.ticketflow/region
 # Pod-Namen enthalten die Strimzi-Node-ID, die je nach Anlage-Reihenfolge nicht bei 0 beginnt

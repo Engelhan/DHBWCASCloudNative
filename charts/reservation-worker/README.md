@@ -41,7 +41,7 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
   `<ticketflow.postgres.databaseName>-postgres-cluster-app` (Keys `username`/`password`; nicht über
   OpenBao, dort liegt nur eine Audit-Kopie) — Datenbank und Anwendung teilen sich denselben
   Namespace. Host und Datenbankname leiten sich aus demselben zentralen Wert ab.
-- **Kafka-SASL (B2):** `config.kafkaSasl.secretName` referenziert das vom Strimzi User Operator
+- **Kafka-SASL (B4):** `config.kafkaSasl.secretName` referenziert das vom Strimzi User Operator
   automatisch angelegte Secret — nicht von diesem Chart erzeugt.
 
 ## values-dev.yaml vs. values-prod.yaml

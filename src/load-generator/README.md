@@ -3,7 +3,7 @@
 Erzeugt den künstlichen Lastpfad, der reproduzierbar auslösbar sein muss
 (Abschnitt 3) und die Screencast-Szene für Bonus B2 (Autoscaling) bedient: Last erzeugen →
 Replicas wachsen, gezeigt live über `kubectl get pods`/`scaledobject` und den Consumer-Lag in
-AKHQ (kein Grafana-Dashboard, siehe Root-`README.md` ## Grenzen).
+AKHQ (kein Grafana-Dashboard, es läuft kein Observability-Stack im Cluster).
 
 ## Szenario "Flash Sale"
 
@@ -51,7 +51,7 @@ Ohne `API_URL` zielt das Skript auf `https://ticketflow.<dnsZone>` (Zone aus
 `gitops/env/cluster.yaml`, derselbe Host wie der Frontend-Ingress) und ist auf maximale Last
 eingestellt: `EVENT_ID=all` (Last verteilt auf alle Events aus `GET /events`, also dreimal so viele
 freie Sitzplätze, bevor `catalog-api` nur noch per Vorabcheck mit `409` antwortet und nichts mehr
-in Kafka landet), 1000 VUs, 3 Minuten. Unter Linux läuft der Container im Host-Netz (der Ingress
+in Kafka landet), 1000 VUs, 1 Minute. Unter Linux läuft der Container im Host-Netz (der Ingress
 ist nur über IPv6/die DHBW-Route des Hosts erreichbar), unter Docker Desktop (macOS/Windows) wird
 `localhost` durch `host.docker.internal` ersetzt.
 
@@ -81,7 +81,7 @@ k6 zählt `202`/`409` als Erfolg (siehe `options.thresholds`), da ein abgelehnte
 korrektes, erwartetes Ergebnis des Flash-Sale-Szenarios ist, kein Fehler des Systems. Die
 eigentliche Kapazitätsaussage (wie viele Reservierungen/Sekunde `reservation-worker` verarbeiten
 kann, wie schnell KEDA hochskaliert) liest man direkt aus dem Cluster ab — `kubectl get
-scaledobject,pods -n ticketflow` und der Consumer-Lag in AKHQ (kein Observability-Stack, siehe
-Root-`README.md` ## Grenzen) — nicht aus den k6-Zahlen: `custom.reservations_accepted`/
+scaledobject,pods -n ticketflow` und der Consumer-Lag in AKHQ (kein Observability-Stack im
+Cluster) — nicht aus den k6-Zahlen: `custom.reservations_accepted`/
 `reservations_conflicted` in der k6-Ausgabe zeigen nur, was `catalog-api` unmittelbar beim
 Annehmen der Anfrage zurückgegeben hat.

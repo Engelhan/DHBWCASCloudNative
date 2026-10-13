@@ -18,7 +18,7 @@ notification-worker/
     ├── _helpers.tpl
     ├── deployment.yaml
     ├── configmap.yaml
-    ├── secret.yaml                    # nur falls secret.create=true - Standard seit B1: aus
+    ├── secret.yaml                    # nur falls secret.create=true - Standard seit B3: aus
     ├── externalsecret.yaml            # OpenBao gesynct (siehe ## Secret-Namen und ## OpenBao)
     ├── podmonitor.yaml                # aus (kein Prometheus im Cluster)
     └── poddisruptionbudget.yaml
@@ -43,7 +43,7 @@ Image-Registry und -Tag kommen aus `gitops/env/cluster.yaml`; der Chart bildet d
 
 ## OpenBao
 
-Seit B1 (Root-README ## Bonus) liefert `templates/externalsecret.yaml` (`externalSecret.enabled`,
+Seit B3 (Root-README ## Bonus) liefert `templates/externalsecret.yaml` (`externalSecret.enabled`,
 Default `true`) das Secret aus OpenBao statt `templates/secret.yaml` (`secret.create`, jetzt
 Default `false`) es chart-eigen mit Platzhaltern zu rendern — Ziel-Name/-Keys sind identisch,
 `deployment.yaml` ändert sich nicht. Der Bootstrap-Job in `charts/openbao` seedet die KV-Pfade
@@ -80,26 +80,26 @@ helm lint charts/notification-worker \
 
 ## Secret-Namen
 
-Das chart-eigene Secret heisst **`<release>-credentials`**, nicht `<release>`. Der Suffix ist
+Das chart-eigene Secret heißt **`<release>-credentials`**, nicht `<release>`. Der Suffix ist
 Pflicht, kein Stilmittel:
 
-Der Strimzi User Operator legt fuer jede `KafkaUser`-CR ein Secret mit **exakt dem CR-Namen** an.
-Die CR dieses Dienstes heisst `notification-worker` (`charts/kafka-cluster/values.yaml`,
+Der Strimzi User Operator legt für jede `KafkaUser`-CR ein Secret mit **exakt dem CR-Namen** an.
+Die CR dieses Dienstes heißt `notification-worker` (`charts/kafka-cluster/values.yaml`,
 `kafka.users`) und liegt im selben Namespace, in den dieser Chart deployt (`ticketflow`). Ohne
-Suffix waeren das zwei Controller auf einem Objekt:
+Suffix wären das zwei Controller auf einem Objekt:
 
-- ArgoCD (`selfHeal`) schreibt es mit den SMTP-Platzhaltern zurueck,
-- der User Operator schreibt es mit den SCRAM-Credentials zurueck,
+- ArgoCD (`selfHeal`) schreibt es mit den SMTP-Platzhaltern zurück,
+- der User Operator schreibt es mit den SCRAM-Credentials zurück,
 - das `envFrom: secretRef` des Deployments zieht dabei mal die SMTP-Keys, mal `password` und
   `sasl.jaas.config` als Env-Variablen in den Container,
-- und der `KAFKA_SASL_PASSWORD`-`secretKeyRef` auf `password` laeuft ins Leere, sobald ArgoCD
-  zuletzt geschrieben hat - der Dienst kommt dann nicht mehr an Kafka.
+- und der `KAFKA_SASL_PASSWORD`-`secretKeyRef` auf `password` läuft ins Leere, sobald ArgoCD
+  zuletzt geschrieben hat – der Dienst kommt dann nicht mehr an Kafka.
 
 Beide Namen entstehen an einer Stelle: `templates/_helpers.tpl`, `notification-worker.secretName`.
-`secret.name` in `values.yaml` ueberschreibt ihn, etwa wenn `secret.create: false` gesetzt ist und
+`secret.name` in `values.yaml` überschreibt ihn, etwa wenn `secret.create: false` gesetzt ist und
 ein External Secret das Objekt unter eigenem Namen liefert.
 
-Die uebrigen Charts im `ticketflow`-Namespace haben dasselbe Problem nicht: `reservation-worker`
+Die übrigen Charts im `ticketflow`-Namespace haben dasselbe Problem nicht: `reservation-worker`
 besitzt kein eigenes gleichnamiges Secret mehr (nur das suffigierte `-keda-auth`), und die
-Komponenten von `charts/ticketflow-app` heissen `ticketflow-app-catalog-api`/`-frontend`. **Wer
-hier ein neues Secret anlegt, prueft vorher die Namen in `kafka.users`.**
+Komponenten von `charts/ticketflow-app` heißen `ticketflow-app-catalog-api`/`-frontend`. **Wer
+hier ein neues Secret anlegt, prüft vorher die Namen in `kafka.users`.**

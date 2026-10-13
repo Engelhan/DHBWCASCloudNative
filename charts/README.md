@@ -12,7 +12,7 @@ charts/<name>/
 ├── Chart.yaml               # name == Verzeichnisname
 ├── README.md
 ├── values.yaml              # feste Key-Reihenfolge, siehe unten
-├── values-dev.yaml          # kleine Werte fuer die Lab-VMs
+├── values-dev.yaml          # kleine Werte für die Lab-VMs
 ├── values-prod.yaml         # HA-Werte
 ├── values.schema.json       # Pflichtfelder + Typen, verbietet image.tag "latest"
 └── templates/
@@ -65,7 +65,7 @@ Die Kafka-Plattform läuft getrennt von der Anwendung:
 |---|---|
 | `ticketflow` | `ticketflow-app` (catalog-api + frontend), `reservation-worker`, `notification-worker`, **`postgres-cluster`** |
 | `kafka` | `strimzi-operator`, `kafka-cluster`, `apicurio`, `akhq` |
-| `openbao` | `openbao`, `openbao-postgres` (B1, eigene CNPG-Cluster-CR für OpenBaos Storage-Backend) |
+| `openbao` | `openbao`, `openbao-postgres` (B3, eigene CNPG-Cluster-CR für OpenBaos Storage-Backend) |
 | `external-secrets` | `external-secrets-operator`, `openbao-secretstore` |
 | `longhorn-system`, `cert-manager`, `external-dns`, `cnpg-system`, `keda` | die jeweiligen Addons |
 
@@ -142,7 +142,7 @@ deshalb referenzieren `catalog-api` und `reservation-worker` direkt das von CNPG
 `<ticketflow.postgres.databaseName>-postgres-cluster-app` (Keys `username`/`password`) — kein
 Duplikat im Chart. **Das Passwort steht nirgends im Repo:** die CNPG-`Cluster`-CR gibt kein
 `bootstrap.initdb.secret` vor, CNPG generiert das Credential selbst, und ein `PushSecret`
-spiegelt es nur als Audit-Kopie nach OpenBao (B1).
+spiegelt es nur als Audit-Kopie nach OpenBao (B3).
 
 Host, Datenbankname und Secret-Name leiten sich aus `ticketflow.postgres.databaseName` ab
 (`<name>-postgres-cluster-rw` für den `reservation-worker`, `-ro` für `catalog-api`, bzw. `<name>-postgres-cluster-app`), `database.{host,name,credentialsSecretName}`
@@ -171,14 +171,14 @@ Zwei Varianten:
   `.gitignore`), damit sich Dependency-Version-Bumps auf den `Chart.yaml`-Eintrag beschränken.
   `cnpg-operator`/`strimzi-operator`/`keda`/`external-secrets-operator` brauchen
   zusätzlich `ServerSideApply=true` in ihrer Application (siehe `../gitops/README.md` ##
-  Struktur) – alle vier bündeln einzelne CRDs über (oder, bei `external-secrets-operator`, knapp
+  dev/prod) – alle vier bündeln einzelne CRDs über (oder, bei `external-secrets-operator`, knapp
   unter, aber als JSON-kodierte Annotation potenziell über) dem 262144-Byte-Annotationslimit der
-  Kubernetes-API. `openbao` (B1, Root-README ## Bonus) ist der einzige Wrapper-Chart
+  Kubernetes-API. `openbao` (B3, Root-README ## Bonus) ist der einzige Wrapper-Chart
   mit einem eigenen, zusätzlichen Template (`templates/bootstrap-job.yaml` +
   `bootstrap-rbac.yaml`, außerhalb des `openbao:`-Dependency-Alias) – ein
   `post-install,post-upgrade`-Hook-Job, der OpenBao initialisiert/entsiegelt und mit den
   Kubernetes-Auth-Voraussetzungen für `external-secrets-operator` befüllt, siehe die Kommentare
-  in beiden Dateien und `../CLAUDE.md` ## Current implementation status.
+  in beiden Dateien und `../gitops/README.md` ## OpenBao / Secret-Vault.
 - **Volleigene Custom Resources**, die es upstream nicht als Chart gibt – analog zur
   CNPG-`Cluster`-CR in `postgres-cluster/`, nur eben nicht Teil eines Anwendungs-Charts, weil sie zum
   Addon-Layer statt zur TicketFlow-Anwendung gehören:
@@ -195,7 +195,7 @@ Zwei Varianten:
     veröffentlichten Hostnamen als rebuild-festes CNAME-Ziel für `argocd-ingress` & Co. Siehe
     [`../gitops/README.md`](../gitops/README.md) ## ArgoCD-UI öffentlich erreichbar.
   - [`openbao-postgres/`](openbao-postgres/): eine zweite, von `postgres-cluster/` komplett
-    getrennte CNPG-`Cluster`-CR – OpenBaos eigenes PostgreSQL-Storage-Backend (B1), eigener
+    getrennte CNPG-`Cluster`-CR – OpenBaos eigenes PostgreSQL-Storage-Backend (B3), eigener
     Namespace `openbao`. Anders als `postgres-cluster/` legt sie **kein** eigenes
     Credentials-Secret an (`bootstrap.initdb` ohne `secret`-Feld) – CNPG generiert das
     App-User-Credential selbst, weil OpenBao sein eigenes Storage-Backend-Passwort nicht aus sich
@@ -291,7 +291,7 @@ Feld wohin gemappt wird, und mit `helm template` Pod **und** Container getrennt 
 
 ## network-policies
 
-Fully-custom Chart, deployt als Element `network-policies` (Ziel-Namespace nur formal, jedes
+Volleigener Chart, deployt als Element `network-policies` (Ziel-Namespace nur formal, jedes
 Objekt trägt seinen eigenen). Enthält **alle** NetworkPolicies des Clusters — Ausnahme sind nur
 die Ingress-Policies, die ArgoCDs Install-Manifest (Ansible) selbst mitbringt; die bleiben, der
 Chart ergänzt dort default-deny und den Egress.

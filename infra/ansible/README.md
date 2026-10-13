@@ -76,10 +76,10 @@ Ansible).
 
 ## Voraussetzungen
 
-Ansible wird nicht systemweit erwartet; es läuft aus einer Python-venv (auf diesem
-Debian/Ubuntu-System fehlt der systemweiten Python sogar `pip`, und `apt install` braucht Root-
-Rechte, die im WSL-Setup ohne Passwort nicht verfügbar sind – eine venv braucht das nicht).
-Diese wird einmal eingerichtet; die venv liegt bewusst im Projektstamm (`../../.venv`, bereits in
+Ansible wird nicht systemweit erwartet; es läuft aus einer Python-venv (manche Debian/Ubuntu-
+bzw. WSL-Images bringen systemweit kein `pip` mit, und `apt install` bräuchte Root-Rechte – eine
+venv braucht das nicht). Ansible läuft nur unter Linux/WSL als Controller, nicht unter nativem
+Windows (`ansible-core` scheitert dort mit `WinError 87`). Die venv wird einmal eingerichtet; die venv liegt bewusst im Projektstamm (`../../.venv`, bereits in
 `.gitignore`), nicht unter `infra/ansible/`, damit andere Tools (Terraform-Helper, Python-Skripte)
 sie projektweit gemeinsam nutzen können:
 
@@ -98,8 +98,7 @@ source /path/to/repo-root/.venv/bin/activate
 
 Wie bei k3s/ArgoCD sind auch `ansible-core`/`ansible-lint` bewusst fest gepinnt
 ([`requirements.txt`](requirements.txt)); zum Aktualisieren muss dort angepasst werden, statt
-`pip install -U` ohne Pin auszuführen. Das gilt nur für die Ansible-Control-Machine (WSL/Linux,
-siehe Root `CLAUDE.md`) – auf den verwalteten VMs selbst ist nichts Python-spezifisch nötig,
+`pip install -U` ohne Pin auszuführen. Das gilt nur für die Ansible-Control-Machine (WSL/Linux) – auf den verwalteten VMs selbst ist nichts Python-spezifisch nötig,
 außer der System-Python-Version, die Cloud-Images ohnehin mitbringen und die Ansible per SSH
 anspricht.
 
@@ -124,8 +123,8 @@ Das ArgoCD-Admin-Passwort wird am Ende des Playbook-Laufs in der Konsolenausgabe
 
 ## GitOps-Secrets (`gitops_secrets`)
 
-Zwei Dinge kann GitOps strukturell nicht selbst bereitstellen (ArgoCD ist git-getrieben, und laut
-`CLAUDE.md` ## Infra layering dürfen beide Werte **nicht** im Git-Repo liegen): die ArgoCD-
+Zwei Dinge kann GitOps strukturell nicht selbst bereitstellen (ArgoCD ist git-getrieben, und
+beide Werte sind Geheimnisse, die **nicht** im Git-Repo liegen dürfen, siehe Root-README ## Betrieb): die ArgoCD-
 Repository-Credential für das private GitHub-Repo selbst sowie die RFC2136-TSIG-Kubernetes-
 Secrets, auf die `charts/cert-manager-config`/`charts/external-dns` verweisen. Die Rolle
 `gitops_secrets` schließt genau diese Lücken, läuft aber vollständig lokal gegen die abgerufene
@@ -174,7 +173,7 @@ enthält), überspringt der jeweilige Teil der Rolle sich selbst statt zu failen
 `gitops/README.md` ## DNS/ACME für den DNS-Teil der Gesamtübersicht. Ohne Repo-Credential kann
 auch die Platform-Stage von `gitops_rollout` nie grün werden.
 
-## offene Punkte
+## Hinweise und bekannte Einschränkungen
 
 - Keine eigene Ingress-/Load-Balancer-Logik: k3s installiert Traefik und ServiceLB standardmäßig;
   die Charts nutzen diese (Traefik wird über `charts/traefik-config` konfiguriert).
@@ -185,5 +184,6 @@ auch die Platform-Stage von `gitops_rollout` nie grün werden.
   `command` statt `ansible.builtin.command`, `no-role-prefix` bei `register`-Variablen,
   fehlendes `changed_when` bei den gepufferten Install-Shells) – sie ändern das Verhalten nicht;
   absichtlich nicht behoben, um den Diff klein zu halten. Neue Roles (z. B. `gitops_secrets`)
-  werden `risky-shell-pipe`-clean gehalten (`set -o pipefail`, siehe Hinweis in `CLAUDE.md` zum
-  Bug mit `curl | sh`). `ansible-lint` bei Bedarf erneut ausführen, um die aktuelle Liste zu sehen.
+  werden `risky-shell-pipe`-clean gehalten (`set -o pipefail`: ohne das meldete die
+  `curl | sh`-Installation von k3s bei fehlgeschlagenem Download Erfolg, weil `sh` bei leerer
+  Eingabe mit 0 endet). `ansible-lint` bei Bedarf erneut ausführen, um die aktuelle Liste zu sehen.

@@ -83,7 +83,7 @@ JSON, sondern Confluent-kompatibel gerahmt - 1 Magic-Byte (`0x0`) + 4-Byte-Big-E
 Contracts) liegen unter `charts/kafka-cluster/files/schemas/` und werden bei jedem Helm-Sync in
 Apicurio Registry (`charts/apicurio`) registriert; `reservation-worker` validiert lokal dagegen
 (embedded, siehe `internal/schemareg`) - kein Registry-Roundtrip pro Nachricht. Siehe
-`charts/README.md` ## apicurio für Details/offene Punkte.
+`charts/README.md` ## apicurio für Details.
 
 ## Datenbankschema
 
@@ -115,7 +115,7 @@ Schemas.
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Eingangstopic für `ReservationRequested` |
 | `RESULT_TOPIC` | ConfigMap | Kafka-Ausgangstopic für `ReservationConfirmed`/`ReservationRejected` |
 | `CONSUMER_GROUP` | ConfigMap | Kafka-Consumer-Group-ID (Grundlage für KEDA-Lag-Metrik) |
-| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B4) |
 | `KAFKA_SASL_USERNAME` | ConfigMap | Name der `KafkaUser`-CR |
 | `KAFKA_SASL_PASSWORD` | Secret | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `PROCESS_MAX_RETRIES` | ConfigMap | Anzahl Verarbeitungsversuche (DB-Transaktion + Publish) vor Aufgabe, Default `3` |

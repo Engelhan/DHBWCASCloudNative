@@ -44,7 +44,7 @@ Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; notification-wor
 lokal dagegen (embedded, siehe `internal/schemareg`) vor der Verarbeitung - kein
 Registry-Roundtrip pro Nachricht. Eine Nachricht, die die Rahmung/Validierung nicht besteht,
 durchläuft denselben Poison-Pill-Pfad wie ein nicht parsebares JSON (siehe ## Zustell-Semantik).
-Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
+Siehe `charts/README.md` ## apicurio für Details.
 
 ## Konfiguration
 
@@ -60,7 +60,7 @@ Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
 | `REGISTRY_GROUP_ID` | ConfigMap | `ticketflow` | – |
 | `LOG_LEVEL` | ConfigMap | `info` | – |
 | `HTTP_ADDR` | ConfigMap | `:8080` | – |
-| `KAFKA_SASL_ENABLED` | ConfigMap | `false` | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_ENABLED` | ConfigMap | `false` | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B4) |
 | `KAFKA_SASL_USERNAME` | ConfigMap | leer | Name der `KafkaUser`-CR |
 | `KAFKA_SASL_PASSWORD` | **Secret** | leer | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `KAFKA_TLS_ENABLED` | ConfigMap | `false` | aktiviert mTLS zum Kafka-Broker |

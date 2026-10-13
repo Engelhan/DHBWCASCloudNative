@@ -41,8 +41,8 @@ Dienste, die doppelt laufen, werden gezielt über unterschiedliche simulierte Re
  ein einzelner Node/Region-Fehler nicht alle Replikate gleichzeitig trifft – siehe
 [`../ansible/roles/`](../ansible/roles/) sowie die Root-README unter `## Entscheidungen`.
 
-4 VMs insgesamt, davon 3 Worker – erfüllt die Anforderung P6 („mehrere Worker, damit Skalierung
-und Verteilung sichtbar werden").
+4 VMs insgesamt, davon 3 Worker – mehrere Worker, damit Skalierung und Verteilung sichtbar
+werden (P4).
 
 ## Struktur
 
@@ -73,14 +73,15 @@ terraform apply
 Nach `terraform apply` existiert bereits `infra/ansible/inventory/hosts.ini`; als Nächstes folgt
 `ansible-playbook -i inventory/hosts.ini playbooks/site.yml` in [`../ansible/`](../ansible/).
 
-## offene Punkte
+## Hinweise und bekannte Einschränkungen
 
 - `image_name`, `control_plane_flavor`, `worker_flavor` sind DHBWCloud-spezifisch und haben
   bewusst **keinen** Standardwert – sie müssen aus dem DHBWCloud-Portal bzw. der
   Dokumentation übernommen werden. `network_name` defaultet auf `DHBWV6`, `worker_regions` auf
   drei simulierte Regionen.
 - Da keine eigene Security Group verwaltet wird, gilt die Default-Security-Group des DHBWCloud-
-  Projekts. Wenn diese nicht bereits SSH/k3s-API/NodePort erlaubt, muss sie einmalig außerhalb
+  Projekts. Wenn diese nicht bereits SSH (22), die k3s-API (6443) und HTTP/HTTPS (80/443)
+  sowie Verkehr zwischen den VMs erlaubt, muss sie einmalig außerhalb
   dieses Terraform-Codes konfiguriert werden, denn die Vorgaben verlangen explizit keine
   Security-Group-Verwaltung hier.
 - IPv6-Primär: `ssh`/`ansible` erreichen die VMs über `access_ip_v6`; das erzeugte `hosts.ini`

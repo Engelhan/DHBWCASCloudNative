@@ -62,8 +62,9 @@ ApplicationSet — auch dann nicht, wenn ein Chart später einen dev/prod-Split 
 `external-secrets-operator`s `secretstores`/`clustersecretstores` je ~252 KB reines YAML,
 gemessen) — Client-Side-Apply würde die komplette
 Ressource zusätzlich als `last-applied-configuration`-Annotation speichern und damit das harte
-Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler wie beim
-ArgoCD-Install selbst, siehe `CLAUDE.md` ## Infra layering (Ansible specifics) —
+Annotation-Größenlimit der Kubernetes-API sprengen ("Too long"). Exakt derselbe Fehler trat beim
+ArgoCD-Install selbst auf (dessen `applicationsets`-CRD), deshalb wendet
+`infra/ansible/roles/argocd_bootstrap` das Manifest ebenfalls mit `--server-side` an —
 Server-Side-Apply schreibt diese Annotation gar nicht erst. `openbao`/`openbao-postgres`/
 `openbao-secretstore` bringen selbst keine CRDs mit, brauchen das nicht.
 
@@ -114,29 +115,6 @@ löschen können (über ihren `resources-finalizer` kaskadierend alle Kind-Appli
 einem laufenden Cluster beobachtet, bevor der Fix live war). Ein ApplicationSet verwaltet seine
 Applications, ohne sich selbst als Ressource zu sehen.
 
-**Migration von App-of-Apps auf das ApplicationSet** (einmalig, auf einem bereits laufenden
-Cluster): die alte Root-Application muss ohne Kaskade verschwinden, sonst reißt ihr Finalizer alle
-Workloads mit. Das ApplicationSet übernimmt die verwaisten Applications danach über ihre Namen.
-
-```bash
-kubectl -n argocd patch app app-of-apps --type=merge -p '{"metadata":{"finalizers":null}}'
-kubectl -n argocd delete app app-of-apps --cascade=orphan
-kubectl apply -f gitops/applicationsets/
-kubectl -n argocd get applications      # 19 Stueck, keine Duplikate
-```
-
-**Migration von einem ApplicationSet (`ticketflow`) auf die zwei gestuften** (einmalig, auf einem
-laufenden Cluster): das alte Set muss ohne Kaskade verschwinden — sonst löscht die
-Garbage-Collection über die ownerReferences alle 21 Applications samt Workloads. `--cascade=orphan`
-entfernt nur die ownerReferences; die neuen Sets übernehmen die Applications danach über ihre
-Namen.
-
-```bash
-kubectl -n argocd delete applicationset ticketflow --cascade=orphan
-cd infra/ansible && ansible-playbook playbooks/bootstrap-gitops.yml   # Stufe 1, warten, Stufe 2
-kubectl -n argocd get applications -L ticketflow.io/stage             # 21 Stueck, je mit Stufe
-```
-
 ## ArgoCD-UI öffentlich erreichbar (`argocd-ingress`)
 
 Das Element `argocd-ingress` im ApplicationSet + `charts/argocd-ingress/` machen die ArgoCD-UI über die echte
@@ -175,7 +153,7 @@ alle Applications blieben dauerhaft in `Unknown`/`ErrorSyncStatus` hängen. Desh
 `repoURL: git@github.com:...` (SSH), nicht `https://...`, und
 `infra/ansible/roles/gitops_secrets` legt dafür einen ArgoCD-Repository-Credential-Secret
 (`repo-ticketflow`, Namespace `argocd`) aus einem lokalen, git-ignorierten SSH-Deploy-Key an —
-siehe `infra/ansible/README.md` ## GitOps secrets für die Erzeugung/Aktivierung. Die
+siehe `infra/ansible/README.md` ## GitOps-Secrets für die Erzeugung/Aktivierung. Die
 Upstream-Helm-Repos selbst (`charts.longhorn.io`, `charts.jetstack.io`,
 `kubernetes-sigs.github.io`) sind weiterhin öffentlich — dafür braucht nur der jeweilige
 Wrapper-Chart in `Chart.yaml.dependencies` kein Credential, das baut ArgoCD beim Sync per
@@ -190,8 +168,8 @@ nicht mehr — es wurde zusammen mit `gitops/apps/` entfernt, weil es nichts meh
 `longhorn`/`cert-manager`/`external-dns` sind **Cluster-Addons, portiert aus
 [pfisterer/k3s-dhbw-cloud-role](https://github.com/pfisterer/k3s-dhbw-cloud-role)** — ursprünglich
 per Ansible-Rolle installiert (Branch `ansible-bootstrap`, Commit `938a66f`), jetzt stattdessen hier über
-ArgoCD/Helm, um die in `CLAUDE.md` ## Infra layering dokumentierte Grenze einzuhalten ("Ansible
-macht nichts über k3s/Labels/ArgoCD hinaus"). Die Ansible-Addon-Rollen auf `ansible-bootstrap`
+ArgoCD/Helm, um die Schichtentrennung aus `infra/README.md` einzuhalten (Ansible macht nichts
+über k3s, Node-Labels und ArgoCD hinaus). Die Ansible-Addon-Rollen auf `ansible-bootstrap`
 werden dadurch nicht mehr gebraucht und sollten nicht in `main` gemerged werden.
 
 ## DNS/ACME (cert-manager-issuer, external-dns)
@@ -211,7 +189,7 @@ Beide `Application`s sind wie alle anderen auf `syncPolicy.automated` konfigurie
 
 **Das eigentliche TSIG-Secret steht bewusst NICHT im Repo** (nur die Referenz
 `external-dns-rfc2136-tsig` / `cert-manager-rfc2136-tsig`). `infra/ansible/roles/gitops_secrets`
-legt beide aus `infra/ansible/secrets.yml` an (siehe `infra/ansible/README.md` ## GitOps secrets);
+legt beide aus `infra/ansible/secrets.yml` an (siehe `infra/ansible/README.md` ## GitOps-Secrets);
 von Hand ginge es so:
 
 ```bash
@@ -228,7 +206,7 @@ Plattform-Stufe wird nie grün.
 Jede `Application` in diesem Ordner ist auf `syncPolicy.automated.selfHeal: true` und
 `prune: true` konfiguriert: manuelle `kubectl edit`-Änderungen (z.B. eine per Hand hochgesetzte
 Replica-Zahl) werden von ArgoCD automatisch wieder auf den in Git definierten Zustand
-zurückgedreht – das ist der im Screencast zu zeigende Drift-Nachweis für W2.
+zurückgedreht – das ist der Drift-Nachweis für W2 (Root-README ## Entscheidungen, W2).
 
 ## Warum ArgoCD statt reinem `kubectl apply`/CI-Pipeline
 
@@ -243,11 +221,9 @@ deployen.
 ```bash
 # normalerweise automatisch und gestuft via infra/ansible/roles/gitops_rollout; von Hand:
 kubectl apply -f gitops/applicationsets/platform.yaml
-kubectl apply -f gitops/applicationsets/apps.yaml   # erst wenn Stufe 1 gruen
+kubectl apply -f gitops/applicationsets/apps.yaml   # erst wenn Stufe 1 grün
 kubectl -n argocd get applications -L ticketflow.io/stage
-argocd app list
-argocd app get longhorn
-argocd app get cert-manager
+kubectl -n argocd get app longhorn cert-manager    # Sync-/Health-Status einzelner Applications
 ```
 
 ## kafka-cluster / ticketflow-app
@@ -266,14 +242,14 @@ Welche `values-<env>.yaml` greift, steuert `ticketflow.environment` (siehe ## de
 aktiven dev-Profil laufen Kafka mit 3 Brokern/3 Controllern und jeder App-Service mit 2 Replicas.
 
 
-## OpenBao / Secret-Vault (B1)
+## OpenBao / Secret-Vault (B3)
 
 Vier Applications: `openbao-postgres` (OpenBaos eigene CNPG-`Cluster`-CR, Namespace `openbao`),
 `openbao` (der eigentliche Secret-Vault, HA über PostgreSQL-Storage-Backend, gleicher Namespace),
 `external-secrets-operator` (Namespace `external-secrets`) und `openbao-secretstore` (die eine
 `ClusterSecretStore`-CR gegen OpenBao, ebenfalls im Namespace `external-secrets`, weil sie mit dem
-Operator zusammengehört). Details zu Chart-Aufbau/Werten stehen in `CLAUDE.md` ## Current
-implementation status; hier nur der GitOps-spezifische Teil.
+Operator zusammengehört). Details zu Chart-Aufbau/Werten stehen als Kommentare in
+`charts/openbao/values.yaml` und `templates/bootstrap-job.yaml`; hier nur der GitOps-spezifische Teil.
 
 **Alle vier liegen in Stufe 1 (`ticketflow-platform`)**, ihre Konsumenten (`postgres-cluster`,
 `kafka-cluster`, `akhq`, `notification-worker`) in Stufe 2 — die Anwendung startet also erst, wenn
@@ -303,5 +279,5 @@ kubectl -n openbao get secret openbao-unseal-keys -o yaml > openbao-unseal-keys.
 # openbao-unseal-keys.backup.yaml sicher (z.B. verschlüsselt) ablegen, NICHT committen.
 ```
 
-Ohne dieses Backup ist der Shamir-`1-von-1`-Key (bewusste Laborvereinfachung, siehe Root-README ## Bonus B1) ausschließlich im gleichnamigen K8s-Secret vorhanden — geht dieses verloren, sind die
+Ohne dieses Backup ist der Shamir-`1-von-1`-Key (bewusste Laborvereinfachung, siehe Root-README ## Bonus B3) ausschließlich im gleichnamigen K8s-Secret vorhanden — geht dieses verloren, sind die
 in OpenBao gespeicherten Werte nicht wiederherstellbar.

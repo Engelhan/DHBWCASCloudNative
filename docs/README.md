@@ -15,5 +15,3 @@ Beim Speichern in draw.io das Format `.drawio.svg` beibehalten und „Diagramm e
   aber nur eine Momentaufnahme — die konkrete Zuordnung ändert sich bei jedem Rescheduling, gleich
   bleiben die Regeln. Nach Änderungen an Replicas oder Spread-Regeln neu erzeugen, damit das
   Beispiel zu den Regeln passt.
-
-Weitere Nachweise (z. B. der ArgoCD-App-Tree für W2) kommen ebenfalls hierher.

@@ -69,7 +69,7 @@ das obige JSON als Payload. Das kanonische Schema (JSON Schema, identisch zum ob
 liegt unter `charts/kafka-cluster/files/schemas/reservation-requested.schema.json` und wird bei
 jedem Helm-Sync in Apicurio Registry (`charts/apicurio`) registriert; catalog-api validiert
 lokal dagegen (embedded, siehe `internal/schemareg`) vor jedem Publish - kein Registry-Roundtrip
-pro Nachricht. Siehe `charts/README.md` ## apicurio für Details/offene Punkte.
+pro Nachricht. Siehe `charts/README.md` ## apicurio für Details.
 
 ## Datenmodell (Postgres, Schema im `reservation-worker`)
 
@@ -99,7 +99,7 @@ Anfrage als `pending`.
 | `DB_PASSWORD` | Secret | Postgres-Passwort |
 | `KAFKA_BROKERS` | ConfigMap | Bootstrap-Server des Strimzi-Kafka-Clusters (kommagetrennt) |
 | `RESERVATION_TOPIC` | ConfigMap | Kafka-Topic für `ReservationRequested` |
-| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B2) |
+| `KAFKA_SASL_ENABLED` | ConfigMap | SCRAM-SHA-512-Login am Kafka-Listener (im Cluster `true`, B4) |
 | `KAFKA_SASL_USERNAME` | ConfigMap | Name der `KafkaUser`-CR |
 | `KAFKA_SASL_PASSWORD` | Secret | aus dem von Strimzi erzeugten Secret der `KafkaUser` |
 | `REGISTRY_URL` | ConfigMap | Apicurio-Registry v3-REST-API-Root, z.B. `http://apicurio.kafka.svc:8080/apis/registry/v3` |
