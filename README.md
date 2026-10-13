@@ -75,118 +75,278 @@ Control-Plane laufen nur k3s' eigene Komponenten. Weitere Screenshots folgen in
 
 ## Betrieb
 
-Das gesamte Deployment wird über **eine** git-getrackte Konfigurationsdatei gesteuert:
-[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml). Sie wird von Terraform, Ansible, ArgoCD und
-allen Helm-Charts gelesen. Fork-URL, DNS-Zone, ACME-Kontakt, Image-Registry, Image-Tag und die
-Umgebung (`dev`/`prod`) stehen dort jeweils genau einmal. Nur echte Geheimnisse liegen daneben, in
-zwei gitignorierten Dateien.
+Dieser Abschnitt beschreibt Schritt für Schritt, wie der komplette Stack in einem **leeren
+DHBWCloud-Projekt** unter einer **eigenen DNS-Zone** neu aufgebaut wird, ohne Zugänge aus dem
+ursprünglichen Setup zu übernehmen. Alle Zugänge werden neu beschafft. Das Repo enthält kein
+Geheimnis, das wiederverwendet werden müsste.
 
-### Einmalig je Fork
+Der Ablauf folgt einem festen roten Faden:
 
-Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren:
+```
+Voraussetzungen ─▶ Zugänge beschaffen ─▶ Konfiguration (Git) ─▶ Images bauen
+     ─▶ Geheimnisse (lokal) ─▶ terraform apply ─▶ ansible-playbook ─▶ ArgoCD übernimmt
+     ─▶ Prüfen ─▶ Lastpfad demonstrieren
+```
 
-1. **Repo forken** unter dem eigenen GitHub-Account, **privat** (siehe
-   [`gitops/README.md`](gitops/README.md) ## Privates Repo).
+Jeder Wert, der sich zwischen zwei Deployments unterscheidet, steht an genau einer von zwei Stellen:
 
-2. **Python-venv** für Ansible anlegen (muss aus WSL/Linux laufen, nicht aus nativem Windows)
-   (`ansible-core` scheitert dort mit `WinError 87`):
+| Art | Datei | In Git? | Inhalt |
+|---|---|---|---|
+| Konfiguration | [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) | ja | Fork-URL, DNS-Zone, ACME-Kontakt, TSIG-Key-*Name*, Registry, Image-Tag, Umgebung, Namenspräfix |
+| Geheimnisse | `infra/terraform/terraform.tfvars`, `infra/ansible/secrets.yml`, `infra/ansible/argocd_deploy_key` | nein (gitignored) | OpenStack-Credential, TSIG-Secret-*Wert*, ArgoCD-Deploy-Key |
+
+`cluster.yaml` wird von Terraform, Ansible, ArgoCD und allen Helm-Charts gelesen. Kein Wert daraus
+steht an anderer Stelle noch einmal als Literal. Die einzige Ausnahme ist die Repo-URL in den
+beiden ApplicationSets (Schritt 8). Alle Passwörter *innerhalb* des Clusters (Datenbanken,
+Kafka-User, AKHQ, OpenBao) werden beim ersten Rollout im Cluster selbst erzeugt (CNPG, Strimzi,
+OpenBao-Bootstrap-Job) und müssen nicht mitgebracht werden.
+
+### Voraussetzungen
+
+**Konten und Berechtigungen**
+
+| Voraussetzung | Wofür |
+|---|---|
+| GitHub-Account | privater Fork, GitHub Actions, Container-Registry `ghcr.io` |
+| DHBWCloud-Projekt (OpenStack, `newstack.dhbw.cloud`) | VMs; Zugriff auf das Projektnetz `DHBWV6` |
+| Quota im Projekt für 4 VMs | 1 Control-Plane + 3 Worker; Worker mit ca. 10 GB RAM, weil allein Kafka 4,5 GiB anfordert |
+| Zugang zu `self-service.dhbw.cloud` | eigene DNS-Zone mit RFC2136-Freigabe (TSIG) |
+
+**Netz**
+
+- Lokaler Client im **DHBW-Netz oder per VPN** verbunden. Self-Service-Portal und ACME-Server
+  (`certificates.dhbw.cloud`) sind nur von dort erreichbar.
+- **IPv6-Konnektivität** zum Netz `DHBWV6`. SSH, Ansible und die Kubeconfig sprechen die VMs über
+  ihre IPv6-Adresse an.
+- Die **Default-Security-Group** des Projekts muss eingehend SSH (22/tcp), die k3s-API
+  (6443/tcp) und HTTP/HTTPS (80, 443/tcp) erlauben sowie Verkehr zwischen den VMs untereinander.
+  Terraform verwaltet bewusst keine eigene Security Group (siehe
+  [`infra/terraform/README.md`](infra/terraform/README.md)).
+
+**Werkzeuge auf dem lokalen Client**
+
+| Werkzeug | Version | Wofür |
+|---|---|---|
+| Linux oder WSL | – | Ansible läuft nicht als Controller auf nativem Windows (`ansible-core` scheitert mit `WinError 87`) |
+| `git`, `ssh-keygen` | aktuell | Fork klonen, Schlüssel erzeugen |
+| Python 3 mit `venv` | wie von `ansible-core` gefordert | Ansible (`ansible==14.2.0`, gepinnt in [`requirements.txt`](infra/ansible/requirements.txt)) |
+| Terraform oder OpenTofu | ≥ 1.5 | VMs anlegen; Provider `openstack ~> 3.4` wird bei `init` geladen |
+| `kubectl` | passend zu k3s `v1.37` | Prüfen des Clusters; das Playbook legt damit lokal die GitOps-Secrets an |
+| Docker | aktuell | Lastgenerator (k6 läuft im Container) |
+
+Alle übrigen Komponenten (k3s, ArgoCD, Helm-Charts) installiert der Ablauf selbst in gepinnten
+Versionen. Helm oder das ArgoCD-CLI werden lokal nicht benötigt.
+
+### Phase 1 – Repo und Zugänge beschaffen
+
+Diese Schritte lassen sich nicht aus dem Repo heraus automatisieren. Jeder liefert ein Ergebnis,
+das in Phase 2 oder 4 eingetragen wird.
+
+1. **Repo privat forken und klonen.** Der Fork muss privat sein (siehe
+   [`gitops/README.md`](gitops/README.md) ## Privates Repo). Alle folgenden Befehle laufen im
+   Wurzelverzeichnis des Klons.
+   ```bash
+   git clone git@github.com:<owner>/DHBWCASCloudNative.git && cd DHBWCASCloudNative
+   ```
+   → *Ergebnis:* SSH-URL des Forks
+
+2. **Python-Umgebung für Ansible anlegen:**
    ```bash
    python3 -m venv .venv && source .venv/bin/activate
    pip install -r infra/ansible/requirements.txt
    ```
-3. **SSH-Keypair für die VMs**: `~/.ssh/ticketflow_dhbwcloud{,.pub}` (Terraform importiert den
-   Public Key; Pfade sind über `ssh_public_key_path`/`ssh_private_key_path` änderbar).
 
-4. **DNS-Zone registrieren** auf `self-service.dhbw.cloud` mit RFC2136-Freigabe. Notiert werden
-   Zonenname, TSIG-Key-**Name** und TSIG-Secret-**Wert**.
+3. **OpenStack-Application-Credential anlegen** im DHBWCloud-Dashboard unter *Identity →
+   Application Credentials*. Das Secret wird **nur einmal** angezeigt. Im selben Dashboard außerdem
+   die Region, den Namen eines Ubuntu-LTS-Images und zwei passende Flavors (Control-Plane, Worker)
+   heraussuchen.
+   → *Ergebnis:* Credential-ID, Credential-Secret, Region, Image, Flavors
 
-5. **ArgoCD-Deploy-Key erzeugen** und den Public Key im eigenen Fork unter *Settings → Deploy keys*
-   als **Read-only** eintragen. Ohne ihn kann ArgoCD das private Repo nicht klonen und alle
-   Applications bleiben `Unknown`:
+4. **SSH-Keypair für die VMs erzeugen.** Terraform importiert den Public Key als
+   OpenStack-Keypair, Ansible meldet sich mit dem Private Key an:
    ```bash
-   ssh-keygen -t ed25519 -C "argocd-deploy-key@ticketflow" \
-     -f infra/ansible/argocd_deploy_key -N ""
+   ssh-keygen -t ed25519 -f ~/.ssh/ticketflow_dhbwcloud -N ""
+   ```
+
+5. **DNS-Zone registrieren** auf `self-service.dhbw.cloud`, mit RFC2136-Freigabe (dynamische
+   Updates per TSIG). cert-manager löst damit die ACME-DNS-01-Challenge, external-dns legt die
+   Hostnamen an.
+   → *Ergebnis:* Zonenname, RFC2136-Server, TSIG-Key-**Name**, TSIG-Secret-**Wert**
+
+6. **ArgoCD-Deploy-Key erzeugen** und den Public Key im Fork unter *Settings → Deploy keys* als
+   **Read-only** eintragen. Ohne ihn kann ArgoCD das private Repo nicht klonen:
+   ```bash
+   ssh-keygen -t ed25519 -C "argocd-deploy-key@ticketflow" -f infra/ansible/argocd_deploy_key -N ""
    cat infra/ansible/argocd_deploy_key.pub
    ```
-6. **Images bauen lassen**: Workflow `build-images` in *Actions* einmal manuell starten
-   (`workflow_dispatch`). Ein frischer Fork hat sonst noch keine Images, und alle vier Services
-   landen im `ImagePullBackOff`.
 
-7. **Die vier ghcr.io-Packages auf „Public" stellen** (GitHub → Packages → jeweils *Package
-   settings*). Der eingebaute `GITHUB_TOKEN` kann dies nicht selbst setzen. Bis dahin scheitert der
-   Pull trotz korrektem Tag.
+### Phase 2 – Fork konfigurieren (git-getrackt)
 
-8. **DHBW-Netz/VPN**: `certificates.dhbw.cloud` (ACME) ist nur von dort erreichbar.
+7. **`gitops/env/cluster.yaml` anpassen.** Die Kommentare in der Datei erklären jedes Feld:
 
-### Konfigurieren
+   | Feld | Neuer Wert |
+   |---|---|
+   | `repoURL` | SSH-URL des Forks (Schritt 1) |
+   | `dnsZone` | eigene Zone (Schritt 5); alle Hostnamen leiten sich davon ab |
+   | `acmeEmail` | eigene Kontaktadresse für die ACME-Registrierung |
+   | `rfc2136.server`, `rfc2136.keyName` | aus Schritt 5 (nur der Key-**Name**, nie das Secret) |
+   | `imageRegistry` | `ghcr.io/<github-owner-in-kleinbuchstaben>` |
+   | `namePrefix` | eindeutiges Präfix für alle OpenStack-Ressourcen, z.B. `<name>-ticketflow` |
+   | `network.nodeCIDRs` | Subnetze von `DHBWV6`; nur prüfen, sie gelten für jedes Projekt im selben Netz |
+
+   `imageTag` wird in Schritt 10 automatisch gesetzt. `environment` bleibt für den ersten Aufbau
+   auf `dev`. `targetRevision` bleibt `main`, solange auf `main` deployt wird.
+
+8. **Repo-URL in den beiden ApplicationSets eintragen** (je eine Zeile im git-Generator von
+   [`platform.yaml`](gitops/applicationsets/platform.yaml) und
+   [`apps.yaml`](gitops/applicationsets/apps.yaml)). Das ist die einzige Henne-Ei-Stelle: das
+   ApplicationSet muss wissen, aus welchem Repo es `cluster.yaml` liest, bevor es sie lesen kann.
+
+9. **Committen und pushen.** ArgoCD liest ausschließlich den Remote-Stand. Ein lokal geänderter,
+   aber nicht gepushter Stand wird nie ausgerollt:
+   ```bash
+   git commit -am "chore: configure deployment" && git push
+   ```
+
+### Phase 3 – Images bereitstellen
+
+10. **Images bauen lassen.** In einem frischen Fork sind GitHub Actions deaktiviert und müssen
+    unter *Actions* einmal aktiviert werden. Danach den Workflow `build-images` manuell starten
+    (`workflow_dispatch`). Er baut die vier Service-Images, pusht sie nach `ghcr.io` und schreibt
+    im Job `bump-image-tag` den Short-SHA als `imageTag` in `cluster.yaml`. Den Bot-Commit
+    anschließend lokal holen, damit spätere Pushes nicht kollidieren:
+    ```bash
+    git pull
+    ```
+
+11. **Die vier ghcr.io-Packages auf „Public" stellen** (GitHub → *Packages* → jeweils *Package
+    settings*). Der eingebaute `GITHUB_TOKEN` kann das nicht selbst. Wegen der öffentlichen Images
+    braucht der Cluster keine `imagePullSecret`s.
+
+### Phase 4 – Geheimnisse lokal hinterlegen (gitignored)
+
+12. **Vorlagen kopieren und mit den Ergebnissen aus Phase 1 füllen:**
+    ```bash
+    cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+    #  -> os_region, os_application_credential_id/_secret, image_name,
+    #     control_plane_flavor, worker_flavor (Schritt 3); SSH-Pfade passen zu Schritt 4
+    cp infra/ansible/secrets.yml.example infra/ansible/secrets.yml
+    #  -> rfc2136_tsig_secret_value (der WERT aus Schritt 5, nicht der Key-Name)
+    ```
+    Der Deploy-Key aus Schritt 6 liegt bereits unter `infra/ansible/argocd_deploy_key`. Damit
+    sind alle drei gitignorierten Dateien vorhanden.
+
+### Phase 5 – Ausrollen
+
+13. **Infrastruktur erzeugen.** Terraform legt die Control-Plane-VM und drei Worker (je eine
+    simulierte Region) direkt im Netz `DHBWV6` an und generiert daraus
+    `infra/ansible/inventory/hosts.ini`:
+    ```bash
+    cd infra/terraform
+    terraform init
+    terraform apply
+    ```
+
+14. **Cluster aufbauen und an GitOps übergeben.** Ein einziger Playbook-Lauf konfiguriert die VMs,
+    installiert k3s (Dual-Stack, IPv6 primär), setzt Regions-Labels und den Control-Plane-Taint,
+    installiert ArgoCD, holt die Kubeconfig nach `infra/ansible/kubeconfig` und legt die
+    Repo-Credential sowie die TSIG-Secrets aus Phase 4 an. Zuletzt wendet er die ApplicationSets
+    gestuft an: erst `platform` (Addons, Operatoren, OpenBao), und erst wenn alle
+    Plattform-Applications *Synced/Healthy* sind, `apps` (Kafka, Postgres, Anwendung). Das
+    Playbook endet erst, wenn alles grün ist, oder bricht nach 30 Minuten je Stufe mit einer Liste
+    der roten Applications ab:
+    ```bash
+    cd ../ansible
+    ansible-inventory -i inventory/hosts.ini --list   # optional: Inventar prüfen
+    ansible-playbook playbooks/site.yml
+    ```
+    Ab hier gehört der Cluster ArgoCD. Jede weitere Änderung läuft über `git push`, nicht über
+    Ansible oder `kubectl`. Das Playbook ist idempotent und kann nach einem Abbruch erneut
+    gestartet werden.
+
+### Phase 6 – Prüfen und Zugänge abholen
+
+15. **Rollout prüfen** (aus dem Repo-Wurzelverzeichnis):
+    ```bash
+    cd ../..
+    export KUBECONFIG=infra/ansible/kubeconfig
+    kubectl get nodes -o wide                                  # 4 Nodes, Worker mit Region-Label
+    kubectl -n argocd get applicationset                       # ticketflow-platform, ticketflow-apps
+    kubectl -n argocd get applications -L ticketflow.io/stage  # 21 Stück, alle Synced/Healthy
+    kubectl get kafka,cluster.postgresql.cnpg.io -A
+    ```
+
+16. **Öffentliche Endpunkte aufrufen.** external-dns veröffentlicht die Hostnamen in der eigenen
+    Zone, cert-manager stellt die Zertifikate aus:
+
+    | URL | Zugang |
+    |---|---|
+    | `https://ticketflow.<dnsZone>` | Frontend und API, ohne Login |
+    | `https://argocd.<dnsZone>` | `admin`; Passwort steht am Ende der Playbook-Ausgabe (Task „Show the initial admin password") |
+    | `https://openbao.<dnsZone>` | Root-Token, siehe unten |
+    | `https://akhq.<dnsZone>` | `admin`, nur lesend; Passwort vom OpenBao-Bootstrap zufällig erzeugt, siehe unten |
+
+    ```bash
+    # OpenBao-Root-Token und Unseal-Key: nach dem ersten Rollout einmal sicher außerhalb
+    # des Clusters ablegen, es gibt bewusst keine weitere Kopie
+    kubectl -n openbao get secret openbao-unseal-keys -o yaml
+    ROOT_TOKEN=$(kubectl -n openbao get secret openbao-unseal-keys -o jsonpath='{.data.root_token}' | base64 -d)
+
+    # AKHQ-Passwort aus OpenBao lesen
+    kubectl -n openbao exec openbao-0 -c openbao -- \
+      env BAO_TOKEN="$ROOT_TOKEN" bao kv get -field=password secret/akhq/basic-auth
+    ```
+
+### Phase 7 – Lastpfad demonstrieren
+
+17. **Flash-Sale auslösen.** Das Skript läuft im k6-Container, ein lokales k6 ist nicht nötig. Die
+    Ziel-URL liest es selbst aus `cluster.yaml`:
+    ```bash
+    cd src/load-generator
+    ./run.sh                          # https://ticketflow.<dnsZone>, alle Events, 1000 VUs, 1 Min.
+    VUS=2000 DURATION=5m ./run.sh     # mehr Last
+    ```
+
+18. **Wirkung beobachten.** Es gibt keinen Observability-Stack im Cluster (siehe `## Grenzen`):
+    ```bash
+    kubectl get scaledobject -n ticketflow
+    kubectl get pods -n ticketflow -l app.kubernetes.io/name=reservation-worker -w   # KEDA skaliert nach Consumer-Lag
+    # Consumer-Lag live in AKHQ: https://akhq.<dnsZone> -> Consumer Groups
+    ```
+
+### Typische Fehlerbilder beim Neuaufbau
+
+| Symptom | Ursache | Schritt |
+|---|---|---|
+| `terraform apply` scheitert an Quota oder unbekanntem Image/Flavor | Projekt-Quota zu klein oder Namen falsch übernommen | 3, 12 |
+| Ansible erreicht die VMs nicht (`UNREACHABLE`) | keine IPv6-Route/kein VPN oder Security Group lässt Port 22 nicht zu | Voraussetzungen |
+| Alle Applications `Unknown` | Deploy-Key fehlt oder Repo-URL zeigt noch auf das Original-Repo | 6, 7, 8 |
+| `external-dns`/`cert-manager` in `CreateContainerConfigError`, Plattform-Stufe wird nie grün | `secrets.yml` fehlt oder enthält noch `CHANGE_ME` | 12 |
+| Zertifikate bleiben `False`/`pending` | TSIG-Key-Name oder RFC2136-Server falsch, Zone ohne RFC2136-Freigabe, kein DHBW-Netz | 5, 7 |
+| Services im `ImagePullBackOff` | Workflow nie gelaufen, Actions im Fork deaktiviert oder Packages noch privat | 10, 11 |
+| Änderung kommt nicht im Cluster an | nicht gepusht; ArgoCD sieht nur den Remote-Stand | 9 |
+
+### Umschalten auf `prod`
+
+Von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets) schaltet
+eine einzige Zeile um: `ticketflow.environment` in `gitops/env/cluster.yaml`, danach committen und
+pushen. Das ApplicationSet zieht daraufhin für jeden Chart die passende `values-<env>.yaml`.
+
+### Abbau und erneuter Aufbau
 
 ```bash
-# 1. Zentrale Konfiguration - die einzige git-getrackte Datei, die angepasst werden muss
-$EDITOR gitops/env/cluster.yaml
-#    repoURL, dnsZone, acmeEmail, rfc2136.keyName, imageRegistry, namePrefix
-
-# 2. Die Repo-URL in den git-Generatoren der beiden ApplicationSets (Henne-Ei, siehe Kommentar dort)
-$EDITOR gitops/applicationsets/platform.yaml gitops/applicationsets/apps.yaml
-
-# 3. Committen UND in den eigenen Fork pushen.
-#    ArgoCD liest ausschliesslich den Remote-Stand von targetRevision - ein lokal geäenderter,
-#    ungepushter Stand wird nie ausgerollt.
-git commit -am "chore: configure deployment" && git push
-
-# 4. Geheimnisse (beide gitignored, je eine .example-Vorlage daneben)
-cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
-#    -> OpenStack-Application-Credentials, Region, Image, Flavors
-cp infra/ansible/secrets.yml.example infra/ansible/secrets.yml
-#    -> rfc2136_tsig_secret_value (der WERT, nicht der Key-Name)
+cd infra/terraform && terraform destroy
 ```
 
-### Ausrollen
-
-```bash
-# 1. Infrastruktur auf der DHBWCloud erzeugen (generiert auch inventory/hosts.ini)
-cd infra/terraform
-terraform init
-terraform apply
-
-# 2. VMs konfigurieren, k3s aufbauen, ArgoCD bootstrappen, GitOps-Secrets anlegen.
-#    Der letzte Schritt wendet gitops/applicationsets/ gestuft an: erst die Plattform, dann
-#    sobald alle Plattform-Applications Synced/Healthy sind, die Anwendung. Das Playbook endet
-#    erst, wenn alles grün ist (oder bricht nach 30 min je Stufe mit den roten Apps ab).
-cd ../ansible
-ansible-inventory -i inventory/hosts.ini --list
-ansible-playbook playbooks/site.yml
-#    -> das initiale ArgoCD-Admin-Passwort steht in der Playbook-Ausgabe
-
-# 3. Rollout prüfen (aus dem Repo-Wurzelverzeichnis)
-cd ../..
-export KUBECONFIG=infra/ansible/kubeconfig
-kubectl -n argocd get applicationset        # ticketflow-platform, ticketflow-apps
-kubectl -n argocd get applications -L ticketflow.io/stage   # 21 Stück, alle Synced/Healthy
-kubectl get pods -A -o wide
-kubectl get kafka,cluster.postgresql.cnpg.io -A
-
-# 4. Künstlichen Lastpfad auslösen (Docker-Container, kein lokales k6 noetig)
-cd src/load-generator
-./run.sh                                   # Default: https://ticketflow.<dnsZone>, EVENT_ID=all, 1000 VUs, 3 Min.
-# alternativ mit lokal installiertem k6 und expliziten Parametern:
-k6 run flash-sale.js --env API_URL=https://ticketflow.<dns-zone> --env EVENT_ID=demo-konzert --env VUS=500 --env DURATION=3m
-
-# 5. Beobachten (kein Observability-Stack im Cluster, siehe ## Grenzen)
-kubectl get pods -n ticketflow -l app.kubernetes.io/name=reservation-worker -w   # Replica-Zahl waechst/sinkt mit KEDA
-kubectl get scaledobject -n ticketflow
-# Kafka-Consumer-Lag live: https://akhq.<dnsZone> (dnsZone aus gitops/env/cluster.yaml)
-```
-
-Von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets)
-schaltet eine einzige Zeile um und zwar `ticketflow.environment` in `gitops/env/cluster.yaml`. Das
-ApplicationSet zieht daraufhin für jeden Chart die passende `values-<env>.yaml`.
-
-Ein frisch erzeugtes Projekt auf der DHBWCloud muss allein mit diesen Schritten zum laufenden
-Stack führen.
+entfernt alle VMs samt Cluster-Inhalt, auch die im Cluster erzeugten Passwörter und den
+OpenBao-Root-Token. Konfiguration, Images und die gitignorierten Geheimnisse bleiben erhalten.
+Ein erneuter Aufbau beginnt deshalb direkt bei Schritt 13. `hosts.ini` und `kubeconfig` werden
+dabei neu erzeugt.
 
 ## Entscheidungen
 
-**P1 – Anwendung und Domäne.** 
+**P1 – Anwendung und Domäne.**
+
 *Wahl:* drei eigene Services (`catalog-api`,
 `reservation-worker`, `notification-worker`) plus CNPG-Postgres und Strimzi-Kafka als
 zustandsbehaftete Dienste. 
@@ -209,7 +369,7 @@ die API je in Postgres geschrieben hat. In AKHQ hängen am Topic `reservation-re
 Consumer-Group `reservation-worker` und am Topic `reservation-result` die Consumer-Group
 `notification-worker`. Ein Ereignis durchläuft also drei unabhängige Dienste über Kafka.
 
-**P1 – Gemeinsame Datenbank für `catalog-api` und `reservation-worker`.** 
+**P1 – Gemeinsame Datenbank für `catalog-api` und `reservation-worker`.**
 
 *Wahl:* Beide Services nutzen dieselbe CNPG-Datenbank (`ticketflow`) mit demselben, von CNPG generierten
 App-User. Die Rollen sind fachlich getrennt: `catalog-api` liest nur (`events`, `seats`,
@@ -276,7 +436,8 @@ Microservice-Prinzip und kennt nur Events. Die nächsten Schritte wären ein eig
 Nur-Lese-DB-User für `catalog-api` und erst danach eine eigene Datenbank mit eventbasiertem
 Read-Model.
 
-**P2 – Infrastruktur als Code.** 
+**P2 – Infrastruktur als Code.**
+
 *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap. Ein `terraform apply` gefolgt von einem
 `ansible-playbook site.yml` bringt den kompletten Stack hoch. 
@@ -294,7 +455,8 @@ zusätzlich sauber "Ressourcen existieren" (Terraform, siehe
 verwischen und macht schwerer nachvollziehbar, welcher Schritt für einen fehlgeschlagenen Bootstrap
 verantwortlich ist.
 
-**P3 – Deployment und Konfiguration.** 
+**P3 – Deployment und Konfiguration.**
+
 *Wahl:* Helm-Werte legen Requests/Limits je Service fest
 (z. B. `notification-worker`: 25m/100m CPU, 32Mi/64Mi Memory (bewusst klein, weil der Dienst nur
 Kafka-Konsum und kurze Log-/SMTP-Aufrufe macht, keine CPU-intensive Verarbeitung wie
@@ -317,7 +479,8 @@ Kafka-Bootstrap-Server, Topics und DB-Host als reine Konfiguration ohne Passwör
 einem Zeitpunkt tatsächlich lief. Secrets im Image wären sowohl in der Registry einsehbar als auch
 nicht pro Umgebung (dev/prod, siehe P3 – Ergänzung) austauschbar, ohne das Image neu zu bauen.
 
-**P3 – Packaging mit Helm.** 
+**P3 – Packaging mit Helm.**
+
 *Wahl:* ein Chart je Komponente, alle nach demselben
 verbindlichen Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für
 Applikations-Charts) mit `values-dev.yaml`, `values-prod.yaml` und `values.schema.json`.
@@ -337,7 +500,8 @@ das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, da
 von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets) eine
 einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
 
-**P4 – Scheduling und Platzierung.** 
+**P4 – Scheduling und Platzierung.**
+
 *Wahl:* Jeder Worker trägt ein Node-Label
 `topology.ticketflow/region` (`region-a`/`region-b`/`region-c`, von Terraform als Metadata
 vergeben und von Ansible in ein Kubernetes-Label übersetzt. Die DHBWCloud stellt real nur eine
@@ -397,7 +561,8 @@ komplett verschwinden lassen. Ein einzelner Storage-Node wäre selbst wieder ein
 Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (Ausfallsicherheit
 beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
-**P5 – Resilienz und Persistenz.** 
+**P5 – Resilienz und Persistenz.**
+
 *Wahl:* Liveness/Readiness-Probes auf allen drei Services, CNPG
 verwaltet PVCs für Primary + zwei Replicas, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
 PodDisruptionBudgets sichern Rolling Updates und Node-Drains für jeden Dienst mit mindestens zwei
@@ -510,7 +675,8 @@ grünen Plattform-Stufe angewendet wird.
 
 ## Bonus
 
-**B2 – Autoscaling: KEDA auf Kafka-Consumer-Lag.** 
+**B2 – Autoscaling: KEDA auf Kafka-Consumer-Lag.**
+
 *Was umgesetzt wurde:* KEDA (`charts/keda`,
 Operator; `ScaledObject`/`TriggerAuthentication` in
 `charts/reservation-worker/templates/keda-scaledobject.yaml`) skaliert `reservation-worker` auf
@@ -543,7 +709,8 @@ skalieren würde.
 Replica-Zahl. Ohne Grafana-Dashboard (siehe
 `## Grenzen`) die Wirkung sieht man stattdessen live über den wachsenden/fallenden Consumer-Lag in AKHQ.
 
-**B3 – Weiteres Wahlthema: W7 Cluster-Härtung.** 
+**B3 – Weiteres Wahlthema: W7 Cluster-Härtung.**
+
 *Was umgesetzt wurde (NetworkPolicy-Hälfte):* Jeder
 Namespace startet mit **default-deny für Ingress und Egress**. Danach ist jede einzelne Verbindung explizit
 erlaubt, Komponente für Komponente (`charts/network-policies`, ~80 Policies, eine
@@ -651,7 +818,8 @@ kubectl -n ticketflow run np-probe --rm -it --restart=Never --image=busybox:1.36
 ```
 
 **B4 – Neue Technologie: Kafka-Betrieb mit Strimzi über den Beispielumfang der Vorlesung
-hinaus.** 
+hinaus.**
+
 *Was umgesetzt wurde:* Statt eines einzigen, cluster-weit geteilten Kafka-Credentials
 für alle Services bekommt jeder Client über Strimzis **User Operator** eine eigene
 `KafkaUser`-Custom-Resource mit SCRAM-SHA-512-Authentifizierung und ein eigenes, engst mögliches
