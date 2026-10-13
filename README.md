@@ -625,6 +625,7 @@ man von echten Fehlern nicht unterscheiden kann. ArgoCD-Sync-Waves helfen hier n
 nicht auf von einem ApplicationSet erzeugte Applications), Progressive Syncs würden Self-Heal
 abschalten (siehe [`gitops/README.md`](gitops/README.md) ## Gestufter Rollout). Für ein Laborsetup mit mehreren Bearbeitern, die versehentlich
 `kubectl edit` statt eines Commits benutzen könnten, ist genau das der relevante Fall.
+
 *Nachweis im Betrieb:* Drift am Cluster vorbei erzeugen, z. B. `kubectl -n ticketflow scale
 deploy ticketflow-app-catalog-api --replicas=5` — ArgoCD erkennt die Abweichung zum Git-Stand und
 setzt per Self-Heal wieder auf 2 Replicas zurück (`kubectl -n ticketflow get deploy -w`,
@@ -854,6 +855,7 @@ von ArgoCD mitverwaltet (siehe W2).
 Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller Fehlschreibung) und sind
 damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht nur eine zusätzliche
 Konfigurationsdatei. 
+
 *Nachweis im Betrieb:* `kubectl get kafkauser -n ticketflow` zeigt die vier
 Nutzer. Ein Test-Producer mit echten Credentials des `notification-worker` (ein `kubectl run`-Pod
 mit dem Strimzi-Kafka-Image, der versucht, auf `reservation-requested` zu schreiben) wird von Kafka

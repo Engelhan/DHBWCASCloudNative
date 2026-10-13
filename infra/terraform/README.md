@@ -79,8 +79,6 @@ Nach `terraform apply` existiert bereits `infra/ansible/inventory/hosts.ini`; al
   bewusst **keinen** Standardwert – sie müssen aus dem DHBWCloud-Portal bzw. der
   Dokumentation übernommen werden. `network_name` defaultet auf `DHBWV6`, `worker_regions` auf
   drei simulierte Regionen.
-- Requests/Limits der Flavors werden in `## Entscheidungen` der Root-README begründet, sobald
-  konkrete Werte feststehen.
 - Da keine eigene Security Group verwaltet wird, gilt die Default-Security-Group des DHBWCloud-
   Projekts. Wenn diese nicht bereits SSH/k3s-API/NodePort erlaubt, muss sie einmalig außerhalb
   dieses Terraform-Codes konfiguriert werden, denn die Vorgaben verlangen explizit keine
