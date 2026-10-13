@@ -63,7 +63,7 @@ spec:
                   chartPath: charts/keda
                   namespace: keda
                   serverSideApply: true
-                # --- Secret vault (B1) ---
+                # --- Secret vault (B3) ---
                 - name: external-secrets-operator
                   chartPath: charts/external-secrets-operator
                   namespace: external-secrets

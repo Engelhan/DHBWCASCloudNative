@@ -24,7 +24,7 @@ spec:
           - list:
               # Field notes: see platform.yaml.
               elements:
-                # --- Network isolation (B1) ---
+                # --- Network isolation (B3) ---
                 # Writes into namespaces other apps create; retry covers the race. Each object sets
                 # its own
                 # namespace.

@@ -48,7 +48,7 @@ catalogApi:
     # Empty = derived from ticketflow.namespaces.kafka.
     registryUrl: ""
     registryGroupId: "ticketflow"
-    # B2: SCRAM as KafkaUser catalog-api; secret created by Strimzi.
+    # B4: SCRAM as KafkaUser catalog-api; secret created by Strimzi.
     kafkaSasl:
       enabled: true
       username: catalog-api

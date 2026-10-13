@@ -43,7 +43,7 @@ config:
   processMaxRetries: 3
   processRetryBackoff: "2s"
 
-  # B2: SCRAM as KafkaUser reservation-worker; secret created by Strimzi.
+  # B4: SCRAM as KafkaUser reservation-worker; secret created by Strimzi.
   kafkaSasl:
     enabled: true
     username: reservation-worker

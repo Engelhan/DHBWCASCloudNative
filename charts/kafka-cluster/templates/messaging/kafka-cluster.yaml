@@ -50,7 +50,7 @@ spec:
           name: kafka-metrics
           key: kafka-metrics-config.yml
 
-    # B2: default-deny, per-client ACLs (kafka-users.yaml). Must sit under spec.kafka.
+    # B4: default-deny, per-client ACLs (kafka-users.yaml). Must sit under spec.kafka.
     authorization:
       type: simple
       # Lets the anonymous Apicurio listener through. Name without "User:" - Strimzi adds the

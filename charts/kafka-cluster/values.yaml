@@ -104,7 +104,7 @@ kafka:
         cleanup.policy: delete
         min.insync.replicas: "2"
 
-  # B2: one KafkaUser per client; name = SASL user = Strimzi secret name. READ/WRITE imply DESCRIBE.
+  # B4: one KafkaUser per client; name = SASL user = Strimzi secret name. READ/WRITE imply DESCRIBE.
   users:
     # Write only.
     - name: catalog-api

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: openbao
-description: "Wrapper around the upstream OpenBao chart (HA secret vault, PostgreSQL storage backend, B1)."
+description: "Wrapper around the upstream OpenBao chart (HA secret vault, PostgreSQL storage backend, B3)."
 type: application
 version: 0.1.0
 dependencies:

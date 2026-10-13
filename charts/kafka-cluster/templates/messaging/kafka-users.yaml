@@ -1,4 +1,4 @@
-# One KafkaUser per client (SCRAM-SHA-512, least-privilege ACLs, B2).
+# One KafkaUser per client (SCRAM-SHA-512, least-privilege ACLs, B4).
 {{- range .Values.kafka.users }}
 ---
 apiVersion: kafka.strimzi.io/v1

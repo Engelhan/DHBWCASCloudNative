@@ -51,7 +51,7 @@ config:
   kafkaTls:
     enabled: false  # optional mTLS; certs from secret.kafkaTls*
 
-  # B2: SCRAM as KafkaUser notification-worker; secret created by Strimzi.
+  # B4: SCRAM as KafkaUser notification-worker; secret created by Strimzi.
   kafkaSasl:
     enabled: true
     username: notification-worker
@@ -65,12 +65,12 @@ config:
     tlsMode: "starttls"  # none|starttls|tls
 
 secret:
-  # Provided by templates/externalsecret.yaml instead (B1).
+  # Provided by templates/externalsecret.yaml instead (B3).
   create: false
   # Empty = "<release>-credentials" (avoids the Strimzi secret name).
   name: ""
 
-# B1: from OpenBao. SMTP/mTLS paths are seeded empty; fill them with bao kv put when needed.
+# B3: from OpenBao. SMTP/mTLS paths are seeded empty; fill them with bao kv put when needed.
 externalSecret:
   enabled: true
 

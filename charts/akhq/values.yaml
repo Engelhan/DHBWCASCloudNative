@@ -39,14 +39,14 @@ akhq:
     capabilities:
       drop: ["ALL"]
 
-  # Kafka login (B2); Micronaut resolves ${VAR} at runtime, no password in the repo.
+  # Kafka login (B4); Micronaut resolves ${VAR} at runtime, no password in the repo.
   extraEnv:
     - name: KAFKA_SASL_JAAS_CONFIG
       valueFrom:
         secretKeyRef:
           name: akhq-kafka-sasl
           key: sasl.jaas.config
-    # Basic-auth hash from OpenBao (B1).
+    # Basic-auth hash from OpenBao (B3).
     - name: AKHQ_BASIC_AUTH_PASSWORD_HASH
       valueFrom:
         secretKeyRef:
@@ -63,7 +63,7 @@ akhq:
   networkPolicy:
     enabled: false
 
-  # Read-only roles only (B2); anonymous visitors get none.
+  # Read-only roles only (B4); anonymous visitors get none.
   configuration:
     micronaut:
       security:
@@ -109,7 +109,7 @@ akhq:
           properties:
             # Short name: values files aren't templated, AKHQ shares Kafka's namespace.
             bootstrap.servers: "ticketflow-kafka-kafka-bootstrap:9092"
-            # SASL_PLAINTEXT (B2); JAAS config from the KAFKA_SASL_JAAS_CONFIG env var.
+            # SASL_PLAINTEXT (B4); JAAS config from the KAFKA_SASL_JAAS_CONFIG env var.
             security.protocol: SASL_PLAINTEXT
             sasl.mechanism: SCRAM-SHA-512
             sasl.jaas.config: "${KAFKA_SASL_JAAS_CONFIG}"
