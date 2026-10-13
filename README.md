@@ -445,17 +445,24 @@ VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap. Ein `terraform apply`
 installiert, die Worker träten mit einem von Terraform erzeugten Join-Token bei, und ein einziges
 `terraform apply` brächte alles hoch.
 
-*Begründung:* `cloud-init` läuft beim ersten Boot einmal und ohne Rückmeldung.
-`terraform apply` meldet „fertig“, sobald die VMs existieren, nicht wenn k3s läuft. Ob ein Worker
-beigetreten ist, sähe man nur per SSH im Log der VM. Ansible wartet dagegen aktiv:
-[`k3s_agent`](infra/ansible/roles/k3s_agent/tasks/main.yml) erst, bis jeder Worker `Ready` ist,
-[`gitops_rollout`](infra/ansible/roles/gitops_rollout/tasks/stage.yml) dann, bis jede Application
-*Synced/Healthy* ist. Bricht es ab, nennt es die rote Stufe und kann gefahrlos erneut laufen, denn
-das Playbook ist idempotent und `cloud-init` liefe ein zweites Mal gar nicht. Für TicketFlow zählt
-genau das. Der Vorverkaufsstart ist ein fester Termin, und vorher muss belegt sein, dass alle drei
-Regionen im Cluster sind. Sonst greifen die harten Platzierungsregeln aus P4 nicht, und
-Kafka-Broker bleiben `Pending`. *Trade-off:* zwei Werkzeuge und zwei Befehle statt einem, dazu ein
-Python-Venv auf dem Client. Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen.
+*Begründung:* `cloud-init` läuft beim ersten Boot genau einmal und gibt keine Rückmeldung.
+`terraform apply` meldet „fertig“, sobald die VMs existieren, nicht erst wenn k3s läuft. Ob ein
+Worker dem Cluster beigetreten ist, sähe man nur per SSH im Log der jeweiligen VM.
+
+Ansible wartet dagegen aktiv auf das Ergebnis:
+- [`k3s_agent`](infra/ansible/roles/k3s_agent/tasks/main.yml) wartet, bis jeder Worker `Ready` ist.
+- [`gitops_rollout`](infra/ansible/roles/gitops_rollout/tasks/stage.yml) wartet danach, bis jede
+  Application *Synced/Healthy* ist.
+
+Bricht ein Lauf ab, nennt Ansible die rote Stufe. Das Playbook ist idempotent und kann deshalb
+gefahrlos erneut starten. `cloud-init` würde dagegen kein zweites Mal laufen.
+
+Für TicketFlow ist das wichtig, weil der Vorverkaufsstart ein fester Termin ist. Vorher muss
+belegt sein, dass alle drei Regionen im Cluster sind. Sonst greifen die harten Platzierungsregeln
+aus P4 nicht, und Kafka-Broker bleiben `Pending`.
+
+*Trade-off:* Es sind zwei Werkzeuge und zwei Befehle statt einem, dazu kommt ein Python-Venv auf dem
+Client. Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen.
 
 *Abgrenzung:* Terraform legt kein eigenes Netz und keine eigene Security Group an. Die VMs hängen
 direkt am vorgegebenen Projektnetz `DHBWV6`, das bereits extern routbar ist. Ein eigenes Netz mit
