@@ -20,8 +20,7 @@ nach. Genau dieser Lastpfad ist der fachliche Grund, warum Queue, Datenbank und 
 Fachlicher Lastpfad (durchgezogene Pfeile): `catalog-api` nimmt die Reservierung an und
 veröffentlicht sie nur (①), `reservation-worker` sperrt den Platz in Postgres (②) und meldet das
 Ergebnis zurück auf Kafka (③), der `notification-worker` als zweite, unabhängige Consumer-Group
-liest. 
-Gestrichelt: Steuerung und Plattform (GitOps, Secrets, Autoscaling, DNS/TLS). Die Datei ist
+liest. Gestrichelt: Steuerung und Plattform (GitOps, Secrets, Autoscaling, DNS/TLS). Die Datei ist
 ein draw.io-SVG mit eingebettetem Diagramm — direkt in [draw.io](https://app.diagrams.net) oder
 der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub rendert sie als Bild.
 
@@ -42,9 +41,9 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
    ([`gitops/applicationsets/`](gitops/applicationsets/)) erzeugen gestuft zusammen alle 21
    Applications. Zuerst die Plattform mit Cluster-Addons (Longhorn, cert-manager,
    external-dns), den Operatoren (CNPG, Strimzi, KEDA, External Secrets) und der zentralen
-   Secret-Vault OpenBao. Erst wenn deren Pods alle Health-Checks bestehen, erfolgt die Generierung der Anwendung. Diese besteht aus
-   Datenhaltung, Kafka, die projektweiten NetworkPolicies (siehe `## Bonus`) und die
-   TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
+   Secret-Vault OpenBao. Erst wenn deren Pods alle Health-Checks bestehen, erfolgt die
+   Generierung der Anwendung. Diese besteht aus Datenhaltung, Kafka, den projektweiten
+   NetworkPolicies (siehe `## Bonus`) und den TicketFlow-Charts selbst. Alle deployment-spezifischen Werte kommen dabei
    aus der zentralen [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml), siehe
    [`gitops/`](gitops/).
 
@@ -59,7 +58,7 @@ der VS-Code-Erweiterung „Draw.io Integration" öffnen und bearbeiten, GitHub r
 7. Der `load-generator` erzeugt künstlich die namensgebende Lastspitze. KEDA reagiert auf den
    dadurch wachsenden Kafka-Consumer-Lag und skaliert den `reservation-worker` hoch. Dies ist sichtbar über
    `kubectl get pods`/`scaledobject` und den Consumer-Lag in AKHQ (siehe `## Betrieb`/`## Bonus`;
-   kein Grafana-Dashboard, siehe `## Grenzen`).
+   kein Grafana-Dashboard).
 
 **Pod-Verteilung im laufenden Cluster – ein Beispiel** (realer Abzug vom 09.10.2026, dev-Profil,
 aus `kubectl get pods -A -o wide`). Welcher Pod auf welchem Node landet, ändert sich bei jedem
@@ -70,8 +69,7 @@ Neustart oder Rescheduling. Fest sind nur die Platzierungsregeln, die das Bild s
 Kafka-Broker/-Controller und OpenBao liegen erzwungen je einmal pro simulierter Region,
 die drei App-Postgres-Pods (Primary + zwei Replicas) ebenso, und jeder weitere Dienst läuft mit
 mindestens zwei Pods in zwei Regionen (siehe `## Entscheidungen`, P4). Auf der getainteten
-Control-Plane laufen nur k3s' eigene Komponenten. Weitere Screenshots folgen in
-[`docs/architecture/`](docs/architecture/).
+Control-Plane laufen nur k3s' eigene Komponenten.
 
 ## Betrieb
 
@@ -307,7 +305,8 @@ das in Phase 2 oder 4 eingetragen wird.
     VUS=2000 DURATION=5m ./run.sh     # mehr Last
     ```
 
-18. **Wirkung beobachten.** Es gibt keinen Observability-Stack im Cluster (siehe `## Grenzen`):
+18. **Wirkung beobachten.** Es gibt keinen Observability-Stack im Cluster, die Wirkung zeigen
+    `kubectl` und AKHQ:
     ```bash
     kubectl get scaledobject -n ticketflow
     kubectl get pods -n ticketflow -l app.kubernetes.io/name=reservation-worker -w   # KEDA skaliert nach Consumer-Lag
@@ -349,7 +348,7 @@ dabei neu erzeugt.
 
 *Wahl:* drei eigene Services (`catalog-api`,
 `reservation-worker`, `notification-worker`) plus CNPG-Postgres und Strimzi-Kafka als
-zustandsbehaftete Dienste. 
+zustandsbehaftete Dienste.
 
 *Alternative:* ein einzelner Monolith mit synchronem DB-Zugriff.
 
@@ -377,11 +376,11 @@ App-User. Die Rollen sind fachlich getrennt: `catalog-api` liest nur (`events`, 
 `<db>-postgres-cluster-ro`, also von der Replica. `reservation-worker` schreibt als Einziger
 (`seats.status`, `reservations`) über `<db>-postgres-cluster-rw` auf den Primary und legt als
 Einziger Schema und Stammdaten an (versionierte Migrationen). `notification-worker`
-hat keinen Datenbankzugriff. 
+hat keinen Datenbankzugriff.
 
 *Alternative:* „Database per Service“, also eine eigene Datenbank je
 Service: Die API hält eine Lese-Kopie der Sitzplatz-Verfügbarkeit, die sie aus den
-`reservation-result`-Events aufbaut (CQRS/Read-Model). 
+`reservation-result`-Events aufbaut (CQRS/Read-Model).
 
 *Begründung:* Das knappe Gut im Flash-Sale ist der einzelne Sitzplatz, und dessen Zustand darf es nur einmal geben. Der Worker sperrt ihn
 atomar per `UPDATE seats … WHERE status = 'free'` und die API zeigt denselben Datensatz an,
@@ -440,11 +439,11 @@ Read-Model.
 
 *Wahl:* Terraform/OpenTofu gegen den OpenStack-Provider für
 VMs/Netz, Ansible für OS-Konfiguration und k3s-Bootstrap. Ein `terraform apply` gefolgt von einem
-`ansible-playbook site.yml` bringt den kompletten Stack hoch. 
+`ansible-playbook site.yml` bringt den kompletten Stack hoch.
 
 *Alternative:* manuell im
 DHBWCloud-Portal angelegte VMs, oder ein anderes IaC-Werkzeug (z. B. Pulumi) statt der
-vorgeschlagenen Kombination. 
+vorgeschlagenen Kombination.
 
 *Begründung:* Ein Portal-Klick wäre schneller, ließe sich aber nicht
 reproduzieren und zählt laut Aufgabenstellung explizit nicht als Nachweis ("kein Klick im
@@ -452,8 +451,17 @@ Portal"). Managed Kubernetes ist auf der DHBWCloud ohnehin ausgeschlossen. Terra
 zusätzlich sauber "Ressourcen existieren" (Terraform, siehe
 [`infra/terraform/`](infra/terraform/)) von "Ressourcen sind konfiguriert" (Ansible, siehe
 [`infra/ansible/`](infra/ansible/)). Ein einzelnes Werkzeug für beides würde diese Trennung
-verwischen und macht schwerer nachvollziehbar, welcher Schritt für einen fehlgeschlagenen Bootstrap
-verantwortlich ist.
+verwischen und schwerer nachvollziehbar machen, welcher Schritt für einen fehlgeschlagenen
+Bootstrap verantwortlich ist.
+
+*Nachweis im Betrieb:* Der komplette Aufbau unter `## Betrieb` braucht außer den Zugängen aus
+Phase 1 keinen Schritt im Portal. Nach `terraform apply` meldet ein erneutes `terraform plan`
+`No changes`, und `infra/ansible/inventory/hosts.ini` ist aus den Terraform-Outputs erzeugt, nicht
+von Hand gepflegt. `ansible-playbook playbooks/site.yml` endet erst, wenn beide Stufen der
+ApplicationSets grün sind, danach zeigt `kubectl get nodes -L topology.ticketflow/region` vier
+Nodes mit Regions-Label auf den Workern und `kubectl -n argocd get applications` alle 21
+Applications *Synced/Healthy*. `terraform destroy` und ein erneuter Lauf beider Befehle bauen
+denselben Stand wieder auf (siehe `## Betrieb`, Abbau und erneuter Aufbau).
 
 **P3 – Deployment und Konfiguration.**
 
@@ -462,7 +470,13 @@ verantwortlich ist.
 Kafka-Konsum und kurze Log-/SMTP-Aufrufe macht, keine CPU-intensive Verarbeitung wie
 `reservation-worker`, siehe [`charts/notification-worker/values.yaml`](charts/notification-worker/values.yaml))).
 Images werden mit dem Git-SHA statt `:latest` getaggt, DB-Zugangsdaten/Kafka-Bootstrap-Server
-kommen aus ConfigMap/Secret. 
+kommen aus ConfigMap/Secret.
+
+*Alternative:* Werte im Image hart kodieren oder `:latest` verwenden.
+
+*Begründung:* `:latest` macht Rollbacks unmöglich, weil unklar bleibt, welches Image zu
+einem Zeitpunkt tatsächlich lief. Secrets im Image wären sowohl in der Registry einsehbar als auch
+nicht pro Umgebung (dev/prod, siehe Packaging mit Helm unten) austauschbar, ohne das Image neu zu bauen.
 
 *Nachweis im Betrieb:* `kubectl -n ticketflow get pods -o
 custom-columns=POD:.metadata.name,IMAGE:.spec.containers[*].image` zeigt für jeden eigenen
@@ -473,32 +487,28 @@ auf das von CNPG erzeugte Secret `postgres-postgres-cluster-app` und das von Str
 Kafka-Secret. `kubectl -n ticketflow get configmap ticketflow-app-catalog-api -o yaml` zeigt
 Kafka-Bootstrap-Server, Topics und DB-Host als reine Konfiguration ohne Passwörter.
 
-*Alternative:* Werte im Image hart kodieren oder `:latest` verwenden. 
+*P3 – Unterpunkt: Packaging mit Helm.*
 
-*Begründung:* `:latest` macht Rollbacks unmöglich, weil unklar bleibt, welches Image zu
-einem Zeitpunkt tatsächlich lief. Secrets im Image wären sowohl in der Registry einsehbar als auch
-nicht pro Umgebung (dev/prod, siehe P3 – Ergänzung) austauschbar, ohne das Image neu zu bauen.
-
-**P3 – Packaging mit Helm.**
-
-*Wahl:* ein Chart je Komponente, alle nach demselben
-verbindlichen Muster (siehe [`charts/README.md`](charts/README.md) ## Muster für
-Applikations-Charts) mit `values-dev.yaml`, `values-prod.yaml` und `values.schema.json`.
-Übergreifende Werte (Image-Registry/-Tag, DNS-Zone, Umgebung) stehen einmalig in
-[`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) und werden von ArgoCD per Multi-Source
-`$values` in jeden Chart gereicht. 
-
-*Alternative:* Kustomize mit Base+Overlays. 
-
-*Begründung:* Kustomize kennt kein Werte-Schema. Ein vergessener oder falsch typisierter Wert (etwa eine
-String- statt Int-Replica-Zahl, oder ein leerer Image-Tag) fiele erst zur Laufzeit im Cluster auf.
-Genau das ist hier schon einmal passiert: `notification-worker` lag mit leerem `image.tag` im
-Repo und war ohne `--set` gar nicht deploybar. Mit Helm+`values.schema.json` schlägt
-`helm lint`/`helm template` vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`- oder
-Strimzi-`Kafka`-Ressource überhaupt angewendet wird. Bei zustandsbehafteten Custom Resources ist
-das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, dass das Umschalten
-von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere PodDisruptionBudgets) eine
-einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
+- *Wahl:* ein Chart je Komponente, alle nach demselben verbindlichen Muster (siehe
+  [`charts/README.md`](charts/README.md) ## Muster für Applikations-Charts) mit
+  `values-dev.yaml`, `values-prod.yaml` und `values.schema.json`. Übergreifende Werte
+  (Image-Registry/-Tag, DNS-Zone, Umgebung) stehen einmalig in
+  [`gitops/env/cluster.yaml`](gitops/env/cluster.yaml) und werden von ArgoCD per Multi-Source
+  `$values` in jeden Chart gereicht.
+- *Alternative:* Kustomize mit Base+Overlays.
+- *Begründung:* Kustomize kennt kein Werte-Schema. Ein vergessener oder falsch typisierter Wert
+  (etwa eine String- statt Int-Replica-Zahl, oder ein leerer Image-Tag) fiele erst zur Laufzeit im
+  Cluster auf. Genau das ist hier schon einmal passiert: `notification-worker` lag mit leerem
+  `image.tag` im Repo und war ohne `--set` gar nicht deploybar. Mit Helm+`values.schema.json`
+  schlägt `helm lint`/`helm template` vorher fehl, bevor eine falsch konfigurierte CNPG-`Cluster`-
+  oder Strimzi-`Kafka`-Ressource überhaupt angewendet wird. Bei zustandsbehafteten Custom
+  Resources ist das der relevantere Fehlerzeitpunkt. Für den Flash-Sale-Pfad zählt konkret, dass
+  das Umschalten von `dev` auf `prod` (mehr Replicas über alle drei Regionen, engere
+  PodDisruptionBudgets) eine einzige Zeile ist und nicht ein Dutzend über Charts verstreute Werte.
+- *Nachweis im Betrieb:* `kubectl -n argocd get app ticketflow-app -o yaml` zeigt unter
+  `spec.sources` den Chart aus `charts/ticketflow-app` mit den Values-Dateien `values.yaml`,
+  `values-dev.yaml` und `$values/gitops/env/cluster.yaml`. `helm template` mit einem Image-Tag
+  `latest` bricht an `values.schema.json` ab.
 
 **P4 – Scheduling und Platzierung.**
 
@@ -522,11 +532,9 @@ Leader-Wechsel auslöst) bei explizit 512m JVM-Heap. Kafka hält Nachrichten im 
 im Heap, `reservation-worker` hat nur 25m CPU/48Mi, weil er I/O-gebunden auf Postgres wartet und KEDA
 bis zu zehn Kopien gleichzeitig einplant. Die Rechnung steht jeweils als Kommentar in
 [`charts/kafka-cluster/values.yaml`](charts/kafka-cluster/values.yaml) und
-[`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml). 
+[`charts/reservation-worker/values.yaml`](charts/reservation-worker/values.yaml).
 
-*Nachweis im Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
-`kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
-Controller pro Region (vollständige Verteilung als Diagramm unter `## Architektur`). Dieselbe Regel gilt für Alles, was im Ausfall eines Workers
+Dieselbe Regel gilt für alles, was im Ausfall eines Workers
 nicht verschwinden darf. Jeder Dienst läuft mit **mindestens zwei Replicas, hart auf zwei
 verschiedene Regionen verteilt** (`whenUnsatisfiable: DoNotSchedule`, `maxSkew: 1`, bzw. eine
 `required`-`podAntiAffinity`, wo das Upstream-Chart kein `topologySpreadConstraints`-Feld hat, z. B.
@@ -539,18 +547,12 @@ Node-Ausfall nimmt beide mit, mitten im Vorverkauf. `matchLabelKeys: [pod-templa
 dafür, dass beim Rolling Update nur Pods derselben Revision zählen. Die Control-Plane hat kein
 Regions-Label und einen `NoSchedule`-Taint ([`node_labels`](infra/ansible/roles/node_labels/tasks/main.yml))
 und fällt damit für alle Workloads heraus. Welche Pods bewusst einzeln bleiben, steht unter
-`## Grenzen`. Auch deren
-Requests/Limits sind hergeleitet. `catalog-api` 50m/64Mi Request (I/O-gebunden zwischen DB-Read
+`## Grenzen`. Auch die Requests/Limits der eigenen Services sind hergeleitet: `catalog-api` 50m/64Mi Request (I/O-gebunden zwischen DB-Read
 und Kafka-Produce, kaum CPU im Leerlauf) mit 300m/128Mi Limit als Kopfraum für die
 JSON-Schema-Validierung vor jedem Kafka-Publish. `frontend` nur 10m/16Mi Request (liefert nur
 statische Dateien aus) mit 100m/64Mi Limit für viele gleichzeitige Verbindungen beim
 Vorverkaufsstart. Die Begründung ist jeweils als Kommentar in
-[`charts/ticketflow-app/values.yaml`](charts/ticketflow-app/values.yaml). 
-
-*Nachweis im Betrieb:*
-`kubectl -n ticketflow get pods -l app.kubernetes.io/component=catalog-api -o wide` (bzw.
-`=frontend`) neben `kubectl get nodes -L topology.ticketflow/region` zeigt die Verteilung über die
-drei Regionen, sobald mehr als eine Replica läuft.
+[`charts/ticketflow-app/values.yaml`](charts/ticketflow-app/values.yaml).
 
 *Alternative:* freie Platzierung durch den
 Standard-Scheduler, oder ein einzelner dedizierter "Storage-Node" für beide Dienste.
@@ -561,9 +563,15 @@ komplett verschwinden lassen. Ein einzelner Storage-Node wäre selbst wieder ein
 Failure und hätte die Platzierungsfrage nur verschoben statt aus der Domäne (Ausfallsicherheit
 beim Ticketverkauf, nicht aus der Vorlesung) heraus beantwortet.
 
+*Nachweis im Betrieb:* `kubectl get nodes -L topology.ticketflow/region` neben
+`kubectl -n kafka get pods -l strimzi.io/cluster=ticketflow-kafka -o wide` zeigt je einen Broker und
+Controller pro Region, `kubectl -n ticketflow get pods -l app.kubernetes.io/component=catalog-api -o wide`
+(bzw. `=frontend`) die Verteilung der App-Pods über die Regionen. Die vollständige Verteilung
+steht als Diagramm unter `## Architektur`.
+
 **P5 – Resilienz und Persistenz.**
 
-*Wahl:* Liveness/Readiness-Probes auf allen drei Services, CNPG
+*Wahl:* Liveness/Readiness-Probes auf allen eigenen Services, CNPG
 verwaltet PVCs für Primary + zwei Replicas, Strimzi-Kafka-Broker laufen als StatefulSet mit PVC,
 PodDisruptionBudgets sichern Rolling Updates und Node-Drains für jeden Dienst mit mindestens zwei
 Replicas ab (z. B.
@@ -575,6 +583,13 @@ Reservierungen an. PVCs mit `deleteClaim: false` überleben jeden Pod-Neustart.
 `reservation_id`: Stirbt ein Pod mitten in der Verarbeitung, liefert Kafka die Nachricht erneut aus,
 ohne dass ein Sitzplatz doppelt vergeben wird. Sein PDB ist `maxUnavailable: 1` statt eines
 festen `minAvailable`, weil KEDA die Replica-Zahl zwischen 2 und 10 verändert.
+
+*Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
+
+*Begründung:* `emptyDir` und ein Single-Instance-Postgres wären einfacher aufzusetzen, aber jeder
+Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich löschen statt sie
+nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten. Ein Pod-Verlust darf
+keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
 
 *Nachweis im Betrieb:*
 1. **Pod-Verlust ohne Datenverlust:** eine Reservierung anlegen, bis sie `confirmed` ist. Dann
@@ -596,14 +611,8 @@ festen `minAvailable`, weil KEDA die Replica-Zahl zwischen 2 und 10 verändert.
    und `min.insync.replicas: 2` nehmen die beiden anderen Broker weiter an, neue Reservierungen
    laufen ohne Fehler durch. Strimzi startet den Broker mit seinem bestehenden PVC neu.
 
-*Alternative:* `emptyDir` statt PVC, oder ein Single-Instance-Postgres ohne Replikation.
+**W2 – GitOps (gewähltes Wahlthema).**
 
-*Begründung:* `emptyDir` und ein Single-Instance-Postgres wären einfacher aufzusetzen, aber jeder
-Pod-Neustart bzw. Node-Ausfall würde dann Reservierungsdaten unwiederbringlich löschen statt sie
-nur kurz unerreichbar zu machen. Ticket-Reservierungen sind Geschäftsdaten. Ein Pod-Verlust darf
-keine Bestellung verlieren, ein Rolling Update der API darf keine Downtime verursachen.
-
-**W2 – GitOps (gewähltes Wahlthema).** 
 *Wahl:* ArgoCD mit zwei gestuften `ApplicationSets` (je eine Matrix aus
 git-files- und list-Generator. Plattform zuerst, Anwendung erst wenn die Plattform vollständig
 Synced/Healthy ist), Auto-Sync und Self-Heal.
@@ -633,12 +642,29 @@ setzt per Self-Heal wieder auf 2 Replicas zurück (`kubectl -n ticketflow get de
 im Cluster. Beim frischen Aufbau zeigt `gitops_rollout`, wie die Anwendungs-Stufe erst nach der
 grünen Plattform-Stufe angewendet wird.
 
+**Übernommener Code.** Folgende Teile stammen nicht von uns, sondern wurden übernommen und
+angepasst:
+
+- Die Konfiguration der Cluster-Addons Longhorn, cert-manager und external-dns ist portiert aus
+  [`pfisterer/k3s-dhbw-cloud-role`](https://github.com/pfisterer/k3s-dhbw-cloud-role). Dort per
+  Ansible-Rolle installiert, hier als Wrapper-Charts über ArgoCD (siehe
+  [`gitops/README.md`](gitops/README.md) ## Privates Repo).
+- Die JMX-Exporter-Regeln in
+  [`kafka-metrics-configmap.yaml`](charts/kafka-cluster/templates/messaging/kafka-metrics-configmap.yaml)
+  folgen dem Metrics-Beispiel aus den Strimzi-Examples (`examples/metrics/kafka-metrics.yaml`).
+- Die AKHQ-RBAC-Rollen in [`charts/akhq/values.yaml`](charts/akhq/values.yaml) basieren auf AKHQs
+  `application.example.yml`.
+- Die NetworkPolicies für CNPG und Strimzi folgen den Vorgaben aus deren offizieller Doku
+  (CNPG `samples/networkpolicy-example.yaml`, Strimzi „Restricting access to listeners with
+  network policies“), siehe [`charts/README.md`](charts/README.md) ## network-policies.
+
 ## Grenzen
 
 - `catalog-api` und `reservation-worker` teilen sich eine Datenbank und einen DB-User. Schema-
   Änderungen müssen rückwärtskompatibel erfolgen, der eine Postgres-Primary begrenzt den
   Buchungsdurchsatz und `catalog-api` liest von den Replicas. Erst wenn beide gleichzeitig
-  fehlen, ist die API nicht bereit (Abwägung siehe `## Entscheidungen`, P1 – Ergänzung).
+  fehlen, ist die API nicht bereit (Abwägung siehe `## Entscheidungen`, P1 – Gemeinsame
+  Datenbank).
 - Die DHBWCloud stellt nur eine begrenzte Anzahl VMs/Ressourcen bereit. Daher sind CNPG- und Kafka-Replikation
   klein dimensioniert (nicht produktionsreif für echte Lastspitzen mit Millionen Nutzern).
 - Zahlungsabwicklung ist simuliert (kein echtes Payment-Gateway). `notification-worker` kann
@@ -671,6 +697,9 @@ grünen Plattform-Stufe angewendet wird.
   Zertifikate, DNS), nicht der Ticketverkauf.
 - Ein Node-Ausfall der Control-Plane ist nicht automatisch behoben (kein HA-Control-Plane geplant).
   Das ist eine bewusste Kosten/Nutzen-Entscheidung für den Laborrahmen.
+- Alle Applications laufen im ArgoCD-Projekt `default`. Ein eigenes `AppProject`, das erlaubte
+  Quell-Repos, Ziel-Namespaces und Ressourcentypen einschränkt, gibt es nicht. Wer Schreibzugriff
+  auf das Repo hat, kann damit beliebige Ressourcen im Cluster ausrollen.
 
 
 ## Bonus
@@ -698,16 +727,16 @@ Element `reservation-worker` im ApplicationSet ignoriert `spec.replicas` explizi
 (`ignoreDifferences`), sonst würde ArgoCDs `selfHeal` jede KEDA-Skalierung sofort wieder
 zurücksetzen. Dies ist ein Standardmuster für ArgoCD zusammen mit einem HPA/KEDA-verwalteten Deployment.
 
-*Alternative:* HPA auf CPU-Auslastung. 
+*Alternative:* HPA auf CPU-Auslastung.
 
 *Begründung:* Der Trade-off einer Lag-basierten Metrik ist
 ein zusätzlicher Scaler/Adapter (KEDA) statt der im Cluster bereits eingebauten HPA-CPU-Metrik. Der Mehraufwand lohnt sich hier, weil CPU-Skalierung im Lasttest schlicht am falschen Signal
-skalieren würde. 
+skalieren würde.
 
 *Nachweis im Betrieb:* `src/load-generator/run.sh` erzeugt den Backlog;
 `kubectl get scaledobject,hpa -n ticketflow` während des Lasttests zeigt die wachsende
-Replica-Zahl. Ohne Grafana-Dashboard (siehe
-`## Grenzen`) die Wirkung sieht man stattdessen live über den wachsenden/fallenden Consumer-Lag in AKHQ.
+Replica-Zahl. Da es kein Grafana-Dashboard gibt, zeigt AKHQ die Wirkung stattdessen live über
+den wachsenden und wieder fallenden Consumer-Lag.
 
 **B3 – Weiteres Wahlthema: W7 Cluster-Härtung.**
 
@@ -778,9 +807,9 @@ Chiffretext-Verlauf bleibt für jeden mit Repo-Zugriff und dem age-Key entschlü
 Secrets bräuchte einen zusätzlichen, selbst zu betreibenden zustandsbehafteten Controller nur für
 diesen einen Zweck. Ein eigener Vault-Dienst ist für dieses Laborsetup baustellenintensiver (3
 zusätzliche Replicas + eigene Postgres-HA-Instanz + Bootstrap-Job), liefert dafür aber echte
-Rotation ohne Git-Commit, eine zentrale Audit-Fläche und passend zum Domain-Tie dieses Projekts eine 
-echte Hochverfügbarkeit über simulierte Regionen hinweg,
-dieselbe Region-Fake-Topologie wie bei Kafka/CNPG.
+Rotation ohne Git-Commit, eine zentrale Audit-Fläche und, passend zur Domäne dieses Projekts,
+echte Hochverfügbarkeit über dieselben simulierten Regionen wie bei Kafka und CNPG.
+
 *Zugriff (Login):* das Root-Token ist das einzige Anmeldemittel für Menschen. Es gibt bewusst
 keine Benutzername/Passwort-Auth-Methode (userpass/LDAP), nur den Shamir-Root-Token und
 Kubernetes-Auth (nur für ServiceAccounts, siehe oben). Auslesen und Anmelden:
@@ -836,12 +865,12 @@ User Operator erzeugte Secret dort landet, wo `catalog-api`/`reservation-worker`
 `notification-worker` es direkt per `secretKeyRef` lesen können. Alle vier lassen Strimzi ihr
 Passwort gleich generieren. **AKHQ** läuft aber im Kafka-Namespace und kann das App-Namespace-Secret
 deshalb nicht per `secretKeyRef` erreichen (Kubernetes erlaubt das nicht über Namespace-Grenzen).
-Ein `PushSecret`/`ExternalSecret`-Paar über OpenBao liefert genau das. AKHQs Kafka-Passwort wird wie bei den anderen 
+Ein `PushSecret`/`ExternalSecret`-Paar über OpenBao liefert genau das. AKHQs Kafka-Passwort wird wie bei den anderen
 drei von Strimzi generiert, nach OpenBao gespiegelt und von dort in AKHQs eigenen Namespace zurückgesynct.
 
 *Alternative:* ein einziges, geteiltes Client-Secret für alle
 Producer/Consumer oder Kafka-ACLs händisch per
-`kafka-acls.sh` statt deklarativ über `KafkaUser`. 
+`kafka-acls.sh` statt deklarativ über `KafkaUser`.
 
 *Begründung:* Ein geteiltes Secret ist
 funktional ausreichend, um Nachrichten zu produzieren/konsumieren, macht aber jeden Service
@@ -851,10 +880,11 @@ sofort mit einer `TopicAuthorizationException` abgelehnt zu werden. Händische
 `kafka-acls.sh`-Aufrufe wären nicht GitOps-versioniert und müssten bei jedem Cluster-Rebuild
 manuell wiederholt werden. `KafkaUser` als Custom Resource kommt wie alles andere aus Git und wird
 von ArgoCD mitverwaltet (siehe W2).
+
 *Tragend, nicht dekorativ:* Die ACLs ändern das tatsächliche
 Fehlerverhalten bei einem Bug (harter Autorisierungsfehler statt stiller Fehlschreibung) und sind
-damit Teil des Resilienz-/Datensicherheits-Arguments aus ## Grenzen, nicht nur eine zusätzliche
-Konfigurationsdatei. 
+damit Teil des Arguments gegen Datenverlust und Doppelbuchungen aus P5, nicht nur eine
+zusätzliche Konfigurationsdatei.
 
 *Nachweis im Betrieb:* `kubectl get kafkauser -n ticketflow` zeigt die vier
 Nutzer. Ein Test-Producer mit echten Credentials des `notification-worker` (ein `kubectl run`-Pod
